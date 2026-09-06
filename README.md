@@ -62,7 +62,7 @@ Pop!_OS COSMIC DE（libcosmic / Wayland）ネイティブの超高速・軽量�
 6. **Wayland ネイティブ透過 & 背景ディミング**
    - Wayland ウィンドウのアルファ透明度（0.1〜1.0）スライダー。
    - 背景ディミングオーバーレイ（0%〜100%）。
-   - デフォルトウィンドウサイズ 1800x1800 の広々とした作業領域。
+   - デフォルトウィンドウサイズ 2400x2400 の広々とした作業領域。
 
 7. **Local AI FIM (Fill-in-the-Middle) 補完**
    - ローカルの Ollama（`http://localhost:11434`）と高速非同期連携。
@@ -250,7 +250,7 @@ Zero LSP overhead and zero heavy child processes: features in-process Tree-sitte
 
 6. **Wayland Native Transparency & Background Dimming**
    - Adjustable window alpha transparency (0.1 to 1.0) and background dimming (0% to 100%).
-   - Generous default window size (1800x1800) optimized for modern high-resolution displays.
+   - Generous default window size (2400x2400) optimized for modern high-resolution displays.
 
 7. **Local AI FIM (Fill-in-the-Middle) Code Completion**
    - Direct asynchronous communication with local Ollama (`http://localhost:11434`).

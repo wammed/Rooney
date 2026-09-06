@@ -18,12 +18,12 @@ impl App {
         let theme = &self.theme;
         let menu_w = 230.0;
         let menu_h = 280.0;
-        let menu_x = if cx + menu_w > 1750.0 {
+        let menu_x = if cx + menu_w > 2350.0 {
             (cx - menu_w).max(10.0)
         } else {
             cx.max(10.0)
         };
-        let menu_y = if cy + menu_h > 1700.0 {
+        let menu_y = if cy + menu_h > 2300.0 {
             (cy - menu_h).max(10.0)
         } else {
             cy.max(10.0)
@@ -97,12 +97,12 @@ impl App {
         let theme = &self.theme;
         let menu_w = 220.0;
         let menu_h = 240.0;
-        let menu_x = if cm.x + menu_w > 1750.0 {
+        let menu_x = if cm.x + menu_w > 2350.0 {
             (cm.x - menu_w).max(10.0)
         } else {
             cm.x.max(10.0)
         };
-        let menu_y = if cm.y + menu_h > 1700.0 {
+        let menu_y = if cm.y + menu_h > 2300.0 {
             (cm.y - menu_h).max(10.0)
         } else {
             cm.y.max(10.0)

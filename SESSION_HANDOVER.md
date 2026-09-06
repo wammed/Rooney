@@ -196,7 +196,7 @@ Rooney/
 ├── README.md                # 日本語・英語バイリンガル公式ドキュメント (Vibe Coding明記)
 ├── SESSION_HANDOVER.md      # 本ファイル (次回再開用完全ハンドオーバー)
 ├── src/
-│   ├── main.rs              # アプリ起動エントリーポイント (ウィンドウサイズ 1800x1800 設定)
+│   ├── main.rs              # アプリ起動エントリーポイント (ウィンドウサイズ 2400x2400 設定)
 │   ├── config.rs            # AppConfig & SessionConfig (セッション・設定の ~/.config/rooney/config.toml 永続化)
 │   ├── app/
 │   │   ├── mod.rs           # App 構造体定義、cosmic::Application 実装、init() によるセッション復元
