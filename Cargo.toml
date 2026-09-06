@@ -1,0 +1,32 @@
+[package]
+name = "rooney"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# GUI & Wayland Windowing
+libcosmic = { git = "https://github.com/pop-os/libcosmic" }
+cosmic-text = "0.12"
+
+# Text Buffer & Core
+ropey = "1.6"
+
+# Parsing & Syntax
+tree-sitter = "0.24"
+tree-sitter-rust = "0.23"
+pulldown-cmark = "0.12"
+
+# Image Processing
+image = "0.25"
+
+# Local AI Integration (Ollama FIM)
+tokio = { version = "1.40", features = ["full"] }
+reqwest = { version = "0.12", features = ["stream", "json"] }
+futures-util = "0.3"
+
+# Config & Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+directories = "5.0"
+walkdir = "2.5"
