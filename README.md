@@ -1,12 +1,20 @@
 # Rooney 🚀
 **Cosmic-Native Lightweight Code & Markdown Editor**
 
+> [!NOTE]
+> **🤖 AI Vibe Coding Project**  
+> このプロジェクトは、ユーザーとAIアシスタントの協調（バイブコーディング / Vibe Coding）によってゼロから設計・実装されました。  
+> *This project was iteratively designed, prototyped, and implemented from scratch through AI Vibe Coding in pair-programming collaboration with Antigravity / Gemini.*
+
 [日本語](#日本語) | [English](#english)
 
 ---
 
 <a name="日本語"></a>
 ## 日本語 🇯🇵
+
+> **🤖 バイブコーディングによる開発 (About Vibe Coding)**  
+> 本プロジェクト「Rooney (CosmicCode)」は、ユーザーの要求とフィードバックを基に、AIとの対話的なバイブコーディング（Vibe Coding）によって構築されました。Rust、libcosmic、Wayland ネイティブの低レイヤープロトコル（IME text-input、Tree-sitter構文解析、Ropeyバッファ、XDG Portalファイル操作等）の高度な組み合わせを、AIとの高速な反復試行を通じて実現しています。
 
 Pop!_OS COSMIC DE（libcosmic / Wayland）ネイティブの超高速・軽量・多機能コード＆Markdownエディタです。
 外部LSPや重厚な子プロセスのオーバーヘッドを一切排除し、インプロセス構文ハイライト（Tree-sitter）、Ropeyバッファ、日本語IME（Fcitx5 / IBus）完全対応、左右2分割レイアウト、Nerd Font対応リッチファイルツリー、XDG Portalネイティブファイル操作、そしてローカルOllamaによるFill-in-the-Middle（FIM）インラインAI補完を統合しています。
@@ -105,6 +113,9 @@ cargo test
 
 <a name="english"></a>
 ## English 🇬🇧 🇺🇸
+
+> **🤖 Built via AI Vibe Coding**  
+> "Rooney (CosmicCode)" was designed, architected, and continuously iterated through AI Vibe Coding. Complex low-level systems programming in Rust—including libcosmic/Wayland desktop protocols, custom IME text-input methods, Tree-sitter in-process syntax parsing, Ropey buffers, and XDG Portal async dialogs—were built in rapid pair-programming collaboration with AI.
 
 A blazing-fast, lightweight, feature-rich code & markdown editor built natively for Pop!_OS COSMIC DE (libcosmic / Wayland).
 Zero LSP overhead and zero heavy child processes: features in-process Tree-sitter syntax highlighting, a high-performance Ropey text buffer, native Japanese IME (Fcitx5 / IBus) integration, side-by-side dual-pane split editing, Nerd Font file tree, native XDG Desktop Portal file dialogs, and local Ollama-powered Fill-in-the-Middle (FIM) inline AI completions.
