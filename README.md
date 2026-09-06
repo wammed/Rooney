@@ -77,9 +77,14 @@ Pop!_OS COSMIC DE（libcosmic / Wayland）ネイティブの超高速・軽量�
 
 9. **エディタ内編集メニュー & マウス操作（ドラッグ選択・右クリック・Wayland クリップボード）**
    - **ヘッダー編集メニュー**: ヘッダーの「`󰧑 Edit ▾`」ボタンから、元に戻す、やり直し、切り取り、コピー、貼り付け、全選択を素早く操作。
-   - **右クリックコンテキストメニュー**: エディタ上で右クリックすると、カーソル位置にコンテキストメニュー（Copy, Cut, Paste, Select All, Undo, Redo）をポップアップ表示。
+   - **右クリックコンテキストメニュー**: エディタ上で右クリックすると、カーソル位置にコンテキストメニュー（Copy, Cut, Paste, Select All, Undo, Redo）をポップアップ表示。不透明カード背景（`Container::Card`）、整列したショートカット表示、画面端クランプ、全画面バックドロップによるクリックキャンセルを完備。
    - **マウスドラッグ選択**: マウスで直感的にテキスト範囲を選択（視覚的ハイライト表示）。
    - **Wayland システムクリップボード連携**: `Ctrl + C`、`Ctrl + X`、`Ctrl + V`、右クリックメニュー、Editメニューすべてでシステムクリップボードとリアルタイム同期。
+
+10. **テンキー（Numpad）の完全サポート & Wayland NumLock 互換性**
+    - テンキーの数字（`0`〜`9`）、四則演算子（`+`, `-`, `*`, `/`, `.`, `,`, `=`）、および **Enter** を完全サポート。
+    - Wayland / Pop!_OS COSMIC 環境において、クライアントに NumLock の有効状態が同期されない場合でも、物理キーコードを自動識別して直接英字入力時・IME使用時の両方で数字・記号を確実に入力。
+    - 独立した専用カーソルキー（矢印、Delete、Home、End、PageUp、PageDown）との競合を完全に排除し、操作性を両立。
 
 ---
 
@@ -101,6 +106,8 @@ Pop!_OS COSMIC DE（libcosmic / Wayland）ネイティブの超高速・軽量�
 | マウス左ドラッグ | テキスト範囲選択（ビジュアルハイライト） |
 | マウス右クリック | コンテキストメニュー表示（Copy, Cut, Paste, Select All, Undo, Redo） |
 | ヘッダー `󰧑 Edit` | 編集ツールバーの表示/非表示切り替え |
+| テンキー `0`〜`9` / 記号 (`+`, `-`, `*`, `/`, `.`, `,`, `=`) | 数字および演算子記号の直接入力（英字/IME両モード完全対応） |
+| テンキー `Enter` | 改行の挿入 / 新規ファイル作成モーダルの確定 |
 | `Tab` | AI補完の確定挿入 / インデント（4スペース） |
 | `Esc` | AI補完の破棄 / 選択解除 / メニュー・ダイアログキャンセル |
 | `Ctrl + B` | ファイルツリーサイドバーの表示/非表示 |
@@ -193,9 +200,14 @@ Zero LSP overhead and zero heavy child processes: features in-process Tree-sitte
 
 9. **Edit Menu & Mouse Clipboard Integration (Selection, Context Menu, Wayland Clipboard)**
    - **Header Edit Menu**: Quick-access dropdown toolbar for Undo, Redo, Cut, Copy, Paste, and Select All via the header `󰧑 Edit ▾` button.
-   - **Right-Click Context Menu**: Right-click anywhere in the editor to bring up a floating context menu at the mouse cursor.
+   - **Right-Click Context Menu**: Right-click anywhere in the editor to bring up a floating context menu at the mouse cursor. Features opaque card styling (`Container::Card`), aligned icons, labels, and shortcuts, edge-of-screen clamping, and full-screen dismissal on backdrop click.
    - **Mouse Drag Selection**: Intuitive click-and-drag visual text selection with theme-matched highlighting.
    - **Wayland System Clipboard**: Full bi-directional integration with the system clipboard via `Ctrl + C`, `Ctrl + X`, `Ctrl + V`, right-click menu, and the header Edit menu.
+
+10. **Full Numeric Keypad (Numpad) Support & Wayland NumLock Compatibility**
+    - Complete support for numpad digits (`0`–`9`), operators (`+`, `-`, `*`, `/`, `.`, `,`, `=`), and **Numpad Enter**.
+    - Solves Wayland/XKB NumLock state desynchronization: intelligently maps physical keycodes so numeric keypad input works seamlessly across both direct English input and IME modes.
+    - Dedicated navigation keys (arrows, Delete, Home, End, PageUp, PageDown) remain 100% functional and unhindered.
 
 ---
 
@@ -217,6 +229,8 @@ Zero LSP overhead and zero heavy child processes: features in-process Tree-sitte
 | Mouse Left Drag | Drag-select text with visual highlight |
 | Mouse Right Click | Open context menu (Copy, Cut, Paste, Select All, Undo, Redo) |
 | Header `󰧑 Edit` | Toggle Edit toolbar visibility |
+| Numpad `0`–`9` / Operators (`+`, `-`, `*`, `/`, `.`, `,`, `=`) | Direct numeric and operator entry (both English and IME modes) |
+| Numpad `Enter` | Insert newline / Confirm modal dialog |
 | `Tab` | Accept AI suggestion / Indent (4 spaces) |
 | `Esc` | Dismiss AI suggestion / Clear selection / Cancel dialog & menus |
 | `Ctrl + B` | Toggle File Tree sidebar visibility |
@@ -248,6 +262,7 @@ cargo test
 ### Architecture & Tech Stack 🏗️
 
 - **GUI & Windowing**: [libcosmic](https://github.com/pop-os/libcosmic), `cosmic-text`, `iced`
+- **Configuration & Persistence**: `serde`, `toml`, `directories` (XDG Base Directory standard)
 - **File Dialogs**: `rfd` (XDG Desktop Portal, Wayland native)
 - **Text Buffer**: [Ropey](https://github.com/cessen/ropey) (Piece-tree rope buffer for handling large files)
 - **Syntax Highlighting**: [tree-sitter](https://tree-sitter.github.io/tree-sitter/) (in-process tree parsing)

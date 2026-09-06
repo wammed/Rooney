@@ -129,7 +129,7 @@ Rooney/
 │   ├── app.rs               # COSMIC Application 実装、Messageディスパッチ、キーバインド、モーダル・メニューUI
 │   ├── config.rs            # AppConfig (設定の ~/.config/rooney/config.toml 永続化)
 │   ├── editor/
-│   │   ├── mod.rs
+│   │   ├── mod.rs           # resolve_numpad_char (Waylandテンキー物理キーコード解決ユーティリティ)
 │   │   ├── buffer.rs        # TextBuffer (Ropeyラッパー、カーソル移動、選択、Undo/Redo、FIM文脈抽出)
 │   │   └── pane.rs          # EditorPane (ペイン状態、ファイル読込/保存/SaveAs、言語判別)
 │   ├── syntax/
@@ -153,7 +153,7 @@ Rooney/
 │   └── ai/
 │       └── mod.rs           # OllamaClient (FIM補完リクエスト、モデル自動検出)
 └── tests/
-    ├── core_tests.rs        # 13件のユニットテスト (文字幅・CJKアドバンス、設定永続化、選択削除、ツリー、保存)
+    ├── core_tests.rs        # 14件のユニットテスト (テンキー物理解決、文字幅・CJKアドバンス、設定永続化、選択削除、ツリー、保存)
     └── ollama_tests.rs      # 2件の統合テスト (Ollama 接続性、FIM生成テスト)
 ```
 
@@ -177,6 +177,8 @@ Rooney/
 | マウス左ドラッグ | テキスト範囲選択（ビジュアルハイライト） |
 | マウス右クリック | コンテキストメニュー表示（Copy, Cut, Paste, Select All, Undo, Redo） |
 | ヘッダー `󰧑 Edit` | 編集ツールバーの表示/非表示切り替え |
+| テンキー `0`〜`9` / 記号 (`+`, `-`, `*`, `/`, `.`, `,`, `=`) | 数字および四則演算子記号の直接入力（英字/IME両モード完全対応） |
+| テンキー `Enter` | 改行の挿入 / 新規ファイル作成モーダルの確定 |
 | `Tab` | AI補完（ゴーストテキスト）の確定挿入 / インデント（4スペース） |
 | `Esc` | AI補完の破棄 / 選択解除 / メニュー・モーダルのキャンセル |
 | `Ctrl + B` | ファイルツリーサイドバーの表示/非表示トグル |
