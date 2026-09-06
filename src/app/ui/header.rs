@@ -7,7 +7,7 @@ use cosmic::iced::{Alignment, Length};
 use cosmic::prelude::*;
 use cosmic::widget::{button, container, text, Space};
 
-const ROONEY_ICON_BYTES: &[u8] = include_bytes!("../../../images/Rooney-icon.svg");
+const ROONEY_ICON_BYTES: &[u8] = include_bytes!("../../../images/Rooney-matte-icon.svg");
 
 impl App {
     pub(crate) fn render_header_start(&self) -> Vec<Element<'_, Message>> {

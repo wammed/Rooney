@@ -82,14 +82,19 @@ pub struct App {
     pub(crate) search_input: String,
 }
 
-const ROONEY_ICON_BYTES: &[u8] = include_bytes!("../../images/Rooney-icon.svg");
+const ROONEY_ICON_BYTES: &[u8] = include_bytes!("../../images/Rooney-matte-icon.svg");
 
 fn ensure_system_icons() {
     if let Some(home) = std::env::var_os("HOME") {
         let icon_dir = PathBuf::from(home).join(".local/share/icons/hicolor/scalable/apps");
         let _ = std::fs::create_dir_all(&icon_dir);
 
-        for icon_name in &["rooney.svg", "Rooney-icon.svg", "org.pop_os.CosmicCode.svg"] {
+        for icon_name in &[
+            "rooney.svg",
+            "Rooney-icon.svg",
+            "Rooney-matte-icon.svg",
+            "org.pop_os.CosmicCode.svg",
+        ] {
             let icon_path = icon_dir.join(icon_name);
             let should_write = match std::fs::metadata(&icon_path) {
                 Ok(meta) => meta.len() != ROONEY_ICON_BYTES.len() as u64,

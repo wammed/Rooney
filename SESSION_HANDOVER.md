@@ -235,18 +235,18 @@
   - `test_filename_sanitization_and_path_traversal_guards`, `test_sensitive_file_ai_protection`, `test_atomic_save_and_file_size_limits` を追加。
   - `cargo test`: 30 core tests + 3 ollama tests = **33/33 passed (0 failed)**。
   - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings**。
-### セッション 16: 公式SVGアプリケーショングラフィック（タイトルバー＆ドックアイコン）の完全統合
+### セッション 16: 公式SVGアプリケーショングラフィック（タイトルバー＆ドックアイコン）の完全統合とマット版アイコンへの差し替え
 - **アプリ公式SVGアイコンの組み込みとWayland / COSMIC Dock完全連携**:
   1. **タイトルバー（HeaderBar）へのベクターアイコン組み込み**:
-     - `/images/Rooney-icon.svg`（46,323 bytes）を `include_bytes!` でコンパイル時にバイナリ直接埋め込み。
+     - `/images/Rooney-matte-icon.svg`（25,259 bytes）を `include_bytes!` でコンパイル時にバイナリ直接埋め込み。
      - `cosmic::iced::widget::svg::Handle::from_memory` を用い、`cosmic::widget::svg` ウィジェットとして先頭にレンダリング（22px x 22px、パディング [0, 5]）。
      - ドロップダウンメニュー（`File ▾`, `Edit ▾`, `View ▾`, `AI ▾`）のオーバーレイ `menu_x` 座標をアイコン幅に合わせて均等シフト（`44.0`, `128.0`, `212.0`, `300.0`）し、ボタン真下への正確な展開を維持。
   2. **Wayland `APP_ID` と COSMIC Dock / ランチャーの完全一致**:
      - `App::APP_ID` を `"org.pop_os.CosmicCode"` から `"rooney"` へ更新。
      - `~/.local/share/applications/rooney.desktop` の `StartupWMClass=rooneyk` の誤記を `rooney` に修正し、`Icon=rooney` を設定。
-     - `App::init()` 起動時に `ensure_system_icons()` を実行。`~/.local/share/icons/hicolor/scalable/apps/` 内の `rooney.svg`, `Rooney-icon.svg`, `org.pop_os.CosmicCode.svg` を自動生成・同期。COSMIC Dockやアプリ一覧、Alt+Tabスイッチャーで鮮明な公式ベクターアイコンが表示されるように統合。
+     - `App::init()` 起動時に `ensure_system_icons()` を実行。`~/.local/share/icons/hicolor/scalable/apps/` 内の `rooney.svg`, `Rooney-icon.svg`, `Rooney-matte-icon.svg`, `org.pop_os.CosmicCode.svg` を自動生成・同期。COSMIC Dockやアプリ一覧、Alt+Tabスイッチャーで鮮明な公式マット版ベクターアイコンが表示されるように統合。
 - **テスト・静的解析の完全遵守**:
-  - `test_rooney_icon_integration` を追加。
+  - `test_rooney_icon_integration` を更新（25,259 bytes のマット版 SVG の検証）。
   - `cargo test`: 31 core tests + 3 ollama tests = **34/34 passed (0 failed)**。
   - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings**。
   - `cargo build --release`: 最適化リリースバイナリのビルド・`~/.local/bin/rooney` への配置完了。
