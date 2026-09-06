@@ -1,4 +1,4 @@
-# CosmicCode (Rooney) 🚀
+# Rooney 🚀
 **Cosmic-Native Lightweight Code & Markdown Editor**
 
 [日本語](#日本語) | [English](#english)
