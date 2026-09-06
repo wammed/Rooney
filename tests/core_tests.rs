@@ -180,3 +180,130 @@ fn test_file_tree_navigation() {
     tree.set_root(original_root.clone());
     assert_eq!(tree.root, original_root);
 }
+
+#[test]
+fn test_app_config_roundtrip() {
+    use rooney::config::AppConfig;
+
+    let mut config = AppConfig::default();
+    assert_eq!(config.theme, ThemeId::TokyoNight);
+    assert_eq!(config.font_size, 14.0);
+
+    config.theme = ThemeId::MatrixGreen;
+    config.font_size = 18.0;
+    config.opacity = 0.85;
+    config.dimming = 0.25;
+    config.split_layout = "Split".to_string();
+    config.file_tree_visible = false;
+    config.ai_enabled = true;
+    config.ai_model = "deepseek-coder:6.7b".to_string();
+
+    let toml_str = toml::to_string_pretty(&config).unwrap();
+    let loaded: AppConfig = toml::from_str(&toml_str).unwrap();
+
+    assert_eq!(loaded.theme, ThemeId::MatrixGreen);
+    assert_eq!(loaded.font_size, 18.0);
+    assert_eq!(loaded.opacity, 0.85);
+    assert_eq!(loaded.dimming, 0.25);
+    assert_eq!(loaded.split_layout, "Split");
+    assert!(!loaded.file_tree_visible);
+    assert!(loaded.ai_enabled);
+    assert_eq!(loaded.ai_model, "deepseek-coder:6.7b");
+}
+
+#[test]
+fn test_char_advance_ascii_and_cjk() {
+    use rooney::ui::canvas_editor::EditorCanvas;
+
+    let font_size = 14.0;
+    let ascii_advance = EditorCanvas::char_advance('a', font_size);
+    let cjk_advance_hiragana = EditorCanvas::char_advance('あ', font_size);
+    let cjk_advance_kanji = EditorCanvas::char_advance('漢', font_size);
+    let tab_advance = EditorCanvas::char_advance('\t', font_size);
+
+    // ASCII advance should be exactly 0.60 * font_size
+    assert!((ascii_advance - 14.0 * 0.60).abs() < 1e-4);
+
+    // CJK characters must be exactly 1.0 * font_size (not 1.2 * font_size or 2 * 8.4)
+    assert!((cjk_advance_hiragana - 14.0).abs() < 1e-4);
+    assert!((cjk_advance_kanji - 14.0).abs() < 1e-4);
+
+    // Tab advance is 4 spaces
+    assert!((tab_advance - 4.0 * 14.0 * 0.60).abs() < 1e-4);
+}
+
+#[test]
+fn test_buffer_selection_and_deletion() {
+    let mut buf = TextBuffer::new("Hello Beautiful World");
+    
+    // Select "Beautiful "
+    buf.selection_anchor = Some((0, 6));
+    buf.cursor = (0, 16);
+    assert_eq!(buf.selected_text(), Some("Beautiful ".to_string()));
+
+    // Delete selection
+    assert!(buf.delete_selection());
+    assert_eq!(buf.full_text(), "Hello World");
+    assert_eq!(buf.cursor, (0, 6));
+    assert_eq!(buf.selection_anchor, None);
+
+    // Select all
+    buf.select_all();
+    assert_eq!(buf.selection_anchor, Some((0, 0)));
+    assert_eq!(buf.cursor, (0, 11));
+    assert_eq!(buf.selected_text(), Some("Hello World".to_string()));
+}
+
+#[test]
+fn test_numpad_key_resolution() {
+    use cosmic::iced::keyboard::key::{Code, Physical};
+    use rooney::editor::resolve_numpad_char;
+
+    // Test that numpad codes map to their respective digits and operators
+    let numpad_mappings = [
+        (Code::Numpad0, "0"),
+        (Code::Numpad1, "1"),
+        (Code::Numpad2, "2"),
+        (Code::Numpad3, "3"),
+        (Code::Numpad4, "4"),
+        (Code::Numpad5, "5"),
+        (Code::Numpad6, "6"),
+        (Code::Numpad7, "7"),
+        (Code::Numpad8, "8"),
+        (Code::Numpad9, "9"),
+        (Code::NumpadAdd, "+"),
+        (Code::NumpadSubtract, "-"),
+        (Code::NumpadMultiply, "*"),
+        (Code::NumpadDivide, "/"),
+        (Code::NumpadDecimal, "."),
+        (Code::NumpadComma, ","),
+        (Code::NumpadEqual, "="),
+    ];
+
+    for (code, expected) in numpad_mappings {
+        let physical = Physical::Code(code);
+        let resolved = resolve_numpad_char(&physical);
+        assert_eq!(resolved, Some(expected));
+    }
+
+    // Verify non-numpad keys (e.g. dedicated navigation, digits, letters) do not match
+    let non_numpad = [
+        Code::ArrowLeft,
+        Code::ArrowRight,
+        Code::ArrowUp,
+        Code::ArrowDown,
+        Code::Home,
+        Code::End,
+        Code::PageUp,
+        Code::PageDown,
+        Code::Delete,
+        Code::Digit1,
+        Code::KeyA,
+    ];
+    for code in non_numpad {
+        let physical = Physical::Code(code);
+        assert_eq!(resolve_numpad_char(&physical), None);
+    }
+}
+
+

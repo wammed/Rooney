@@ -29,11 +29,11 @@ Pop!_OS COSMIC DE（libcosmic / Wayland）ネイティブの超高速・軽量�
    - アクティブペインの視覚的強調（アクセントカラー枠・タブ強調）、独立したカーソル表示。
    - 画面端でのソフト折り返し（Soft-wrap）およびペイン境界での厳密なクリッピングにより、文字のはみ出しを防止。
 
-2. **日本語入力（IME）ネイティブ対応**
+2. **日本語入力（IME）ネイティブ対応 & サブピクセル正確なカーソル位置**
    - Wayland text-input プロトコル（libcosmic InputMethod）による Fcitx5 / IBus 完全対応。
    - インライン変換（Preedit）のプレビュー表示および確定コミット処理。
    - `Ctrl + Space` は IME のオン/オフ切り替え専用に解放（AI補完ショートカットと競合しません）。
-   - `unicode-width` による全角・半角・CJK文字の正確な表示幅・カーソル位置計算。
+   - **サブピクセル高精度カーソル位置計算**: 等幅フォントの半角文字アドバンス（`font_size * 0.60`）と全角/CJK文字アドバンス（`font_size * 1.0`）の厳密な実寸幅を個別合算。日本語を何文字入力してもカーソル位置が前方にずれることなく、文字直下に寸分の狂いなく吸い付きます。
 
 3. **柔軟なファイル管理 & ネイティブファイルダイアログ**
    - **新規ファイル作成（`Ctrl + N` / ` New`）**:
@@ -71,26 +71,42 @@ Pop!_OS COSMIC DE（libcosmic / Wayland）ネイティブの超高速・軽量�
    - `Tab` キーで即座に確定挿入、`Esc` で破棄。
    - `Ctrl + I` または `Alt + Enter` で手動生成トリガー。
 
+8. **設定の自動永続化 (`~/.config/rooney/config.toml`)**
+   - 選択したテーマ、フォント、フォントサイズ、Wayland透明度、背景ディミング、分割ペイン配置（Single/Split）、ファイルツリーの開閉状態、AI有効化/モデルを `~/.config/rooney/config.toml` に自動保存。
+   - アプリを再起動しても直前の作業環境が完全復元されます。
+
+9. **エディタ内編集メニュー & マウス操作（ドラッグ選択・右クリック・Wayland クリップボード）**
+   - **ヘッダー編集メニュー**: ヘッダーの「`󰧑 Edit ▾`」ボタンから、元に戻す、やり直し、切り取り、コピー、貼り付け、全選択を素早く操作。
+   - **右クリックコンテキストメニュー**: エディタ上で右クリックすると、カーソル位置にコンテキストメニュー（Copy, Cut, Paste, Select All, Undo, Redo）をポップアップ表示。
+   - **マウスドラッグ選択**: マウスで直感的にテキスト範囲を選択（視覚的ハイライト表示）。
+   - **Wayland システムクリップボード連携**: `Ctrl + C`、`Ctrl + X`、`Ctrl + V`、右クリックメニュー、Editメニューすべてでシステムクリップボードとリアルタイム同期。
+
 ---
 
-### キーボードショートカット ⌨️
+### キーボードショートカット & マウス操作 ⌨️
 
-| ショートカット | 動作 |
+| 操作 / ショートカット | 動作 |
 |---|---|
 | `Ctrl + N` | 新規ファイル作成（ファイル名入力ダイアログ） |
 | `Ctrl + O` | ファイルを開く（システムファイルダイアログ） |
 | `Ctrl + Shift + O` | フォルダを開く（ツリールート変更） |
 | `Ctrl + S` | ファイル保存（未命名バッファは名前を付けて保存） |
 | `Ctrl + Shift + S` | 名前を付けて保存（Save As） |
+| `Ctrl + C` | 選択テキストのコピー（システムクリップボード） |
+| `Ctrl + X` | 選択テキストの切り取り（システムクリップボード） |
+| `Ctrl + V` | 貼り付け（システムクリップボードから挿入） |
+| `Ctrl + A` | バッファ全選択 |
+| `Ctrl + Z` | 元に戻す (Undo) |
+| `Ctrl + Y` または `Ctrl + Shift + Z` | やり直す (Redo) |
+| マウス左ドラッグ | テキスト範囲選択（ビジュアルハイライト） |
+| マウス右クリック | コンテキストメニュー表示（Copy, Cut, Paste, Select All, Undo, Redo） |
+| ヘッダー `󰧑 Edit` | 編集ツールバーの表示/非表示切り替え |
 | `Tab` | AI補完の確定挿入 / インデント（4スペース） |
-| `Esc` | AI補完の破棄 / 選択解除 / ダイアログキャンセル |
+| `Esc` | AI補完の破棄 / 選択解除 / メニュー・ダイアログキャンセル |
 | `Ctrl + B` | ファイルツリーサイドバーの表示/非表示 |
 | `Ctrl + \` または `Ctrl + E` | 左右2分割（Split / Single）レイアウト切り替え |
 | `Ctrl + M` | Markdownプレビューの切り替え |
 | `Ctrl + I` または `Alt + Enter` | Local AI FIM 補完の手動トリガー（`Ctrl + Space` は IME 専用に解放） |
-| `Ctrl + Z` | 元に戻す (Undo) |
-| `Ctrl + Y` または `Ctrl + Shift + Z` | やり直す (Redo) |
-| `Ctrl + A` | 全選択 |
 | `A-` / `A+` | フォントサイズの縮小 / 拡大 |
 
 ---
@@ -107,7 +123,7 @@ cargo build --release
 # 実行
 cargo run
 
-# テスト実行 (12テスト)
+# テスト実行 (16テスト)
 cargo test
 ```
 
@@ -130,11 +146,11 @@ Zero LSP overhead and zero heavy child processes: features in-process Tree-sitte
    - Clear visual focus indication with accent borders and active tab highlights.
    - Clean soft-wrapping and bounded layer clipping to prevent text from overflowing across panes.
 
-2. **Native Japanese IME Support**
+2. **Native Japanese IME Support & Sub-Pixel Precise Cursor Alignment**
    - Full support for Wayland text-input protocol (libcosmic InputMethod) supporting Fcitx5 and IBus.
    - Live pre-edit underline preview and commit event handling.
    - `Ctrl + Space` is unmapped from editor shortcuts and dedicated strictly to system IME toggle.
-   - Accurate visual column and cursor positioning for full-width CJK characters via `unicode-width`.
+   - **Sub-Pixel Exact Cursor Calculations**: Calculates advance dynamically per character: half-width monospace glyphs (`font_size * 0.60`) vs. full-width CJK glyphs (`font_size * 1.0`). Eliminates the common caret drift bug where the cursor shifted 1–2 characters ahead during CJK typing.
 
 3. **Arbitrary File Operations & Native Dialogs**
    - **Create New File (`Ctrl + N` / ` New`)**:
@@ -171,26 +187,42 @@ Zero LSP overhead and zero heavy child processes: features in-process Tree-sitte
    - Press `Tab` to accept, `Esc` to dismiss.
    - Trigger suggestions manually with `Ctrl + I` or `Alt + Enter`.
 
+8. **Automatic Configuration Persistence (`~/.config/rooney/config.toml`)**
+   - Theme, font family, font size, Wayland opacity, dimming overlay, dual-pane layout, sidebar visibility, and local AI model settings are automatically persisted to `~/.config/rooney/config.toml`.
+   - Your entire workspace environment is seamlessly restored when relaunching the editor.
+
+9. **Edit Menu & Mouse Clipboard Integration (Selection, Context Menu, Wayland Clipboard)**
+   - **Header Edit Menu**: Quick-access dropdown toolbar for Undo, Redo, Cut, Copy, Paste, and Select All via the header `󰧑 Edit ▾` button.
+   - **Right-Click Context Menu**: Right-click anywhere in the editor to bring up a floating context menu at the mouse cursor.
+   - **Mouse Drag Selection**: Intuitive click-and-drag visual text selection with theme-matched highlighting.
+   - **Wayland System Clipboard**: Full bi-directional integration with the system clipboard via `Ctrl + C`, `Ctrl + X`, `Ctrl + V`, right-click menu, and the header Edit menu.
+
 ---
 
-### Keyboard Shortcuts ⌨️
+### Keyboard Shortcuts & Mouse Operations ⌨️
 
-| Shortcut | Description |
+| Action / Shortcut | Description |
 |---|---|
 | `Ctrl + N` | Create New File (opens filename prompt dialog) |
 | `Ctrl + O` | Open File (native system file chooser) |
 | `Ctrl + Shift + O` | Open Folder (switch file tree root) |
 | `Ctrl + S` | Save File (prompts Save As if buffer is untitled) |
 | `Ctrl + Shift + S` | Save File As |
+| `Ctrl + C` | Copy selected text to system clipboard |
+| `Ctrl + X` | Cut selected text to system clipboard |
+| `Ctrl + V` | Paste from system clipboard |
+| `Ctrl + A` | Select All in active buffer |
+| `Ctrl + Z` | Undo |
+| `Ctrl + Y` or `Ctrl + Shift + Z` | Redo |
+| Mouse Left Drag | Drag-select text with visual highlight |
+| Mouse Right Click | Open context menu (Copy, Cut, Paste, Select All, Undo, Redo) |
+| Header `󰧑 Edit` | Toggle Edit toolbar visibility |
 | `Tab` | Accept AI suggestion / Indent (4 spaces) |
-| `Esc` | Dismiss AI suggestion / Clear selection / Cancel dialog |
+| `Esc` | Dismiss AI suggestion / Clear selection / Cancel dialog & menus |
 | `Ctrl + B` | Toggle File Tree sidebar visibility |
 | `Ctrl + \` or `Ctrl + E` | Toggle Dual-Pane Split / Single layout |
 | `Ctrl + M` | Toggle Markdown Live Preview |
 | `Ctrl + I` or `Alt + Enter` | Manually trigger Local AI FIM (`Ctrl + Space` reserved for IME) |
-| `Ctrl + Z` | Undo |
-| `Ctrl + Y` or `Ctrl + Shift + Z` | Redo |
-| `Ctrl + A` | Select All |
 | `A-` / `A+` | Decrease / Increase Font Size |
 
 ---
@@ -207,7 +239,7 @@ cargo build --release
 # Run locally
 cargo run
 
-# Run unit tests (12 tests)
+# Run unit tests (16 tests)
 cargo test
 ```
 

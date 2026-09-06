@@ -1,5 +1,6 @@
 use crate::ai::{AiStatus, OllamaClient};
-use crate::editor::pane::{EditorPane, PaneId, SplitLayout};
+use crate::config::AppConfig;
+use crate::editor::{resolve_numpad_char, EditorPane, PaneId, SplitLayout};
 use crate::font::FontManager;
 use crate::fs::tree::FileTree;
 use crate::theme::themes::{EditorTheme, ThemeId};
@@ -11,6 +12,7 @@ use cosmic::app::{Core, Task};
 use cosmic::iced::keyboard::{self, Key};
 use cosmic::iced::{Alignment, Length};
 use cosmic::prelude::*;
+use cosmic::iced::widget::stack;
 use cosmic::widget::{button, column, container, dropdown, row, slider, text, text_input, Space};
 use cosmic::{executor, iced};
 use std::path::{Path, PathBuf};
@@ -24,6 +26,7 @@ pub enum Message {
     ToggleSplit,
     SetActivePane(PaneId),
     ClickPane(PaneId, usize, usize),
+    DragSelect(PaneId, usize, usize),
     ScrollPane(PaneId, f32),
     TogglePaneMode(PaneId),
     ToggleMarkdownPreview,
@@ -49,6 +52,17 @@ pub enum Message {
     CancelNewFile,
     BrowseNewFileFolder,
     NewFileFolderSelected(Option<PathBuf>),
+    Copy,
+    Cut,
+    Paste,
+    ClipboardPasted(Option<String>),
+    SelectAll,
+    Undo,
+    Redo,
+    OpenContextMenu(PaneId, f32, f32),
+    CloseContextMenu,
+    ToggleEditMenu,
+    CloseEditMenu,
     ToggleSettings,
     ChangeOpacity(f32),
     ChangeDimming(f32),
@@ -57,6 +71,7 @@ pub enum Message {
 
 pub struct App {
     core: Core,
+    config: AppConfig,
     theme: EditorTheme,
     font_manager: FontManager,
     file_tree: FileTree,
@@ -67,6 +82,8 @@ pub struct App {
     ollama: OllamaClient,
     ai_status: AiStatus,
     show_settings: bool,
+    show_edit_menu: bool,
+    context_menu: Option<(PaneId, f32, f32)>,
     status_msg: Option<String>,
     theme_names: Vec<String>,
     font_names: Vec<String>,
@@ -103,6 +120,23 @@ impl App {
             self.status_msg = Some(format!("Opened {}", pane.file_name));
         }
     }
+
+    pub fn save_config(&mut self) {
+        self.config.theme = self.theme.config.id;
+        self.config.font = self.font_manager.current_font.clone();
+        self.config.font_size = self.font_manager.font_size;
+        self.config.opacity = self.theme.opacity;
+        self.config.dimming = self.theme.dimming;
+        self.config.split_layout = match self.split_layout {
+            SplitLayout::Single => "Single",
+            SplitLayout::Split => "Split",
+        }
+        .to_string();
+        self.config.file_tree_visible = self.file_tree.is_visible;
+        self.config.ai_enabled = self.ollama.is_enabled;
+        self.config.ai_model = self.ollama.active_model.clone();
+        let _ = self.config.save();
+    }
 }
 
 impl cosmic::Application for App {
@@ -121,10 +155,27 @@ impl cosmic::Application for App {
     }
 
     fn init(core: Core, _flags: Self::Flags) -> (Self, Task<Self::Message>) {
+        let config = AppConfig::load();
         let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let file_tree = FileTree::new(&current_dir);
-        let theme = EditorTheme::default();
-        let font_manager = FontManager::new();
+        let mut file_tree = FileTree::new(&current_dir);
+        file_tree.is_visible = config.file_tree_visible;
+
+        let mut theme = EditorTheme::default();
+        theme.set_theme(config.theme);
+        theme.opacity = config.opacity;
+        theme.dimming = config.dimming;
+
+        let mut font_manager = FontManager::new();
+        if font_manager.available_fonts.contains(&config.font) {
+            font_manager.set_font(config.font.clone());
+        }
+        font_manager.set_font_size(config.font_size);
+
+        let split_layout = if config.split_layout == "Single" {
+            SplitLayout::Single
+        } else {
+            SplitLayout::Split
+        };
 
         let mut left_pane = EditorPane::new(PaneId::Left, "Welcome");
         let welcome_content = r#"// CosmicCode (Rooney) - Cosmic-Native Lightweight Code & Markdown Editor
@@ -161,21 +212,31 @@ A lightweight, fast, in-process code and markdown editor.
         let theme_names: Vec<String> = ThemeId::ALL.iter().map(|t| t.display_name().to_string()).collect();
         let font_names = font_manager.available_fonts.clone();
 
-        let ollama = OllamaClient::default();
-        let ai_status = AiStatus::Ready(ollama.active_model.clone());
+        let mut ollama = OllamaClient::default();
+        ollama.is_enabled = config.ai_enabled;
+        ollama.active_model = config.ai_model.clone();
+
+        let ai_status = if ollama.is_enabled {
+            AiStatus::Ready(ollama.active_model.clone())
+        } else {
+            AiStatus::Disabled
+        };
 
         let mut app = Self {
             core,
+            config,
             theme,
             font_manager,
             file_tree,
-            split_layout: SplitLayout::Split,
+            split_layout,
             left_pane,
             right_pane,
             active_pane: PaneId::Left,
             ollama,
             ai_status,
             show_settings: false,
+            show_edit_menu: false,
+            context_menu: None,
             status_msg: Some("CosmicCode Ready".to_string()),
             theme_names,
             font_names,
@@ -265,13 +326,20 @@ A lightweight, fast, in-process code and markdown editor.
                         key,
                         modifiers,
                         text,
+                        physical_key,
                         ..
                     }) => {
                         self._last_key_press = Instant::now();
 
-                        // Modal key handling: Enter confirms, Escape cancels
+                        // Modal key handling: Enter (including Numpad Enter) confirms, Escape cancels
                         if self.show_new_file_modal {
-                            if matches!(&key, Key::Named(keyboard::key::Named::Enter)) {
+                            let is_enter = matches!(&key, Key::Named(keyboard::key::Named::Enter))
+                                || matches!(&physical_key, cosmic::iced::keyboard::key::Physical::Code(cosmic::iced::keyboard::key::Code::NumpadEnter))
+                                || matches!(&key, Key::Character(c) if c == "\r" || c == "\n")
+                                || text.as_deref() == Some("\r")
+                                || text.as_deref() == Some("\n");
+
+                            if is_enter {
                                 return self.update(Message::ConfirmNewFile);
                             }
                             if matches!(&key, Key::Named(keyboard::key::Named::Escape)) {
@@ -332,25 +400,35 @@ A lightweight, fast, in-process code and markdown editor.
                     // Shortcut: Ctrl + Z (Undo)
                     if modifiers.control() && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("z")) {
                         if modifiers.shift() {
-                            self.current_pane_mut().buffer.redo();
+                            return self.update(Message::Redo);
                         } else {
-                            self.current_pane_mut().buffer.undo();
+                            return self.update(Message::Undo);
                         }
-                        self.current_pane_mut().on_content_changed();
-                        return Task::none();
                     }
 
                     // Shortcut: Ctrl + Y (Redo)
                     if modifiers.control() && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("y")) {
-                        self.current_pane_mut().buffer.redo();
-                        self.current_pane_mut().on_content_changed();
-                        return Task::none();
+                        return self.update(Message::Redo);
                     }
 
                     // Shortcut: Ctrl + A (Select All)
                     if modifiers.control() && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("a")) {
-                        self.current_pane_mut().buffer.select_all();
-                        return Task::none();
+                        return self.update(Message::SelectAll);
+                    }
+
+                    // Shortcut: Ctrl + C (Copy)
+                    if modifiers.control() && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("c")) {
+                        return self.update(Message::Copy);
+                    }
+
+                    // Shortcut: Ctrl + X (Cut)
+                    if modifiers.control() && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("x")) {
+                        return self.update(Message::Cut);
+                    }
+
+                    // Shortcut: Ctrl + V (Paste)
+                    if modifiers.control() && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("v")) {
+                        return self.update(Message::Paste);
                     }
 
                     // Tab key
@@ -368,6 +446,14 @@ A lightweight, fast, in-process code and markdown editor.
 
                     // Escape key
                     if matches!(&key, Key::Named(keyboard::key::Named::Escape)) {
+                        if self.context_menu.is_some() {
+                            self.context_menu = None;
+                            return Task::none();
+                        }
+                        if self.show_edit_menu {
+                            self.show_edit_menu = false;
+                            return Task::none();
+                        }
                         let pane = self.current_pane_mut();
                         if pane.preedit.is_some() {
                             pane.preedit = None;
@@ -390,6 +476,22 @@ A lightweight, fast, in-process code and markdown editor.
                         return Task::none();
                     }
 
+                    // Numpad input: intercept numpad physical keys before Delete and Navigation.
+                    // On Wayland/Linux, when NumLock is not tracked by the client compositor session,
+                    // numpad physical keys emit keysyms like Delete (NumpadDecimal), ArrowLeft (Numpad4), End (Numpad1), etc.
+                    // Intercepting here ensures 0-9 and operators always type characters in direct English input mode.
+                    if !modifiers.control() && !modifiers.alt() {
+                        if let Some(num_str) = resolve_numpad_char(&physical_key) {
+                            let pane = self.current_pane_mut();
+                            if pane.preedit.is_none() {
+                                pane.clear_ghost_text();
+                                pane.buffer.insert_str(num_str);
+                                pane.on_content_changed();
+                                return Task::none();
+                            }
+                        }
+                    }
+
                     // Delete
                     if matches!(&key, Key::Named(keyboard::key::Named::Delete)) {
                         let pane = self.current_pane_mut();
@@ -402,8 +504,15 @@ A lightweight, fast, in-process code and markdown editor.
                         return Task::none();
                     }
 
-                    // Enter
-                    if matches!(&key, Key::Named(keyboard::key::Named::Enter)) {
+                    // Enter (including Numpad Enter)
+                    let is_enter = matches!(&key, Key::Named(keyboard::key::Named::Enter))
+                        || matches!(&physical_key, cosmic::iced::keyboard::key::Physical::Code(cosmic::iced::keyboard::key::Code::NumpadEnter))
+                        || matches!(&key, Key::Character(c) if c == "\r" || c == "\n")
+                        || text.as_deref() == Some("\r")
+                        || text.as_deref() == Some("\n")
+                        || text.as_deref() == Some("\r\n");
+
+                    if is_enter {
                         if self.last_ime_commit.elapsed() < Duration::from_millis(100) {
                             return Task::none();
                         }
@@ -417,7 +526,7 @@ A lightweight, fast, in-process code and markdown editor.
                         return Task::none();
                     }
 
-                    // Arrow navigation
+                    // Navigation & Numpad navigation
                     let shift = modifiers.shift();
                     if matches!(&key, Key::Named(keyboard::key::Named::ArrowLeft)) {
                         let pane = self.current_pane_mut();
@@ -473,19 +582,52 @@ A lightweight, fast, in-process code and markdown editor.
                         pane.buffer.move_line_end(shift);
                         return Task::none();
                     }
+                    if matches!(&key, Key::Named(keyboard::key::Named::PageUp)) {
+                        let pane = self.current_pane_mut();
+                        if pane.preedit.is_some() {
+                            return Task::none();
+                        }
+                        pane.clear_ghost_text();
+                        for _ in 0..20 {
+                            pane.buffer.move_up(shift);
+                        }
+                        return Task::none();
+                    }
+                    if matches!(&key, Key::Named(keyboard::key::Named::PageDown)) {
+                        let pane = self.current_pane_mut();
+                        if pane.preedit.is_some() {
+                            return Task::none();
+                        }
+                        pane.clear_ghost_text();
+                        for _ in 0..20 {
+                            pane.buffer.move_down(shift);
+                        }
+                        return Task::none();
+                    }
 
-                    // Regular Character Input
+                    // Regular Character Input & Numpad Numbers/Operators fallback
                     if !modifiers.control() && !modifiers.alt() {
-                        if let Some(t) = text {
-                            let s = t.as_str();
-                            if !s.is_empty() && !s.chars().all(|c| c.is_control()) {
-                                let pane = self.current_pane_mut();
-                                if pane.preedit.is_none() {
-                                    pane.clear_ghost_text();
-                                    pane.buffer.insert_str(s);
-                                    pane.on_content_changed();
-                                    return Task::none();
+                        let input_str: Option<String> = text
+                            .as_deref()
+                            .filter(|s| !s.is_empty() && !s.chars().all(|c| c.is_control()))
+                            .map(|s| s.to_string())
+                            .or_else(|| {
+                                if let Key::Character(ref c) = key {
+                                    let s = c.as_str();
+                                    if !s.is_empty() && !s.chars().all(|c| c.is_control()) {
+                                        return Some(s.to_string());
+                                    }
                                 }
+                                resolve_numpad_char(&physical_key).map(|s| s.to_string())
+                            });
+
+                        if let Some(s) = input_str {
+                            let pane = self.current_pane_mut();
+                            if pane.preedit.is_none() {
+                                pane.clear_ghost_text();
+                                pane.buffer.insert_str(&s);
+                                pane.on_content_changed();
+                                return Task::none();
                             }
                         }
                     }
@@ -497,12 +639,119 @@ A lightweight, fast, in-process code and markdown editor.
 
             Message::ClickPane(pane_id, line, col) => {
                 self.active_pane = pane_id;
+                self.context_menu = None;
+                self.show_edit_menu = false;
                 let pane = self.current_pane_mut();
                 pane.clear_ghost_text();
                 pane.preedit = None;
                 pane.buffer.cursor = (line, col);
                 pane.buffer.clamp_cursor();
                 pane.buffer.selection_anchor = None;
+                Task::none()
+            }
+
+            Message::DragSelect(pane_id, line, col) => {
+                self.active_pane = pane_id;
+                let pane = self.current_pane_mut();
+                if pane.buffer.selection_anchor.is_none() {
+                    pane.buffer.selection_anchor = Some(pane.buffer.cursor);
+                }
+                pane.buffer.cursor = (line, col);
+                pane.buffer.clamp_cursor();
+                Task::none()
+            }
+
+            Message::Copy => {
+                self.context_menu = None;
+                self.show_edit_menu = false;
+                if let Some(selected) = self.current_pane().buffer.selected_text() {
+                    let count = selected.chars().count();
+                    self.status_msg = Some(format!("Copied {} chars", count));
+                    return cosmic::iced::clipboard::write(selected);
+                }
+                Task::none()
+            }
+
+            Message::Cut => {
+                self.context_menu = None;
+                self.show_edit_menu = false;
+                if let Some(selected) = self.current_pane().buffer.selected_text() {
+                    let pane = self.current_pane_mut();
+                    let count = selected.chars().count();
+                    pane.buffer.delete_selection();
+                    pane.on_content_changed();
+                    self.status_msg = Some(format!("Cut {} chars", count));
+                    return cosmic::iced::clipboard::write(selected);
+                }
+                Task::none()
+            }
+
+            Message::Paste => {
+                self.context_menu = None;
+                self.show_edit_menu = false;
+                cosmic::iced::clipboard::read()
+                    .map(|opt| cosmic::Action::App(Message::ClipboardPasted(opt)))
+            }
+
+            Message::ClipboardPasted(text_opt) => {
+                if let Some(text) = text_opt {
+                    if !text.is_empty() {
+                        let count = text.chars().count();
+                        let pane = self.current_pane_mut();
+                        pane.clear_ghost_text();
+                        pane.buffer.delete_selection();
+                        pane.buffer.insert_str(&text);
+                        pane.on_content_changed();
+                        self.status_msg = Some(format!("Pasted {} chars", count));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::SelectAll => {
+                self.context_menu = None;
+                self.show_edit_menu = false;
+                self.current_pane_mut().buffer.select_all();
+                Task::none()
+            }
+
+            Message::Undo => {
+                self.context_menu = None;
+                self.show_edit_menu = false;
+                self.current_pane_mut().buffer.undo();
+                self.current_pane_mut().on_content_changed();
+                Task::none()
+            }
+
+            Message::Redo => {
+                self.context_menu = None;
+                self.show_edit_menu = false;
+                self.current_pane_mut().buffer.redo();
+                self.current_pane_mut().on_content_changed();
+                Task::none()
+            }
+
+            Message::OpenContextMenu(pane_id, x, y) => {
+                self.active_pane = pane_id;
+                self.context_menu = Some((pane_id, x, y));
+                Task::none()
+            }
+
+            Message::CloseContextMenu => {
+                self.context_menu = None;
+                Task::none()
+            }
+
+            Message::ToggleEditMenu => {
+                self.show_edit_menu = !self.show_edit_menu;
+                if self.show_edit_menu {
+                    self.context_menu = None;
+                }
+                Task::none()
+            }
+
+            Message::CloseEditMenu => {
+                self.show_edit_menu = false;
                 Task::none()
             }
 
@@ -545,6 +794,7 @@ A lightweight, fast, in-process code and markdown editor.
                 }
                 FileTreeMessage::ToggleVisibility => {
                     self.file_tree.is_visible = !self.file_tree.is_visible;
+                    self.save_config();
                     Task::none()
                 }
                 FileTreeMessage::OpenFolder => self.update(Message::OpenFolderPrompt),
@@ -577,6 +827,7 @@ A lightweight, fast, in-process code and markdown editor.
                         "Single Pane"
                     }
                 ));
+                self.save_config();
                 Task::none()
             }
 
@@ -599,6 +850,7 @@ A lightweight, fast, in-process code and markdown editor.
                 if let Some(&id) = ThemeId::ALL.get(index) {
                     self.theme.set_theme(id);
                     self.status_msg = Some(format!("Theme: {}", id.display_name()));
+                    self.save_config();
                 }
                 Task::none()
             }
@@ -607,6 +859,7 @@ A lightweight, fast, in-process code and markdown editor.
                 if let Some(font) = self.font_names.get(index) {
                     self.font_manager.set_font(font.clone());
                     self.status_msg = Some(format!("Font: {}", font));
+                    self.save_config();
                 }
                 Task::none()
             }
@@ -614,12 +867,14 @@ A lightweight, fast, in-process code and markdown editor.
             Message::IncreaseFontSize => {
                 let s = self.font_manager.font_size + 1.0;
                 self.font_manager.set_font_size(s);
+                self.save_config();
                 Task::none()
             }
 
             Message::DecreaseFontSize => {
                 let s = self.font_manager.font_size - 1.0;
                 self.font_manager.set_font_size(s);
+                self.save_config();
                 Task::none()
             }
 
@@ -635,6 +890,7 @@ A lightweight, fast, in-process code and markdown editor.
                 } else {
                     "Local AI FIM disabled".into()
                 });
+                self.save_config();
                 Task::none()
             }
 
@@ -706,6 +962,7 @@ A lightweight, fast, in-process code and markdown editor.
                     self.ollama.active_model = m.clone();
                     self.ai_status = AiStatus::Ready(m.clone());
                     self.status_msg = Some(format!("AI Model: {}", m));
+                    self.save_config();
                 }
                 Task::none()
             }
@@ -884,11 +1141,13 @@ A lightweight, fast, in-process code and markdown editor.
 
             Message::ChangeOpacity(val) => {
                 self.theme.opacity = val;
+                self.save_config();
                 Task::none()
             }
 
             Message::ChangeDimming(val) => {
                 self.theme.dimming = val;
+                self.save_config();
                 Task::none()
             }
 
@@ -916,6 +1175,14 @@ A lightweight, fast, in-process code and markdown editor.
             button::text("  New ").on_press(Message::PromptNewFile).into(),
             button::text(" 󰈔 Open ").on_press(Message::OpenFilePrompt).into(),
             button::text(" 󰆓 Save ").on_press(Message::SaveFile).into(),
+
+            button::text(if self.show_edit_menu {
+                " 󰧑 Edit ▴"
+            } else {
+                " 󰧑 Edit ▾"
+            })
+            .on_press(Message::ToggleEditMenu)
+            .into(),
 
             button::text(if is_split {
                 "  Single "
@@ -1298,6 +1565,34 @@ A lightweight, fast, in-process code and markdown editor.
                 .into();
         }
 
+        let mut main_col = column::with_capacity(3).width(Length::Fill).height(Length::Fill);
+
+        if self.show_edit_menu {
+            let edit_bar = container(
+                row::with_capacity(9)
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .padding([4, 12])
+                    .push(
+                        text(" 󰧑 Edit: ")
+                            .size(13.0)
+                            .class(cosmic::theme::Text::Color(theme.config.accent)),
+                    )
+                    .push(button::text(" 󰕌 Undo (Ctrl+Z) ").on_press(Message::Undo).padding([4, 8]))
+                    .push(button::text(" 󰑎 Redo (Ctrl+Y) ").on_press(Message::Redo).padding([4, 8]))
+                    .push(button::text(" 󰆐 Cut (Ctrl+X) ").on_press(Message::Cut).padding([4, 8]))
+                    .push(button::text(" 󰆏 Copy (Ctrl+C) ").on_press(Message::Copy).padding([4, 8]))
+                    .push(button::text(" 󰆒 Paste (Ctrl+V) ").on_press(Message::Paste).padding([4, 8]))
+                    .push(button::text(" 󰒅 Select All (Ctrl+A) ").on_press(Message::SelectAll).padding([4, 8]))
+                    .push(cosmic::iced::widget::space::horizontal())
+                    .push(button::text(" ✕ Close ").on_press(Message::CloseEditMenu).padding([3, 8])),
+            )
+            .width(Length::Fill);
+            main_col = main_col.push(edit_bar);
+        }
+
+        main_col = main_col.push(main_row);
+
         // Settings Modal / Overlay (Transparency & Aesthetics)
         if self.show_settings {
             let cur_model_idx = self
@@ -1348,20 +1643,86 @@ A lightweight, fast, in-process code and markdown editor.
             .padding(16)
             .width(Length::Fixed(360.0));
 
-            return column::with_capacity(3)
-                .push(main_row)
-                .push(settings_box)
-                .push(status_container)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into();
+            main_col = main_col.push(settings_box);
         }
 
-        column::with_capacity(2)
-            .push(main_row)
+        let base_view: Element<'_, Self::Message> = column::with_capacity(2)
+            .push(main_col)
             .push(status_container)
             .width(Length::Fill)
             .height(Length::Fill)
-            .into()
+            .into();
+
+        if let Some((_pane_id, cx, cy)) = self.context_menu {
+            let menu_w = 230.0;
+            let menu_h = 280.0;
+            let menu_x = if cx + menu_w > 1750.0 {
+                (cx - menu_w).max(10.0)
+            } else {
+                cx.max(10.0)
+            };
+            let menu_y = if cy + menu_h > 1700.0 {
+                (cy - menu_h).max(10.0)
+            } else {
+                cy.max(10.0)
+            };
+
+            let make_item = |icon: &'static str, label: &'static str, shortcut: &'static str, msg: Message| {
+                let content = row::with_capacity(3)
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .padding([5, 8])
+                    .push(
+                        text(format!("{icon}  {label}"))
+                            .size(13.0)
+                            .class(cosmic::theme::Text::Color(theme.config.fg)),
+                    )
+                    .push(cosmic::iced::widget::space::horizontal())
+                    .push(
+                        text(shortcut)
+                            .size(11.0)
+                            .class(cosmic::theme::Text::Color(theme.config.comment)),
+                    );
+
+                button::custom(content)
+                    .on_press(msg)
+                    .class(cosmic::theme::Button::Transparent)
+                    .width(Length::Fill)
+            };
+
+            let menu_items = column::with_capacity(7)
+                .spacing(2)
+                .padding(4)
+                .push(make_item("󰆏", "Copy", "Ctrl+C", Message::Copy))
+                .push(make_item("󰆐", "Cut", "Ctrl+X", Message::Cut))
+                .push(make_item("󰆒", "Paste", "Ctrl+V", Message::Paste))
+                .push(make_item("󰒅", "Select All", "Ctrl+A", Message::SelectAll))
+                .push(make_item("󰕌", "Undo", "Ctrl+Z", Message::Undo))
+                .push(make_item("󰑎", "Redo", "Ctrl+Y", Message::Redo))
+                .push(make_item("✕", "Close", "Esc", Message::CloseContextMenu));
+
+            let context_menu_box = container(menu_items)
+                .class(cosmic::theme::Container::Card)
+                .padding(4)
+                .width(Length::Fixed(menu_w));
+
+            let positioned_menu = row::with_capacity(2)
+                .push(Space::new().width(Length::Fixed(menu_x)))
+                .push(
+                    column::with_capacity(2)
+                        .push(Space::new().height(Length::Fixed(menu_y)))
+                        .push(context_menu_box),
+                )
+                .width(Length::Fill)
+                .height(Length::Fill);
+
+            let backdrop = button::custom(Space::new().width(Length::Fill).height(Length::Fill))
+                .on_press(Message::CloseContextMenu)
+                .class(cosmic::theme::Button::Transparent);
+
+            stack(vec![base_view, backdrop.into(), positioned_menu.into()]).into()
+        } else {
+            base_view
+        }
     }
 }

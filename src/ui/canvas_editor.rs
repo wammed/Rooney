@@ -38,6 +38,16 @@ struct VisualRow {
 }
 
 impl<'a> EditorCanvas<'a> {
+    pub fn char_advance(c: char, font_size: f32) -> f32 {
+        if c == '\t' {
+            font_size * 0.60 * 4.0
+        } else if c.width().unwrap_or(1) == 2 {
+            font_size * 1.0
+        } else {
+            font_size * 0.60
+        }
+    }
+
     pub fn new(
         pane: &'a EditorPane,
         theme: &'a EditorTheme,
@@ -46,7 +56,7 @@ impl<'a> EditorCanvas<'a> {
         font_size: f32,
     ) -> Self {
         let line_height = (font_size * 1.5).round();
-        let char_width = (font_size * 0.60).round();
+        let char_width = font_size * 0.60;
 
         Self {
             pane,
@@ -68,7 +78,6 @@ impl<'a> EditorCanvas<'a> {
     fn build_visual_rows(&self, bounds_width: f32) -> Vec<VisualRow> {
         let gutter = self.gutter_width();
         let avail_width = (bounds_width - gutter - 24.0).max(120.0);
-        let max_cols = ((avail_width / self.char_width).floor() as usize).max(10);
 
         let mut visual_rows = Vec::new();
         let total_lines = self.pane.buffer.line_count();
@@ -88,12 +97,12 @@ impl<'a> EditorCanvas<'a> {
             }
 
             let mut start = 0;
-            let mut cur_col_width = 0;
+            let mut cur_row_w = 0.0;
             let mut is_first = true;
 
             for (i, &c) in chars.iter().enumerate() {
-                let w = c.width().unwrap_or(1).max(1);
-                if cur_col_width + w > max_cols && i > start {
+                let w = Self::char_advance(c, self.font_size);
+                if cur_row_w + w > avail_width && i > start {
                     visual_rows.push(VisualRow {
                         line_idx,
                         char_start: start,
@@ -101,10 +110,10 @@ impl<'a> EditorCanvas<'a> {
                         is_first_subrow: is_first,
                     });
                     start = i;
-                    cur_col_width = 0;
+                    cur_row_w = 0.0;
                     is_first = false;
                 }
-                cur_col_width += w;
+                cur_row_w += w;
             }
 
             visual_rows.push(VisualRow {
@@ -129,17 +138,47 @@ impl<'a> EditorCanvas<'a> {
                 let line_text = self.pane.buffer.line_text(cursor.0).unwrap_or_default();
                 let chars: Vec<char> = line_text.chars().collect();
 
-                let mut col_offset = 0;
+                let mut pixel_offset = 0.0;
                 for i in row.char_start..cursor.1.min(chars.len()) {
-                    let w = chars[i].width().unwrap_or(1).max(1);
-                    col_offset += w;
+                    pixel_offset += Self::char_advance(chars[i], self.font_size);
                 }
 
-                let x = gutter + 10.0 + (col_offset as f32) * self.char_width - self.pane.scroll_x;
+                let x = gutter + 10.0 + pixel_offset - self.pane.scroll_x;
                 return Some(Point::new(x, y));
             }
         }
         None
+    }
+
+    pub fn pos_to_char_coords(&self, pos: Point, bounds: Rectangle) -> (usize, usize) {
+        let gutter = self.gutter_width();
+        let visual_rows = self.build_visual_rows(bounds.width);
+
+        let clicked_v_idx = ((pos.y + self.pane.scroll_y) / self.line_height).floor() as isize;
+        let clicked_v_idx = clicked_v_idx.max(0) as usize;
+
+        if let Some(row) = visual_rows.get(clicked_v_idx) {
+            let line_text = self.pane.buffer.line_text(row.line_idx).unwrap_or_default();
+            let chars: Vec<char> = line_text.chars().collect();
+            let rel_x = (pos.x - gutter - 10.0 + self.pane.scroll_x).max(0.0);
+
+            let mut acc_width = 0.0;
+            let mut chosen_col = row.char_start;
+
+            for i in row.char_start..row.char_end.min(chars.len()) {
+                let char_pixel_w = Self::char_advance(chars[i], self.font_size);
+                if acc_width + char_pixel_w / 2.0 >= rel_x {
+                    break;
+                }
+                acc_width += char_pixel_w;
+                chosen_col = i + 1;
+            }
+            (row.line_idx, chosen_col)
+        } else if let Some(last) = visual_rows.last() {
+            (last.line_idx, last.char_end)
+        } else {
+            (0, 0)
+        }
     }
 
     pub fn draw_frame(
@@ -206,6 +245,65 @@ impl<'a> EditorCanvas<'a> {
             }
         }
 
+        // 4.1 Draw Selection Highlight (if any text is selected)
+        if let Some(anchor) = self.pane.buffer.selection_anchor {
+            if anchor != buffer.cursor {
+                let (sel_start, sel_end) = if (buffer.cursor.0, buffer.cursor.1) < (anchor.0, anchor.1) {
+                    (buffer.cursor, anchor)
+                } else {
+                    (anchor, buffer.cursor)
+                };
+
+                for (v_idx, row) in visual_rows.iter().enumerate() {
+                    let y = (v_idx as f32) * self.line_height - self.pane.scroll_y;
+                    if y + self.line_height < 0.0 || y > bounds.height {
+                        continue;
+                    }
+
+                    if row.line_idx >= sel_start.0 && row.line_idx <= sel_end.0 {
+                        let line_text = buffer.line_text(row.line_idx).unwrap_or_default();
+                        let chars: Vec<char> = line_text.chars().collect();
+
+                        let line_sel_start = if row.line_idx == sel_start.0 {
+                            sel_start.1.max(row.char_start)
+                        } else {
+                            row.char_start
+                        };
+
+                        let line_sel_end = if row.line_idx == sel_end.0 {
+                            sel_end.1.min(row.char_end)
+                        } else {
+                            row.char_end
+                        };
+
+                        if line_sel_start < line_sel_end {
+                            let mut start_x_offset = 0.0;
+                            for i in row.char_start..line_sel_start.min(chars.len()) {
+                                start_x_offset += Self::char_advance(chars[i], self.font_size);
+                            }
+
+                            let mut sel_w = 0.0;
+                            for i in line_sel_start..line_sel_end.min(chars.len()) {
+                                sel_w += Self::char_advance(chars[i], self.font_size);
+                            }
+
+                            let sel_rect = Rectangle {
+                                x: gutter + 10.0 + start_x_offset - self.pane.scroll_x,
+                                y,
+                                width: sel_w.max(4.0),
+                                height: self.line_height,
+                            };
+                            frame.fill_rectangle(
+                                sel_rect.position(),
+                                sel_rect.size(),
+                                self.theme.config.selection_bg,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         // 5. Draw lines (Gutter and soft-wrapped text)
         for (v_idx, row) in visual_rows.iter().enumerate() {
             let y = (v_idx as f32) * self.line_height - self.pane.scroll_y;
@@ -262,9 +360,9 @@ impl<'a> EditorCanvas<'a> {
                         };
 
                         let segment: String = chars[cur_col..token_end].iter().collect();
-                        let mut seg_cols = 0;
+                        let mut seg_w = 0.0;
                         for ch in chars[cur_col..token_end].iter() {
-                            seg_cols += ch.width().unwrap_or(1).max(1);
+                            seg_w += Self::char_advance(*ch, self.font_size);
                         }
 
                         frame.fill_text(Text {
@@ -276,7 +374,7 @@ impl<'a> EditorCanvas<'a> {
                             ..Default::default()
                         });
 
-                        cur_pixel_x += (seg_cols as f32) * self.char_width;
+                        cur_pixel_x += seg_w;
                         cur_col = token_end;
                     }
                 }
@@ -287,28 +385,17 @@ impl<'a> EditorCanvas<'a> {
         if self.is_focused {
             if let Some(cursor_pt) = self.cursor_screen_pos(bounds) {
                 if cursor_pt.y + self.line_height >= 0.0 && cursor_pt.y <= bounds.height {
-                    let caret_rect = Rectangle {
-                        x: cursor_pt.x,
-                        y: cursor_pt.y + 1.0,
-                        width: 2.0,
-                        height: self.line_height - 2.0,
-                    };
-                    frame.fill_rectangle(
-                        caret_rect.position(),
-                        caret_rect.size(),
-                        self.theme.config.cursor,
-                    );
-
                     // 7. Render IME Preedit text (Composing Japanese string)
                     let mut preedit_offset_x = 0.0;
-                    if let Some((ref preedit_str, _)) = self.pane.preedit {
+                    let mut caret_x = cursor_pt.x;
+
+                    if let Some((ref preedit_str, ref sel)) = self.pane.preedit {
                         if !preedit_str.is_empty() {
-                            let preedit_x = cursor_pt.x + 3.0;
-                            let mut preedit_cols = 0;
+                            let preedit_x = cursor_pt.x;
+                            let mut preedit_w = 0.0;
                             for c in preedit_str.chars() {
-                                preedit_cols += c.width().unwrap_or(1).max(1);
+                                preedit_w += Self::char_advance(c, self.font_size);
                             }
-                            let preedit_w = (preedit_cols as f32) * self.char_width;
 
                             // Highlight underlay for preedit
                             frame.fill_rectangle(
@@ -337,9 +424,28 @@ impl<'a> EditorCanvas<'a> {
                                     .with_width(2.0),
                             );
 
+                            // The caret is placed at the end of the preedit (or selection)
+                            let sel_end = sel.as_ref().map(|r| r.end).unwrap_or(preedit_str.chars().count());
+                            let mut sel_w = 0.0;
+                            for c in preedit_str.chars().take(sel_end) {
+                                sel_w += Self::char_advance(c, self.font_size);
+                            }
+                            caret_x = preedit_x + sel_w;
                             preedit_offset_x = preedit_w + 4.0;
                         }
                     }
+
+                    let caret_rect = Rectangle {
+                        x: caret_x,
+                        y: cursor_pt.y + 1.0,
+                        width: 2.0,
+                        height: self.line_height - 2.0,
+                    };
+                    frame.fill_rectangle(
+                        caret_rect.position(),
+                        caret_rect.size(),
+                        self.theme.config.cursor,
+                    );
 
                     // 8. Draw Local AI FIM Ghost Text (Inline Suggestion)
                     if let Some(ref ghost) = self.pane.ghost_text {
@@ -464,36 +570,7 @@ impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if let Some(pos) = cursor.position_in(bounds) {
                     state.is_dragging = true;
-                    let gutter = self.gutter_width();
-                    let visual_rows = self.build_visual_rows(bounds.width);
-
-                    let clicked_v_idx = ((pos.y + self.pane.scroll_y) / self.line_height).floor() as isize;
-                    let clicked_v_idx = clicked_v_idx.max(0) as usize;
-
-                    let (target_line, target_col) = if let Some(row) = visual_rows.get(clicked_v_idx) {
-                        let line_text = self.pane.buffer.line_text(row.line_idx).unwrap_or_default();
-                        let chars: Vec<char> = line_text.chars().collect();
-                        let rel_x = (pos.x - gutter - 10.0 + self.pane.scroll_x).max(0.0);
-
-                        let mut acc_width = 0.0;
-                        let mut chosen_col = row.char_start;
-
-                        for i in row.char_start..row.char_end.min(chars.len()) {
-                            let w = chars[i].width().unwrap_or(1).max(1);
-                            let char_pixel_w = (w as f32) * self.char_width;
-                            if acc_width + char_pixel_w / 2.0 >= rel_x {
-                                break;
-                            }
-                            acc_width += char_pixel_w;
-                            chosen_col = i + 1;
-                        }
-                        (row.line_idx, chosen_col)
-                    } else if let Some(last) = visual_rows.last() {
-                        (last.line_idx, last.char_end)
-                    } else {
-                        (0, 0)
-                    };
-
+                    let (target_line, target_col) = self.pos_to_char_coords(pos, bounds);
                     shell.publish(Message::ClickPane(
                         self.pane.id,
                         target_line,
@@ -503,8 +580,37 @@ impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
                 }
             }
 
+            Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                if state.is_dragging {
+                    if let Some(pos) = cursor.position_in(bounds) {
+                        let (line, col) = self.pos_to_char_coords(pos, bounds);
+                        shell.publish(Message::DragSelect(self.pane.id, line, col));
+                        shell.capture_event();
+                    }
+                }
+            }
+
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                 state.is_dragging = false;
+            }
+
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
+                if let Some(pos) = cursor.position_in(bounds) {
+                    if self.pane.buffer.selected_text().is_none() {
+                        let (target_line, target_col) = self.pos_to_char_coords(pos, bounds);
+                        shell.publish(Message::ClickPane(
+                            self.pane.id,
+                            target_line,
+                            target_col,
+                        ));
+                    }
+                    shell.publish(Message::OpenContextMenu(
+                        self.pane.id,
+                        bounds.x + pos.x,
+                        bounds.y + pos.y,
+                    ));
+                    shell.capture_event();
+                }
             }
 
             Event::Mouse(mouse::Event::WheelScrolled { delta }) => {

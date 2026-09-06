@@ -78,6 +78,43 @@
 - `README.md` を日本語および英語のバイリンガル仕様に刷新。
 - AI Vibe Coding（Antigravity / Gemini による対話的バイブコーディング）によってゼロから構築されたプロジェクトであることを明記。
 
+### セッション 9〜10: 入力時カーソルずれ解消・設定永続化・編集メニュー・マウスコピペ
+- **課題**:
+  - 入力時にカーソルの位置がおかしい（日本語/全角文字を入力するごとにカーソルが最大2文字分ほど前方にずれる）。
+  - テーマ、フォント、透明度、ペインレイアウトなどの設定がアプリ終了時にリセットされる（設定の永続化）。
+  - エディタ内に一般的な編集メニュー（Undo, Redo, Cut, Copy, Paste, Select All）がない。
+  - マウス操作での範囲選択およびコピー＆ペーストを行いたい。
+- **解決策**:
+  - **カーソル位置ずれ（CJK文字幅ズレ）の根本解決**:
+    - 等幅フォント（JetBrains Mono等）において、ASCII半角文字のアドバンスは `0.60 * font_size`（14px時 約8.4px）だが、CJK全角文字のアドバンスは `1.0 * font_size`（14px時 14.0px）である。
+    - 従来の「全角=半角の2倍（2 × 8.4 = 16.8px または 2 × 8.0 = 16.0px）」という計算では、1文字ごとに約2.8pxの過大評価が発生し、5〜7文字入力すると14〜20px（約2文字分）前方にカーソルが飛び出していた。
+    - `EditorCanvas::char_advance(c, font_size)` を導入し、半角（`font_size * 0.60`）、全角/CJK（`font_size * 1.0`）、タブ（`4.0 * font_size * 0.60`）の正確なサブピクセル幅を算出。
+    - 折り返し計算（`build_visual_rows`）、カーソル位置（`cursor_screen_pos`）、クリック/ドラッグ逆引き（`pos_to_char_coords`）、IME Preedit描画端のすべてで `char_advance` を一貫して適用。入力中のカーソル位置ずれを完全解消。
+  - **設定の永続化 (`~/.config/rooney/config.toml`)**:
+    - `src/config.rs` (`AppConfig`) を新設。
+    - テーマ、フォント、フォントサイズ、Wayland透明度、背景ディミング、分割ペイン配置、ファイルツリー開閉状態、AI有効化、AIモデルを `~/.config/rooney/config.toml` に自動保存・復元。
+    - ユーザーがUI上で設定を変更するたびに `save_config()` が自動実行され、再起動後も直前の作業環境を完全復元。
+  - **エディタ内編集メニュー & 右クリックコンテキストメニュー**:
+    - ヘッダーバーに「`󰧑 Edit ▾`」ボタンを新設。ワンクリックで Undo, Redo, Cut, Copy, Paste, Select All の編集ツールバーを展開。
+    - エディタペイン上のマウス右クリックで、カーソル位置にコンテキストメニューをフロート表示（コピー、切り取り、貼り付け、全選択、元に戻す、やり直し）。
+    - **右クリックメニュー表示崩れの解消**: 従来はコンテナ背景が透過していたため背景のコード文字と重なって乱れていた問題を、`cosmic::theme::Container::Card` による不透明カード背景、クリーンな左右揃え（アイコン/名称 + ショートカットキー）、画面端での位置クランプ、およびメニュー外クリックで即座に閉じる全画面バックドロップによって刷新。
+  - **マウス操作でのドラッグ選択 & Wayland クリップボード完全統合**:
+    - マウス左ドラッグによる自由なテキスト範囲選択と、テーマに調和した半透明の選択ハイライト描画。
+    - `libcosmic` / `iced` の非同期クリップボード API（`clipboard::write`, `clipboard::read`）を統合し、`Ctrl + C`、`Ctrl + X`、`Ctrl + V`、マウス右クリック、Editメニューすべてでシステムクリップボードとシームレスに同期。
+  - **テンキー（Numpad）の入力・操作完全対応（日本語IME時と英字入力時の挙動差の根本解消）**:
+    - **原因究明**:
+      - **日本語IME使用時**: Fcitx5/Mozc等のIMEがコンポジタ側でテンキーを捕捉し、確定テキストを `cosmic::iced::advanced::input_method::Event::Commit(text)` として直接エディタに注入していたため正常に入力できていた。
+      - **英字（直接）入力時**: 入力イベントが `KeyPressed` を通過する。Wayland / Pop!_OS COSMIC 環境ではクライアント側 XKB に NumLock の状態フラグが同期されない場合が多く、クライアントには NumLock オフ状態の Keysym（`Named::ArrowLeft` [4], `ArrowRight` [6], `ArrowUp` [8], `ArrowDown` [2], `Home` [7], `End` [1], `PageUp` [9], `PageDown` [3], `Delete` [.]）として渡されていた。
+      - Rooneyのキー判定順序において、Delete や矢印・Home・End 移動が文字入力判定より**前**にあったため、テンキー数字キーがすべてカーソル移動や削除に奪われていた。
+      - さらに `0` や `5` では `text` が `Some("")`（空文字列）となり、従来の `if let Some(t) = text { if !t.is_empty() { ... } else { None } }` のネストにより `else if physical_key` にフォールバックせず無視されていた。
+    - **解決策**:
+      - `src/editor/mod.rs` に `resolve_numpad_char(physical_key: &Physical) -> Option<&'static str>` を新設。
+      - `app.rs` の `KeyPressed` において、`!modifiers.control() && !modifiers.alt()` の場合、**Delete や矢印・Home・End などのナビゲーション判定よりも前**で `resolve_numpad_char` を評価し、数字および四則演算子記号を直接バッファに挿入するよう変更。
+      - 独立した専用カーソルキー（`ArrowLeft` 等）や専用 `Delete` キーは `resolve_numpad_char` で `None` となるため、移動・削除操作が一切損なわれず完璧に共存。
+      - 通常文字入力フォールバックでも `.filter(!empty).or_else(...)` を採用し、空文字列によるフォールバック握りつぶしを根本排除。
+      - テンキーの **Enter**（`Code::NumpadEnter`）もエディタ改行およびモーダル確定の両方でシームレスに動作。
+      - `tests/core_tests.rs::test_numpad_key_resolution` で 0〜9, +, -, *, /, ., ,, = の正引き、および専用矢印・文字キーの `None` 判定を自動テスト化。全16テスト通過。
+
 ---
 
 ## 3. ファイル構成と役割
@@ -89,10 +126,11 @@ Rooney/
 ├── SESSION_HANDOVER.md      # 本ファイル (次回再開用完全ハンドオーバー)
 ├── src/
 │   ├── main.rs              # アプリ起動エントリーポイント (ウィンドウサイズ 1800x1800 設定)
-│   ├── app.rs               # COSMIC Application 実装、Messageディスパッチ、キーバインド、モーダルUI
+│   ├── app.rs               # COSMIC Application 実装、Messageディスパッチ、キーバインド、モーダル・メニューUI
+│   ├── config.rs            # AppConfig (設定の ~/.config/rooney/config.toml 永続化)
 │   ├── editor/
 │   │   ├── mod.rs
-│   │   ├── buffer.rs        # TextBuffer (Ropeyラッパー、カーソル移動、Undo/Redo、FIM文脈抽出)
+│   │   ├── buffer.rs        # TextBuffer (Ropeyラッパー、カーソル移動、選択、Undo/Redo、FIM文脈抽出)
 │   │   └── pane.rs          # EditorPane (ペイン状態、ファイル読込/保存/SaveAs、言語判別)
 │   ├── syntax/
 │   │   └── mod.rs           # Tree-sitter Highlighter (Rust, Markdown, Python, JS, PlainText)
@@ -104,7 +142,7 @@ Rooney/
 │   │   └── tree.rs          # FileTree (階層スキャン、Nerd Font アイコン、set_root, go_to_parent)
 │   ├── ui/
 │   │   ├── mod.rs
-│   │   ├── canvas_editor.rs # EditorCanvas (cosmic Widget 実装、IME Protocol、境界クリッピング、描画)
+│   │   ├── canvas_editor.rs # EditorCanvas (cosmic Widget 実装、char_advance サブピクセル描画、マウス選択、IME)
 │   │   ├── file_tree_view.rs# view_file_tree (サイドバーUI、// ボタン)
 │   │   └── markdown_view.rs # view_markdown (リッチMarkdownプレビューコンテナ)
 │   ├── theme/
@@ -115,30 +153,36 @@ Rooney/
 │   └── ai/
 │       └── mod.rs           # OllamaClient (FIM補完リクエスト、モデル自動検出)
 └── tests/
-    ├── core_tests.rs        # 10件のユニットテスト (バッファ操作、日本語文字幅、ツリー移動、ファイル保存)
+    ├── core_tests.rs        # 13件のユニットテスト (文字幅・CJKアドバンス、設定永続化、選択削除、ツリー、保存)
     └── ollama_tests.rs      # 2件の統合テスト (Ollama 接続性、FIM生成テスト)
 ```
 
 ---
 
-## 4. キーボードショートカット一覧
+## 4. キーボードショートカット & マウス操作一覧
 
-| ショートカット | 動作 |
+| 操作 / ショートカット | 動作 |
 |---|---|
 | `Ctrl + N` | 新規ファイル作成（ファイル名・パス指定モーダル起動） |
 | `Ctrl + O` | ファイルを開く（XDG Desktop Portal ネイティブダイアログ） |
 | `Ctrl + Shift + O` | フォルダを開く（サイドバーのツリールートを変更） |
 | `Ctrl + S` | ファイル保存（未命名バッファの場合は自動で Save As） |
 | `Ctrl + Shift + S` | 名前を付けて保存（Save As） |
+| `Ctrl + C` | 選択テキストのコピー（Wayland システムクリップボード） |
+| `Ctrl + X` | 選択テキストの切り取り（Wayland システムクリップボード） |
+| `Ctrl + V` | 貼り付け（Wayland システムクリップボードから挿入） |
+| `Ctrl + A` | バッファ全選択 |
+| `Ctrl + Z` | 元に戻す (Undo) |
+| `Ctrl + Y` または `Ctrl + Shift + Z` | やり直す (Redo) |
+| マウス左ドラッグ | テキスト範囲選択（ビジュアルハイライト） |
+| マウス右クリック | コンテキストメニュー表示（Copy, Cut, Paste, Select All, Undo, Redo） |
+| ヘッダー `󰧑 Edit` | 編集ツールバーの表示/非表示切り替え |
 | `Tab` | AI補完（ゴーストテキスト）の確定挿入 / インデント（4スペース） |
-| `Esc` | AI補完の破棄 / 選択解除 / モーダルダイアログのキャンセル |
+| `Esc` | AI補完の破棄 / 選択解除 / メニュー・モーダルのキャンセル |
 | `Ctrl + B` | ファイルツリーサイドバーの表示/非表示トグル |
 | `Ctrl + \` または `Ctrl + E` | 左右2分割（Split / Single）レイアウト切り替え |
 | `Ctrl + M` | Markdownプレビューの切り替え |
 | `Ctrl + I` または `Alt + Enter` | Local AI FIM 補完の手動トリガー（`Ctrl + Space` は IME 専用に解放） |
-| `Ctrl + Z` | 元に戻す (Undo) |
-| `Ctrl + Y` または `Ctrl + Shift + Z` | やり直す (Redo) |
-| `Ctrl + A` | 全選択 |
 | `A-` / `A+` | フォントサイズの縮小 / 拡大 |
 
 ---
@@ -146,7 +190,11 @@ Rooney/
 ## 5. 現在のビルドおよびテスト状態
 
 - `cargo check`: **0 errors, 0 warnings** (通過)
-- `cargo test`: **12/12 passed (0 failed)**
+- `cargo test`: **16/16 passed (0 failed)**
+  - `test_char_advance_ascii_and_cjk` ... ok
+  - `test_numpad_key_resolution` ... ok
+  - `test_app_config_roundtrip` ... ok
+  - `test_buffer_selection_and_deletion` ... ok
   - `test_file_type_icons_nerd_font` ... ok
   - `test_file_tree_scanning` ... ok
   - `test_file_tree_navigation` ... ok
@@ -159,17 +207,16 @@ Rooney/
   - `test_editor_pane_saving` ... ok
   - `test_ollama_connectivity_and_models` ... ok
   - `test_ollama_fim_generation` ... ok
-- `cargo build`: **Clean dev build**
+- `cargo build`: **Clean dev build (Code 0)**
 
 ---
 
 ## 6. 次回再開時の推奨作業・機能拡張案
 
-1. **追加言語の Tree-sitter パーサー拡充**:
-   - 現在は Rust, Markdown, PlainText が稼働中。`tree-sitter-python`, `tree-sitter-javascript`, `tree-sitter-c` などを追加してハイライト精度をさらに強化可能。
-2. **エディタ内検索・置換（`Ctrl + F` / `Ctrl + H`）**:
-   - 簡易検索バーUIを上部または下部にオーバーレイ表示。
-3. **設定の永続化**:
-   - 選択したテーマ、フォント、フォントサイズ、透明度、ディミング値を `~/.config/rooney/config.toml` に自動保存・復元。
-4. **タブ形式のマルチバッファ管理**:
+1. **エディタ内検索・置換（`Ctrl + F` / `Ctrl + H`）**:
+   - 簡易検索・置換バーUIを上部または下部にオーバーレイ表示。
+2. **追加言語の Tree-sitter パーサー拡充**:
+   - `tree-sitter-python`, `tree-sitter-javascript`, `tree-sitter-c` などを追加してハイライト精度をさらに強化可能。
+3. **タブ形式のマルチバッファ管理**:
    - 各ペインで複数のファイルをタブで切り替え可能にする拡張。
+
