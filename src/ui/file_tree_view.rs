@@ -11,6 +11,8 @@ pub enum FileTreeMessage {
     OpenFile(PathBuf),
     Refresh,
     ToggleVisibility,
+    OpenFolder,
+    GoToParent,
 }
 
 pub fn view_file_tree<'a, Message: 'static + Clone>(
@@ -25,21 +27,32 @@ pub fn view_file_tree<'a, Message: 'static + Clone>(
         .root
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("WORKSPACE");
+        .unwrap_or("ROOT");
 
-    let header_row = row::with_capacity(3)
+    let header_row = row::with_capacity(5)
         .push(
-            text::title4(format!("   {}", root_name.to_uppercase()))
+            text::title4(format!("  {}", root_name.to_uppercase()))
                 .size(11.0)
                 .class(cosmic::theme::Text::Color(theme.config.sidebar_fg)),
         )
         .push(cosmic::iced::widget::space::horizontal())
         .push(
+            button::text("")
+                .on_press(on_msg(FileTreeMessage::GoToParent))
+                .padding([2, 5]),
+        )
+        .push(
+            button::text("")
+                .on_press(on_msg(FileTreeMessage::OpenFolder))
+                .padding([2, 5]),
+        )
+        .push(
             button::text("")
                 .on_press(on_msg(FileTreeMessage::Refresh))
-                .padding([2, 6]),
+                .padding([2, 5]),
         )
         .align_y(Alignment::Center)
+        .spacing(4)
         .padding([4, 8]);
 
     col = col.push(header_row);

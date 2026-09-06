@@ -9,10 +9,9 @@ use crate::ui::markdown_view::view_markdown;
 
 use cosmic::app::{Core, Task};
 use cosmic::iced::keyboard::{self, Key};
-use cosmic::iced::widget::canvas::Canvas;
 use cosmic::iced::{Alignment, Length};
 use cosmic::prelude::*;
-use cosmic::widget::{button, column, container, dropdown, row, slider, text, Space};
+use cosmic::widget::{button, column, container, dropdown, row, slider, text, text_input, Space};
 use cosmic::{executor, iced};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -37,8 +36,19 @@ pub enum Message {
     AiFimResult(PaneId, Result<String, String>),
     AiModelsFetched(Result<Vec<String>, String>),
     SelectAiModel(usize),
+    OpenFilePrompt,
+    FileOpened(Option<PathBuf>),
+    OpenFolderPrompt,
+    FolderOpened(Option<PathBuf>),
     SaveFile,
-    NewFile,
+    SaveFileAsPrompt,
+    FileSavedAs(PaneId, Option<PathBuf>),
+    PromptNewFile,
+    NewFileNameChanged(String),
+    ConfirmNewFile,
+    CancelNewFile,
+    BrowseNewFileFolder,
+    NewFileFolderSelected(Option<PathBuf>),
     ToggleSettings,
     ChangeOpacity(f32),
     ChangeDimming(f32),
@@ -62,6 +72,12 @@ pub struct App {
     font_names: Vec<String>,
     ai_request_pending: bool,
     _last_key_press: Instant,
+    last_ime_commit: Instant,
+
+    // New file modal state
+    show_new_file_modal: bool,
+    new_file_name_input: String,
+    new_file_target_dir: PathBuf,
 }
 
 impl App {
@@ -165,6 +181,10 @@ A lightweight, fast, in-process code and markdown editor.
             font_names,
             ai_request_pending: false,
             _last_key_press: Instant::now(),
+            last_ime_commit: Instant::now(),
+            show_new_file_modal: false,
+            new_file_name_input: String::new(),
+            new_file_target_dir: current_dir.clone(),
         };
 
         let readme_path = current_dir.join("README.md");
@@ -212,12 +232,18 @@ A lightweight, fast, in-process code and markdown editor.
                 match event {
                     iced::Event::InputMethod(ime_event) => {
                         match ime_event {
+                            cosmic::iced::advanced::input_method::Event::Opened => {
+                                let pane = self.current_pane_mut();
+                                pane.clear_ghost_text();
+                                pane.preedit = None;
+                            }
                             cosmic::iced::advanced::input_method::Event::Commit(committed_text) => {
                                 let pane = self.current_pane_mut();
                                 pane.clear_ghost_text();
                                 pane.preedit = None;
                                 pane.buffer.insert_str(&committed_text);
                                 pane.on_content_changed();
+                                self.last_ime_commit = Instant::now();
                             }
                             cosmic::iced::advanced::input_method::Event::Preedit(preedit_text, selection) => {
                                 let pane = self.current_pane_mut();
@@ -232,7 +258,6 @@ A lightweight, fast, in-process code and markdown editor.
                                 let pane = self.current_pane_mut();
                                 pane.preedit = None;
                             }
-                            _ => {}
                         }
                         return Task::none();
                     }
@@ -244,10 +269,39 @@ A lightweight, fast, in-process code and markdown editor.
                     }) => {
                         self._last_key_press = Instant::now();
 
-                    // Shortcut: Ctrl + S (Save)
-                    if modifiers.control() && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("s")) {
-                        return self.update(Message::SaveFile);
-                    }
+                        // Modal key handling: Enter confirms, Escape cancels
+                        if self.show_new_file_modal {
+                            if matches!(&key, Key::Named(keyboard::key::Named::Enter)) {
+                                return self.update(Message::ConfirmNewFile);
+                            }
+                            if matches!(&key, Key::Named(keyboard::key::Named::Escape)) {
+                                return self.update(Message::CancelNewFile);
+                            }
+                            return Task::none();
+                        }
+
+                        // Shortcut: Ctrl + N (Create New File Prompt)
+                        if modifiers.control() && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("n")) {
+                            return self.update(Message::PromptNewFile);
+                        }
+
+                        // Shortcut: Ctrl + O / Ctrl + Shift + O (Open File / Open Folder)
+                        if modifiers.control() && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("o")) {
+                            if modifiers.shift() {
+                                return self.update(Message::OpenFolderPrompt);
+                            } else {
+                                return self.update(Message::OpenFilePrompt);
+                            }
+                        }
+
+                        // Shortcut: Ctrl + S / Ctrl + Shift + S (Save / Save As)
+                        if modifiers.control() && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("s")) {
+                            if modifiers.shift() {
+                                return self.update(Message::SaveFileAsPrompt);
+                            } else {
+                                return self.update(Message::SaveFile);
+                            }
+                        }
 
                     // Shortcut: Ctrl + B (Toggle Sidebar File Tree)
                     if modifiers.control() && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("b")) {
@@ -267,10 +321,10 @@ A lightweight, fast, in-process code and markdown editor.
                         return self.update(Message::ToggleMarkdownPreview);
                     }
 
-                    // Shortcut: Ctrl + Space (Trigger AI FIM manually)
-                    if modifiers.control()
-                        && (matches!(&key, Key::Character(c) if c == " ")
-                            || matches!(&key, Key::Named(k) if format!("{k:?}") == "Space"))
+                    // Shortcut: Ctrl + I or Alt + Enter (Trigger AI FIM manually, freeing Ctrl + Space for IME)
+                    if (modifiers.control() && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("i")))
+                        || (modifiers.alt() && matches!(&key, Key::Named(keyboard::key::Named::Enter)))
+                        || (modifiers.alt() && matches!(&key, Key::Character(c) if c == " "))
                     {
                         return self.update(Message::TriggerAiFim);
                     }
@@ -302,6 +356,9 @@ A lightweight, fast, in-process code and markdown editor.
                     // Tab key
                     if matches!(&key, Key::Named(keyboard::key::Named::Tab)) {
                         let pane = self.current_pane_mut();
+                        if pane.preedit.is_some() {
+                            return Task::none();
+                        }
                         if !pane.accept_ghost_text() {
                             pane.buffer.insert_str("    ");
                             pane.on_content_changed();
@@ -312,6 +369,10 @@ A lightweight, fast, in-process code and markdown editor.
                     // Escape key
                     if matches!(&key, Key::Named(keyboard::key::Named::Escape)) {
                         let pane = self.current_pane_mut();
+                        if pane.preedit.is_some() {
+                            pane.preedit = None;
+                            return Task::none();
+                        }
                         pane.clear_ghost_text();
                         pane.buffer.selection_anchor = None;
                         return Task::none();
@@ -320,6 +381,9 @@ A lightweight, fast, in-process code and markdown editor.
                     // Backspace
                     if matches!(&key, Key::Named(keyboard::key::Named::Backspace)) {
                         let pane = self.current_pane_mut();
+                        if pane.preedit.is_some() {
+                            return Task::none();
+                        }
                         pane.clear_ghost_text();
                         pane.buffer.delete_backspace();
                         pane.on_content_changed();
@@ -329,6 +393,9 @@ A lightweight, fast, in-process code and markdown editor.
                     // Delete
                     if matches!(&key, Key::Named(keyboard::key::Named::Delete)) {
                         let pane = self.current_pane_mut();
+                        if pane.preedit.is_some() {
+                            return Task::none();
+                        }
                         pane.clear_ghost_text();
                         pane.buffer.delete_forward();
                         pane.on_content_changed();
@@ -337,7 +404,13 @@ A lightweight, fast, in-process code and markdown editor.
 
                     // Enter
                     if matches!(&key, Key::Named(keyboard::key::Named::Enter)) {
+                        if self.last_ime_commit.elapsed() < Duration::from_millis(100) {
+                            return Task::none();
+                        }
                         let pane = self.current_pane_mut();
+                        if pane.preedit.is_some() {
+                            return Task::none();
+                        }
                         pane.clear_ghost_text();
                         pane.buffer.insert_char('\n');
                         pane.on_content_changed();
@@ -348,36 +421,54 @@ A lightweight, fast, in-process code and markdown editor.
                     let shift = modifiers.shift();
                     if matches!(&key, Key::Named(keyboard::key::Named::ArrowLeft)) {
                         let pane = self.current_pane_mut();
+                        if pane.preedit.is_some() {
+                            return Task::none();
+                        }
                         pane.clear_ghost_text();
                         pane.buffer.move_left(shift);
                         return Task::none();
                     }
                     if matches!(&key, Key::Named(keyboard::key::Named::ArrowRight)) {
                         let pane = self.current_pane_mut();
+                        if pane.preedit.is_some() {
+                            return Task::none();
+                        }
                         pane.clear_ghost_text();
                         pane.buffer.move_right(shift);
                         return Task::none();
                     }
                     if matches!(&key, Key::Named(keyboard::key::Named::ArrowUp)) {
                         let pane = self.current_pane_mut();
+                        if pane.preedit.is_some() {
+                            return Task::none();
+                        }
                         pane.clear_ghost_text();
                         pane.buffer.move_up(shift);
                         return Task::none();
                     }
                     if matches!(&key, Key::Named(keyboard::key::Named::ArrowDown)) {
                         let pane = self.current_pane_mut();
+                        if pane.preedit.is_some() {
+                            return Task::none();
+                        }
                         pane.clear_ghost_text();
                         pane.buffer.move_down(shift);
                         return Task::none();
                     }
                     if matches!(&key, Key::Named(keyboard::key::Named::Home)) {
                         let pane = self.current_pane_mut();
+                        if pane.preedit.is_some() {
+                            return Task::none();
+                        }
                         pane.clear_ghost_text();
                         pane.buffer.move_line_start(shift);
                         return Task::none();
                     }
                     if matches!(&key, Key::Named(keyboard::key::Named::End)) {
                         let pane = self.current_pane_mut();
+                        if pane.preedit.is_some() {
+                            return Task::none();
+                        }
                         pane.clear_ghost_text();
                         pane.buffer.move_line_end(shift);
                         return Task::none();
@@ -454,6 +545,21 @@ A lightweight, fast, in-process code and markdown editor.
                 }
                 FileTreeMessage::ToggleVisibility => {
                     self.file_tree.is_visible = !self.file_tree.is_visible;
+                    Task::none()
+                }
+                FileTreeMessage::OpenFolder => self.update(Message::OpenFolderPrompt),
+                FileTreeMessage::GoToParent => {
+                    if self.file_tree.go_to_parent() {
+                        let name = self
+                            .file_tree
+                            .root
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("ROOT")
+                            .to_string();
+                        self.new_file_target_dir = self.file_tree.root.clone();
+                        self.status_msg = Some(format!("Directory: {name}"));
+                    }
                     Task::none()
                 }
             },
@@ -604,7 +710,57 @@ A lightweight, fast, in-process code and markdown editor.
                 Task::none()
             }
 
+            Message::OpenFilePrompt => Task::perform(
+                async {
+                    rfd::AsyncFileDialog::new()
+                        .set_title("Open File")
+                        .pick_file()
+                        .await
+                        .map(|f| f.path().to_path_buf())
+                },
+                |path| cosmic::Action::App(Message::FileOpened(path)),
+            ),
+
+            Message::FileOpened(path) => {
+                if let Some(path) = path {
+                    self.open_file_in_active_pane(&path);
+                    if path.starts_with(&self.file_tree.root) {
+                        self.file_tree.select(path);
+                    }
+                }
+                Task::none()
+            }
+
+            Message::OpenFolderPrompt => Task::perform(
+                async {
+                    rfd::AsyncFileDialog::new()
+                        .set_title("Open Folder")
+                        .pick_folder()
+                        .await
+                        .map(|f| f.path().to_path_buf())
+                },
+                |path| cosmic::Action::App(Message::FolderOpened(path)),
+            ),
+
+            Message::FolderOpened(path) => {
+                if let Some(dir) = path {
+                    let name = dir
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("ROOT")
+                        .to_string();
+                    self.new_file_target_dir = dir.clone();
+                    self.file_tree.set_root(dir);
+                    self.status_msg = Some(format!("Opened folder: {name}"));
+                }
+                Task::none()
+            }
+
             Message::SaveFile => {
+                let pane = self.current_pane();
+                if pane.file_path.is_none() {
+                    return self.update(Message::SaveFileAsPrompt);
+                }
                 let pane = self.current_pane_mut();
                 if let Err(e) = pane.save_file() {
                     self.status_msg = Some(format!("Save failed: {e}"));
@@ -615,13 +771,109 @@ A lightweight, fast, in-process code and markdown editor.
                 Task::none()
             }
 
-            Message::NewFile => {
-                let pane = self.current_pane_mut();
-                pane.file_path = None;
-                pane.file_name = "Untitled".into();
-                pane.buffer = crate::editor::buffer::TextBuffer::default();
-                pane.on_content_changed();
-                self.status_msg = Some("New file created".into());
+            Message::SaveFileAsPrompt => {
+                let active_pane = self.active_pane;
+                let default_name = self.current_pane().file_name.clone();
+                let starting_dir = self.file_tree.root.clone();
+                Task::perform(
+                    async move {
+                        rfd::AsyncFileDialog::new()
+                            .set_title("Save File As")
+                            .set_directory(&starting_dir)
+                            .set_file_name(&default_name)
+                            .save_file()
+                            .await
+                            .map(|f| f.path().to_path_buf())
+                    },
+                    move |path| cosmic::Action::App(Message::FileSavedAs(active_pane, path)),
+                )
+            }
+
+            Message::FileSavedAs(pane_id, path) => {
+                if let Some(path) = path {
+                    let pane = match pane_id {
+                        PaneId::Left => &mut self.left_pane,
+                        PaneId::Right => &mut self.right_pane,
+                    };
+                    if let Err(e) = pane.save_file_as(&path) {
+                        self.status_msg = Some(format!("Save failed: {e}"));
+                    } else {
+                        self.status_msg = Some(format!("Saved as {}", pane.file_name));
+                        self.file_tree.refresh();
+                        if path.starts_with(&self.file_tree.root) {
+                            self.file_tree.select(path);
+                        }
+                    }
+                }
+                Task::none()
+            }
+
+            Message::PromptNewFile => {
+                self.show_new_file_modal = true;
+                self.new_file_name_input = String::new();
+                self.new_file_target_dir = self.file_tree.root.clone();
+                Task::none()
+            }
+
+            Message::NewFileNameChanged(val) => {
+                self.new_file_name_input = val;
+                Task::none()
+            }
+
+            Message::BrowseNewFileFolder => Task::perform(
+                async {
+                    rfd::AsyncFileDialog::new()
+                        .set_title("Select Folder for New File")
+                        .pick_folder()
+                        .await
+                        .map(|f| f.path().to_path_buf())
+                },
+                |path| cosmic::Action::App(Message::NewFileFolderSelected(path)),
+            ),
+
+            Message::NewFileFolderSelected(path) => {
+                if let Some(dir) = path {
+                    self.new_file_target_dir = dir;
+                }
+                Task::none()
+            }
+
+            Message::ConfirmNewFile => {
+                let raw_name = self.new_file_name_input.trim();
+                if raw_name.is_empty() {
+                    self.status_msg = Some("File name cannot be empty".into());
+                    return Task::none();
+                }
+
+                let target_path = self.new_file_target_dir.join(raw_name);
+                if let Some(parent) = target_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+
+                if !target_path.exists() {
+                    if let Err(e) = std::fs::write(&target_path, "") {
+                        self.status_msg = Some(format!("Failed to create file: {e}"));
+                        return Task::none();
+                    }
+                }
+
+                self.open_file_in_active_pane(&target_path);
+                self.file_tree.refresh();
+                if target_path.starts_with(&self.file_tree.root) {
+                    self.file_tree.select(target_path.clone());
+                }
+                self.show_new_file_modal = false;
+                self.new_file_name_input.clear();
+                self.status_msg = Some(format!(
+                    "Created and opened {}",
+                    self.current_pane().file_name
+                ));
+                Task::none()
+            }
+
+            Message::CancelNewFile => {
+                self.show_new_file_modal = false;
+                self.new_file_name_input.clear();
                 Task::none()
             }
 
@@ -661,7 +913,8 @@ A lightweight, fast, in-process code and markdown editor.
             .on_press(Message::FileTreeMsg(FileTreeMessage::ToggleVisibility))
             .into(),
 
-            button::text("  New ").on_press(Message::NewFile).into(),
+            button::text("  New ").on_press(Message::PromptNewFile).into(),
+            button::text(" 󰈔 Open ").on_press(Message::OpenFilePrompt).into(),
             button::text(" 󰆓 Save ").on_press(Message::SaveFile).into(),
 
             button::text(if is_split {
@@ -743,17 +996,15 @@ A lightweight, fast, in-process code and markdown editor.
                 .into()
             }
         } else {
-            let canvas = Canvas::new(EditorCanvas::new(
+            let editor = EditorCanvas::new(
                 &self.left_pane,
                 theme,
                 self.active_pane == PaneId::Left,
                 font_name,
                 font_size,
-            ))
-            .width(Length::Fill)
-            .height(Length::Fill);
+            );
 
-            container(canvas)
+            container(editor)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
@@ -822,17 +1073,15 @@ A lightweight, fast, in-process code and markdown editor.
                     .into()
                 }
             } else {
-                let canvas = Canvas::new(EditorCanvas::new(
+                let editor = EditorCanvas::new(
                     &self.right_pane,
                     theme,
                     self.active_pane == PaneId::Right,
                     font_name,
                     font_size,
-                ))
-                .width(Length::Fill)
-                .height(Length::Fill);
+                );
 
-                container(canvas)
+                container(editor)
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into()
@@ -972,6 +1221,82 @@ A lightweight, fast, in-process code and markdown editor.
             .padding([4, 12]);
 
         let status_container = container(status_bar).width(Length::Fill);
+
+        // New File Modal / Dialog
+        if self.show_new_file_modal {
+            let dir_display = self.new_file_target_dir.to_string_lossy().to_string();
+            let modal_box = container(
+                column::with_capacity(7)
+                    .spacing(14)
+                    .padding(24)
+                    .push(
+                        row::with_capacity(2)
+                            .push(
+                                text::title3(" Create New File")
+                                    .class(cosmic::theme::Text::Color(theme.config.accent)),
+                            )
+                            .align_y(Alignment::Center),
+                    )
+                    .push(
+                        text("Enter file name (e.g. main.rs, notes.md, src/lib.rs):")
+                            .size(13.0)
+                            .class(cosmic::theme::Text::Color(theme.config.fg)),
+                    )
+                    .push(
+                        text_input("e.g. main.rs", &self.new_file_name_input)
+                            .on_input(Message::NewFileNameChanged)
+                            .on_submit(|_| Message::ConfirmNewFile)
+                            .padding([8, 12])
+                            .size(14.0),
+                    )
+                    .push(
+                        row::with_capacity(3)
+                            .spacing(8)
+                            .align_y(Alignment::Center)
+                            .push(
+                                text(format!(" Target Folder: {}", dir_display))
+                                    .size(12.0)
+                                    .class(cosmic::theme::Text::Color(theme.config.comment)),
+                            )
+                            .push(cosmic::iced::widget::space::horizontal())
+                            .push(
+                                button::text("Change...")
+                                    .on_press(Message::BrowseNewFileFolder)
+                                    .padding([3, 10]),
+                            ),
+                    )
+                    .push(
+                        row::with_capacity(3)
+                            .spacing(12)
+                            .push(cosmic::iced::widget::space::horizontal())
+                            .push(
+                                button::text("Cancel")
+                                    .on_press(Message::CancelNewFile)
+                                    .padding([6, 16]),
+                            )
+                            .push(
+                                button::suggested("Create File")
+                                    .on_press(Message::ConfirmNewFile)
+                                    .padding([6, 16]),
+                            ),
+                    ),
+            )
+            .padding(16)
+            .width(Length::Fixed(520.0));
+
+            let centered_overlay = container(modal_box)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill);
+
+            return column::with_capacity(2)
+                .push(centered_overlay)
+                .push(status_container)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into();
+        }
 
         // Settings Modal / Overlay (Transparency & Aesthetics)
         if self.show_settings {

@@ -1,9 +1,17 @@
 use crate::app::Message;
 use crate::editor::pane::EditorPane;
 use crate::theme::EditorTheme;
+use cosmic::iced::advanced::graphics::geometry::{
+    Frame, Path, Stroke, Text, Renderer as GeometryRenderer,
+};
+use cosmic::iced::widget::canvas::Geometry;
+use cosmic::iced::advanced::layout::{self, Layout};
+use cosmic::iced::advanced::renderer;
+use cosmic::iced::advanced::widget::tree::{self, Tree};
+use cosmic::iced::advanced::{Clipboard, InputMethod, Shell, Widget, Renderer};
+use cosmic::iced::event::Event;
 use cosmic::iced::mouse;
-use cosmic::iced::widget::canvas::{Action, Event, Frame, Geometry, Path, Program, Stroke, Text};
-use cosmic::iced::{Color, Font, Pixels, Point, Rectangle};
+use cosmic::iced::{Color, Element, Font, Length, Pixels, Point, Rectangle, Size, Vector};
 use unicode_width::UnicodeWidthChar;
 
 #[derive(Default)]
@@ -133,85 +141,11 @@ impl<'a> EditorCanvas<'a> {
         }
         None
     }
-}
 
-impl<'a> Program<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
-    type State = CanvasState;
-
-    fn update(
+    pub fn draw_frame(
         &self,
-        state: &mut Self::State,
-        event: &Event,
-        bounds: Rectangle,
-        cursor: mouse::Cursor,
-    ) -> Option<Action<Message>> {
-        match event {
-            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                if let Some(pos) = cursor.position_in(bounds) {
-                    state.is_dragging = true;
-                    let gutter = self.gutter_width();
-                    let visual_rows = self.build_visual_rows(bounds.width);
-
-                    let clicked_v_idx = ((pos.y + self.pane.scroll_y) / self.line_height).floor() as isize;
-                    let clicked_v_idx = clicked_v_idx.max(0) as usize;
-
-                    let (target_line, target_col) = if let Some(row) = visual_rows.get(clicked_v_idx) {
-                        let line_text = self.pane.buffer.line_text(row.line_idx).unwrap_or_default();
-                        let chars: Vec<char> = line_text.chars().collect();
-                        let rel_x = (pos.x - gutter - 10.0 + self.pane.scroll_x).max(0.0);
-
-                        let mut acc_width = 0.0;
-                        let mut chosen_col = row.char_start;
-
-                        for i in row.char_start..row.char_end.min(chars.len()) {
-                            let w = chars[i].width().unwrap_or(1).max(1);
-                            let char_pixel_w = (w as f32) * self.char_width;
-                            if acc_width + char_pixel_w / 2.0 >= rel_x {
-                                break;
-                            }
-                            acc_width += char_pixel_w;
-                            chosen_col = i + 1;
-                        }
-                        (row.line_idx, chosen_col)
-                    } else if let Some(last) = visual_rows.last() {
-                        (last.line_idx, last.char_end)
-                    } else {
-                        (0, 0)
-                    };
-
-                    return Some(Action::publish(Message::ClickPane(
-                        self.pane.id,
-                        target_line,
-                        target_col,
-                    )));
-                }
-                None
-            }
-
-            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
-                state.is_dragging = false;
-                None
-            }
-
-            Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
-                let y_delta = match delta {
-                    mouse::ScrollDelta::Lines { y, .. } => *y * self.line_height * 2.0,
-                    mouse::ScrollDelta::Pixels { y, .. } => *y,
-                };
-                Some(Action::publish(Message::ScrollPane(self.pane.id, -y_delta)))
-            }
-
-            _ => None,
-        }
-    }
-
-    fn draw(
-        &self,
-        _state: &Self::State,
         renderer: &cosmic::Renderer,
-        _theme: &cosmic::Theme,
         bounds: Rectangle,
-        _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
         let gutter = self.gutter_width();
@@ -438,5 +372,187 @@ impl<'a> Program<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> 
         }
 
         vec![frame.into_geometry()]
+    }
+}
+
+impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
+    fn tag(&self) -> tree::Tag {
+        struct Tag<T>(T);
+        tree::Tag::of::<Tag<CanvasState>>()
+    }
+
+    fn state(&self) -> tree::State {
+        tree::State::new(CanvasState::default())
+    }
+
+    fn size(&self) -> Size<Length> {
+        Size {
+            width: Length::Fill,
+            height: Length::Fill,
+        }
+    }
+
+    fn layout(
+        &mut self,
+        _tree: &mut Tree,
+        _renderer: &cosmic::Renderer,
+        limits: &layout::Limits,
+    ) -> layout::Node {
+        layout::atomic(limits, Length::Fill, Length::Fill)
+    }
+
+    fn mouse_interaction(
+        &self,
+        _tree: &Tree,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        _viewport: &Rectangle,
+        _renderer: &cosmic::Renderer,
+    ) -> mouse::Interaction {
+        if cursor.is_over(layout.bounds()) {
+            mouse::Interaction::Text
+        } else {
+            mouse::Interaction::None
+        }
+    }
+
+    fn update(
+        &mut self,
+        tree: &mut Tree,
+        event: &Event,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        _renderer: &cosmic::Renderer,
+        _clipboard: &mut dyn Clipboard,
+        shell: &mut Shell<'_, Message>,
+        _viewport: &Rectangle,
+    ) {
+        let bounds = layout.bounds();
+        let state = tree.state.downcast_mut::<CanvasState>();
+
+        // Enable IME when this editor pane is focused
+        if self.is_focused {
+            let gutter = self.gutter_width();
+            let (cursor_x, cursor_y) = if let Some(pt) = self.cursor_screen_pos(bounds) {
+                (
+                    pt.x.clamp(0.0, bounds.width),
+                    pt.y.clamp(0.0, (bounds.height - self.line_height).max(0.0)),
+                )
+            } else {
+                (gutter + 10.0, 0.0)
+            };
+
+            let cursor_rect = Rectangle::new(
+                Point::new(bounds.x + cursor_x, bounds.y + cursor_y),
+                Size::new(self.char_width.max(2.0), self.line_height),
+            );
+
+            shell.request_input_method(&InputMethod::<&str>::Enabled {
+                cursor: cursor_rect,
+                purpose: cosmic::iced::advanced::input_method::Purpose::Normal,
+                preedit: self.pane.preedit.as_ref().map(|(s, sel)| {
+                    cosmic::iced::advanced::input_method::Preedit {
+                        content: s.as_str(),
+                        selection: sel.clone(),
+                        text_size: Some(Pixels(self.font_size)),
+                    }
+                }),
+            });
+        }
+
+        match event {
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                if let Some(pos) = cursor.position_in(bounds) {
+                    state.is_dragging = true;
+                    let gutter = self.gutter_width();
+                    let visual_rows = self.build_visual_rows(bounds.width);
+
+                    let clicked_v_idx = ((pos.y + self.pane.scroll_y) / self.line_height).floor() as isize;
+                    let clicked_v_idx = clicked_v_idx.max(0) as usize;
+
+                    let (target_line, target_col) = if let Some(row) = visual_rows.get(clicked_v_idx) {
+                        let line_text = self.pane.buffer.line_text(row.line_idx).unwrap_or_default();
+                        let chars: Vec<char> = line_text.chars().collect();
+                        let rel_x = (pos.x - gutter - 10.0 + self.pane.scroll_x).max(0.0);
+
+                        let mut acc_width = 0.0;
+                        let mut chosen_col = row.char_start;
+
+                        for i in row.char_start..row.char_end.min(chars.len()) {
+                            let w = chars[i].width().unwrap_or(1).max(1);
+                            let char_pixel_w = (w as f32) * self.char_width;
+                            if acc_width + char_pixel_w / 2.0 >= rel_x {
+                                break;
+                            }
+                            acc_width += char_pixel_w;
+                            chosen_col = i + 1;
+                        }
+                        (row.line_idx, chosen_col)
+                    } else if let Some(last) = visual_rows.last() {
+                        (last.line_idx, last.char_end)
+                    } else {
+                        (0, 0)
+                    };
+
+                    shell.publish(Message::ClickPane(
+                        self.pane.id,
+                        target_line,
+                        target_col,
+                    ));
+                    shell.capture_event();
+                }
+            }
+
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                state.is_dragging = false;
+            }
+
+            Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+                if cursor.is_over(bounds) {
+                    let y_delta = match delta {
+                        mouse::ScrollDelta::Lines { y, .. } => *y * self.line_height * 2.0,
+                        mouse::ScrollDelta::Pixels { y, .. } => *y,
+                    };
+                    shell.publish(Message::ScrollPane(self.pane.id, -y_delta));
+                    shell.capture_event();
+                }
+            }
+
+            _ => {}
+        }
+    }
+
+    fn draw(
+        &self,
+        _tree: &Tree,
+        renderer: &mut cosmic::Renderer,
+        _theme: &cosmic::Theme,
+        _style: &renderer::Style,
+        layout: Layout<'_>,
+        _cursor: mouse::Cursor,
+        _viewport: &Rectangle,
+    ) {
+        let bounds = layout.bounds();
+        if bounds.width < 1.0 || bounds.height < 1.0 {
+            return;
+        }
+
+        let layers = self.draw_frame(renderer, bounds);
+        renderer.with_layer(bounds, |renderer| {
+            renderer.with_translation(
+                Vector::new(bounds.x, bounds.y),
+                |renderer| {
+                    for layer in layers {
+                        GeometryRenderer::draw_geometry(renderer, layer);
+                    }
+                },
+            );
+        });
+    }
+}
+
+impl<'a> From<EditorCanvas<'a>> for Element<'a, Message, cosmic::Theme, cosmic::Renderer> {
+    fn from(canvas: EditorCanvas<'a>) -> Self {
+        Element::new(canvas)
     }
 }

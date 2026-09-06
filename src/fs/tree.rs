@@ -135,7 +135,10 @@ pub struct FileTree {
 
 impl FileTree {
     pub fn new<P: AsRef<Path>>(root: P) -> Self {
-        let root = root.as_ref().to_path_buf();
+        let root = root
+            .as_ref()
+            .canonicalize()
+            .unwrap_or_else(|_| root.as_ref().to_path_buf());
         let mut expanded_dirs = HashSet::new();
         expanded_dirs.insert(root.clone());
 
@@ -235,5 +238,24 @@ impl FileTree {
 
     pub fn select(&mut self, path: PathBuf) {
         self.selected_path = Some(path);
+    }
+
+    pub fn set_root(&mut self, new_root: PathBuf) {
+        let root = new_root.canonicalize().unwrap_or(new_root);
+        self.root = root.clone();
+        self.expanded_dirs.clear();
+        self.expanded_dirs.insert(root);
+        self.selected_path = None;
+        self.refresh();
+    }
+
+    pub fn go_to_parent(&mut self) -> bool {
+        if let Some(parent) = self.root.parent() {
+            let parent = parent.to_path_buf();
+            self.set_root(parent);
+            true
+        } else {
+            false
+        }
     }
 }

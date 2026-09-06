@@ -83,14 +83,25 @@ impl EditorPane {
 
     pub fn save_file(&mut self) -> std::io::Result<()> {
         if let Some(ref path) = self.file_path {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
             let text = self.buffer.full_text();
             std::fs::write(path, text)?;
             self.buffer.is_modified = false;
+            Ok(())
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "No file path set",
+            ))
         }
-        Ok(())
     }
 
     pub fn save_file_as(&mut self, path: &Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         let text = self.buffer.full_text();
         std::fs::write(path, text)?;
         self.file_path = Some(path.to_path_buf());
@@ -104,6 +115,12 @@ impl EditorPane {
         let lang = SupportedLanguage::from_path(path);
         self.highlighter = Highlighter::new(lang);
         self.highlighter.update_source(&self.buffer.full_text());
+
+        if lang == SupportedLanguage::Markdown {
+            self.markdown_doc = Some(MarkdownDocument::parse(&self.buffer.full_text()));
+        } else {
+            self.markdown_doc = None;
+        }
 
         Ok(())
     }

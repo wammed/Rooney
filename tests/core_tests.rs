@@ -132,3 +132,51 @@ fn test_japanese_text_and_width() {
     buf.redo();
     assert_eq!(buf.line_text(0), Some("こんにちは、素晴らしき世界！".to_string()));
 }
+
+#[test]
+fn test_editor_pane_saving() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use std::fs;
+
+    let mut pane = EditorPane::new(PaneId::Left, "Untitled");
+    // Saving without a file path should fail with an error
+    assert!(pane.save_file().is_err());
+
+    // Save as to a new temporary path
+    let temp_dir = std::env::temp_dir().join("rooney_test_save");
+    let test_file = temp_dir.join("subdir").join("test_save.rs");
+    pane.buffer.insert_str("fn test() { println!(\"saved\"); }");
+
+    assert!(pane.save_file_as(&test_file).is_ok());
+    assert_eq!(pane.file_name, "test_save.rs");
+    assert!(test_file.exists());
+
+    let content = fs::read_to_string(&test_file).unwrap();
+    assert_eq!(content, "fn test() { println!(\"saved\"); }");
+
+    // Modify and save again directly
+    pane.buffer.insert_str("\n// Added comment");
+    assert!(pane.save_file().is_ok());
+
+    let updated_content = fs::read_to_string(&test_file).unwrap();
+    assert_eq!(updated_content, "fn test() { println!(\"saved\"); }\n// Added comment");
+
+    // Clean up
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_file_tree_navigation() {
+    let mut tree = FileTree::new(".");
+    let original_root = tree.root.clone();
+
+    // Go to parent directory
+    let navigated = tree.go_to_parent();
+    assert!(navigated);
+    assert_ne!(tree.root, original_root);
+    assert!(!tree.items.is_empty());
+
+    // Set root back
+    tree.set_root(original_root.clone());
+    assert_eq!(tree.root, original_root);
+}
