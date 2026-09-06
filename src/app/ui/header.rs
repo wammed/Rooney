@@ -7,9 +7,22 @@ use cosmic::iced::{Alignment, Length};
 use cosmic::prelude::*;
 use cosmic::widget::{button, container, text, Space};
 
+const ROONEY_ICON_BYTES: &[u8] = include_bytes!("../../../images/Rooney-icon.svg");
+
 impl App {
     pub(crate) fn render_header_start(&self) -> Vec<Element<'_, Message>> {
+        let icon_handle = cosmic::iced::widget::svg::Handle::from_memory(ROONEY_ICON_BYTES);
+        let app_icon: Element<'_, Message> = container(
+            cosmic::widget::svg(icon_handle)
+                .width(Length::Fixed(22.0))
+                .height(Length::Fixed(22.0)),
+        )
+        .padding([0, 5])
+        .align_y(Alignment::Center)
+        .into();
+
         vec![
+            app_icon,
             button::text(if self.active_header_menu == Some(ActiveHeaderMenu::File) {
                 " 󰈔 File ▴"
             } else {
@@ -60,10 +73,10 @@ impl App {
         let menu_w = 240.0;
         let menu_y = 4.0;
         let menu_x = match menu {
-            ActiveHeaderMenu::File => 8.0,
-            ActiveHeaderMenu::Edit => 92.0,
-            ActiveHeaderMenu::View => 176.0,
-            ActiveHeaderMenu::Ai => 264.0,
+            ActiveHeaderMenu::File => 44.0,
+            ActiveHeaderMenu::Edit => 128.0,
+            ActiveHeaderMenu::View => 212.0,
+            ActiveHeaderMenu::Ai => 300.0,
         };
 
         let make_item =

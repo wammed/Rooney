@@ -82,12 +82,32 @@ pub struct App {
     pub(crate) search_input: String,
 }
 
+const ROONEY_ICON_BYTES: &[u8] = include_bytes!("../../images/Rooney-icon.svg");
+
+fn ensure_system_icons() {
+    if let Some(home) = std::env::var_os("HOME") {
+        let icon_dir = PathBuf::from(home).join(".local/share/icons/hicolor/scalable/apps");
+        let _ = std::fs::create_dir_all(&icon_dir);
+
+        for icon_name in &["rooney.svg", "Rooney-icon.svg", "org.pop_os.CosmicCode.svg"] {
+            let icon_path = icon_dir.join(icon_name);
+            let should_write = match std::fs::metadata(&icon_path) {
+                Ok(meta) => meta.len() != ROONEY_ICON_BYTES.len() as u64,
+                Err(_) => true,
+            };
+            if should_write {
+                let _ = std::fs::write(&icon_path, ROONEY_ICON_BYTES);
+            }
+        }
+    }
+}
+
 impl cosmic::Application for App {
     type Executor = executor::Default;
     type Flags = ();
     type Message = Message;
 
-    const APP_ID: &'static str = "org.pop_os.CosmicCode";
+    const APP_ID: &'static str = "rooney";
 
     fn core(&self) -> &Core {
         &self.core
@@ -98,6 +118,7 @@ impl cosmic::Application for App {
     }
 
     fn init(core: Core, _flags: Self::Flags) -> (Self, Task<Self::Message>) {
+        ensure_system_icons();
         let config = AppConfig::load();
         let current_dir = if let Some(ref root) = config.session.root_dir {
             if root.exists() && root.is_dir() {

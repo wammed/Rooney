@@ -875,3 +875,32 @@ fn test_atomic_save_and_file_size_limits() {
     let _ = fs::remove_dir_all(&temp_dir);
 }
 
+#[test]
+fn test_rooney_icon_integration() {
+    let icon_bytes = include_bytes!("../images/Rooney-icon.svg");
+    assert!(!icon_bytes.is_empty());
+    assert_eq!(icon_bytes.len(), 46323);
+
+    let icon_str = std::str::from_utf8(icon_bytes).expect("Valid UTF-8 SVG");
+    assert!(icon_str.contains("<svg"));
+    assert!(icon_str.contains("</svg>"));
+
+    // Verify desktop file config
+    if let Some(home) = std::env::var_os("HOME") {
+        let home_path = std::path::PathBuf::from(home);
+        let desktop_path = home_path.join(".local/share/applications/rooney.desktop");
+        if desktop_path.exists() {
+            let desktop_content = std::fs::read_to_string(&desktop_path).unwrap();
+            assert!(desktop_content.contains("StartupWMClass=rooney"));
+            assert!(!desktop_content.contains("StartupWMClass=rooneyk"));
+        }
+
+        let icon_path = home_path.join(".local/share/icons/hicolor/scalable/apps/rooney.svg");
+        if icon_path.exists() {
+            let installed_len = std::fs::metadata(&icon_path).unwrap().len();
+            assert_eq!(installed_len, icon_bytes.len() as u64);
+        }
+    }
+}
+
+
