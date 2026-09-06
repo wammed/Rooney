@@ -1,6 +1,8 @@
 # Rooney 🚀
 **Cosmic-Native Lightweight Code & Markdown Editor**
 
+![Banner](./images/Rooney-banner.svg)
+
 > [!NOTE]
 > **🤖 AI Vibe Coding Project**  
 > このプロジェクトは、ユーザーとAIアシスタントの協調（バイブコーディング / Vibe Coding）によってゼロから設計・実装されました。  
