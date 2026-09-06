@@ -31,6 +31,7 @@ impl App {
                 self.active_pane = pane_id;
                 self.context_menu = None;
                 self.file_tree_context_menu = None;
+                self.active_header_menu = None;
                 self.show_edit_menu = false;
                 let pane = self.current_pane_mut();
                 pane.clear_ghost_text();
@@ -112,15 +113,28 @@ impl App {
                 Task::none()
             }
 
-            Message::ToggleEditMenu => {
-                self.show_edit_menu = !self.show_edit_menu;
-                if self.show_edit_menu {
+            Message::ToggleHeaderMenu(menu) => {
+                if self.active_header_menu == Some(menu) {
+                    self.active_header_menu = None;
+                } else {
+                    self.active_header_menu = Some(menu);
                     self.context_menu = None;
+                    self.file_tree_context_menu = None;
                 }
                 Task::none()
             }
 
+            Message::CloseHeaderMenu => {
+                self.active_header_menu = None;
+                Task::none()
+            }
+
+            Message::ToggleEditMenu => {
+                self.handle_update(Message::ToggleHeaderMenu(crate::app::message::ActiveHeaderMenu::Edit))
+            }
+
             Message::CloseEditMenu => {
+                self.active_header_menu = None;
                 self.show_edit_menu = false;
                 Task::none()
             }

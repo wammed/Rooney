@@ -14,7 +14,7 @@ use crate::ui::markdown_view::view_markdown;
 use cosmic::iced::widget::{column, row};
 use cosmic::iced::{Alignment, Length};
 use cosmic::prelude::*;
-use cosmic::widget::{button, container, text, Space};
+use cosmic::widget::{container, text, Space};
 
 impl App {
     pub(crate) fn render_view(&self) -> Element<'_, Message> {
@@ -213,76 +213,16 @@ impl App {
                 .into();
         }
 
-        let mut main_col = column::with_capacity(3).width(Length::Fill).height(Length::Fill);
-
-        if self.show_edit_menu {
-            let edit_bar = container(
-                row::with_capacity(9)
-                    .spacing(8)
-                    .align_y(Alignment::Center)
-                    .padding([4, 12])
-                    .push(
-                        text(" 󰧑 Edit: ")
-                            .size(13.0)
-                            .class(cosmic::theme::Text::Color(theme.config.accent)),
-                    )
-                    .push(
-                        button::text(" 󰕌 Undo (Ctrl+Z) ")
-                            .on_press(Message::Undo)
-                            .padding([4, 8]),
-                    )
-                    .push(
-                        button::text(" 󰑎 Redo (Ctrl+Y) ")
-                            .on_press(Message::Redo)
-                            .padding([4, 8]),
-                    )
-                    .push(
-                        button::text(" 󰆐 Cut (Ctrl+X) ")
-                            .on_press(Message::Cut)
-                            .padding([4, 8]),
-                    )
-                    .push(
-                        button::text(" 󰆏 Copy (Ctrl+C) ")
-                            .on_press(Message::Copy)
-                            .padding([4, 8]),
-                    )
-                    .push(
-                        button::text(" 󰆒 Paste (Ctrl+V) ")
-                            .on_press(Message::Paste)
-                            .padding([4, 8]),
-                    )
-                    .push(
-                        button::text(" 󰒅 Select All (Ctrl+A) ")
-                            .on_press(Message::SelectAll)
-                            .padding([4, 8]),
-                    )
-                    .push(cosmic::iced::widget::space::horizontal())
-                    .push(
-                        button::text(" ✕ Close ")
-                            .on_press(Message::CloseEditMenu)
-                            .padding([3, 8]),
-                    ),
-            )
-            .width(Length::Fill);
-            main_col = main_col.push(edit_bar);
-        }
-
-        main_col = main_col.push(main_row);
-
-        // Settings Modal / Overlay (Transparency & Aesthetics)
-        if self.show_settings {
-            main_col = main_col.push(self.render_settings_box());
-        }
-
         let base_view: Element<'_, Message> = column::with_capacity(2)
-            .push(main_col)
+            .push(main_row)
             .push(status_container)
             .width(Length::Fill)
             .height(Length::Fill)
             .into();
 
-        // Right-click context menu overlays (Editor & File Tree)
+        // Overlays: Editor context menu, File tree context menu, and Header menu
         let view = self.render_context_menu_overlay(base_view);
-        self.render_file_tree_context_menu_overlay(view)
+        let view = self.render_file_tree_context_menu_overlay(view);
+        self.render_header_menu_overlay(view)
     }
 }

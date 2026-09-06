@@ -19,6 +19,9 @@ impl App {
         if let Some(modal) = self.render_delete_modal() {
             return Some(modal);
         }
+        if let Some(modal) = self.render_settings_modal() {
+            return Some(modal);
+        }
         None
     }
 
@@ -296,7 +299,11 @@ impl App {
         )
     }
 
-    pub(crate) fn render_settings_box<'a>(&'a self) -> Element<'a, Message> {
+    pub(crate) fn render_settings_modal<'a>(&'a self) -> Option<Element<'a, Message>> {
+        if !self.show_settings {
+            return None;
+        }
+
         let theme = &self.theme;
         let cur_model_idx = self
             .ollama
@@ -305,18 +312,80 @@ impl App {
             .position(|m| m == &self.ollama.active_model)
             .unwrap_or(0);
 
-        container(
-            column::with_capacity(8)
+        let cur_theme_idx = crate::theme::themes::ThemeId::ALL
+            .iter()
+            .position(|&t| t == self.theme.config.id)
+            .unwrap_or(0);
+
+        let cur_font_idx = self
+            .font_names
+            .iter()
+            .position(|f| f == &self.font_manager.current_font)
+            .unwrap_or(0);
+
+        let modal_box = container(
+            column::with_capacity(16)
                 .spacing(12)
-                .padding(16)
+                .padding(20)
                 .push(
-                    text::title4("󰒓 Aesthetics & AI Configuration")
-                        .class(cosmic::theme::Text::Color(theme.config.accent)),
+                    row::with_capacity(2)
+                        .push(
+                            text::title3("󰒓 Aesthetics & Preferences")
+                                .class(cosmic::theme::Text::Color(theme.config.accent)),
+                        )
+                        .align_y(Alignment::Center),
+                )
+                .push(
+                    text("Editor Theme (20 Themes):")
+                        .size(12.5)
+                        .class(cosmic::theme::Text::Color(theme.config.fg)),
+                )
+                .push(
+                    dropdown(
+                        &self.theme_names,
+                        Some(cur_theme_idx),
+                        Message::SelectTheme,
+                    )
+                    .width(Length::Fill),
+                )
+                .push(
+                    text("Editor Font (Nerd Font):")
+                        .size(12.5)
+                        .class(cosmic::theme::Text::Color(theme.config.fg)),
+                )
+                .push(
+                    dropdown(
+                        &self.font_names,
+                        Some(cur_font_idx),
+                        Message::SelectFont,
+                    )
+                    .width(Length::Fill),
+                )
+                .push(
+                    row::with_capacity(3)
+                        .spacing(10)
+                        .align_y(Alignment::Center)
+                        .push(
+                            text(format!("Font Size: {:.0} px", self.font_manager.font_size))
+                                .size(12.5)
+                                .class(cosmic::theme::Text::Color(theme.config.fg)),
+                        )
+                        .push(cosmic::iced::widget::space::horizontal())
+                        .push(
+                            button::text(" A- (Smaller) ")
+                                .on_press(Message::DecreaseFontSize)
+                                .padding([4, 10]),
+                        )
+                        .push(
+                            button::text(" A+ (Larger) ")
+                                .on_press(Message::IncreaseFontSize)
+                                .padding([4, 10]),
+                        ),
                 )
                 .push(text(format!(
-                    "Wayland Alpha Opacity: {:.0}%",
+                    "Wayland Window Alpha Opacity: {:.0}%",
                     self.theme.opacity * 100.0
-                )))
+                )).size(12.5))
                 .push(
                     slider(0.1..=1.0_f32, self.theme.opacity, Message::ChangeOpacity)
                         .step(0.05_f32),
@@ -324,12 +393,12 @@ impl App {
                 .push(text(format!(
                     "Background Dimming Overlay: {:.0}%",
                     self.theme.dimming * 100.0
-                )))
+                )).size(12.5))
                 .push(
                     slider(0.0..=1.0_f32, self.theme.dimming, Message::ChangeDimming)
                         .step(0.05_f32),
                 )
-                .push(text("Local AI Model (Ollama):"))
+                .push(text("Local AI Model (Ollama):").size(12.5))
                 .push(
                     dropdown(
                         &self.ollama.available_models,
@@ -338,10 +407,23 @@ impl App {
                     )
                     .width(Length::Fill),
                 )
-                .push(button::suggested("Close").on_press(Message::CloseSettings)),
+                .push(cosmic::widget::Space::new().height(Length::Fixed(6.0)))
+                .push(
+                    button::suggested(" Close Preferences ")
+                        .on_press(Message::CloseSettings)
+                        .padding([6, 16]),
+                ),
         )
         .padding(16)
-        .width(Length::Fixed(360.0))
-        .into()
+        .width(Length::Fixed(460.0));
+
+        Some(
+            container(modal_box)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .into(),
+        )
     }
 }

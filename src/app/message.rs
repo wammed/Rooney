@@ -3,6 +3,14 @@ use crate::ui::file_tree_view::FileTreeMessage;
 use cosmic::iced;
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActiveHeaderMenu {
+    File,
+    Edit,
+    View,
+    Ai,
+}
+
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
 pub enum Message {
@@ -48,6 +56,8 @@ pub enum Message {
     OpenContextMenu(PaneId, f32, f32),
     CloseContextMenu,
     CloseFileTreeContextMenu,
+    ToggleHeaderMenu(ActiveHeaderMenu),
+    CloseHeaderMenu,
     ToggleEditMenu,
     CloseEditMenu,
     ToggleSettings,

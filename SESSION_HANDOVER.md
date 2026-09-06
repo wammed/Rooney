@@ -186,6 +186,30 @@
   - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings**。
   - `cargo build --release`: クリーンビルド完了。
 
+### セッション 14: タイトルバーのドメイン集約、Aestheticsモーダル化、およびデフォルトサイズ1600x1600
+- **タイトルバーの肥大化・混雑解消（ドメイン別集約 & アイコン単体化の排除）**:
+  - **課題**: タイトルバーにテーマ選択（20テーマ）、システムフォント選択、フォントサイズ変更（`A-`/`A+`）、および個別のアクションボタンが並び、幅が狭い場合や解像度によってボタン同士が詰まり視認性が悪化していた。また、単にアイコンのみのボタンにしてしまうと機能が直感的に判別しにくくなる。
+  - **解決策**:
+    - **「アイコン化は行わない」制約の遵守**: アイコン＋明瞭なテキストラベルを併記した5つのドメイン集約ボタンに統合。
+      - `󰈔 File ▾`: New File, Open File, Open Folder, Save File, Save File As, Close Tab
+      - `󰧑 Edit ▾`: Undo, Redo, Cut, Copy, Paste, Select All, Comment, Delete Line, Duplicate Line
+      - `󰈈 View ▾`: Split / Single Pane, File Tree Sidebar, Markdown Preview
+      - `󰚩 AI ▾`: Toggle AI Chat, Attach Selection, Attach File, Trigger FIM Completion
+      - `󰒓 Aesthetics`: 外観設定モーダル表示（Themes, Fonts, Size, Transparency, AI Models）
+    - `ActiveHeaderMenu` によるフローティングカード型ドロップダウンオーバーレイと、全画面バックドロップによる自然なクリックキャンセルを実装。
+    - `header_end` を完全に空とし、タイトルバーの混雑・圧迫感を完全解消。
+- **Aesthetics（外観設定）モーダルへの完全集約**:
+  - 20種類のテーマ選択ドロップダウン、システムフォント選択ドロップダウン、フォントサイズ増減（`A-` / `A+`）、Waylandウィンドウ透明度スライダー、背景ディミングスライダー、ローカルAIモデル選択ドロップダウンをすべて1つの中央ダイアログ（`Aesthetics Preferences`）に集約。
+  - エディタ画面を広く保ち、設定項目を一元管理できるように改良。
+- **デフォルトウィンドウサイズの最適化**:
+  - `src/main.rs` でデフォルトウィンドウサイズを `1600.0 x 1600.0` に設定。
+  - コンテキストメニュー等の画面端クランプ座標を `1550.0` / `1500.0` に最適化。
+- **テスト・静的解析の完全遵守**:
+  - `test_active_header_menu_and_actions` 単体テストを追加。
+  - `cargo test`: 27 core tests + 3 ollama tests = **30/30 passed (0 failed)**。
+  - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings**。
+  - `cargo build --release`: 完全クリーンビルド成功。
+
 ---
 
 ## 3. ファイル構成と役割
@@ -196,23 +220,22 @@ Rooney/
 ├── README.md                # 日本語・英語バイリンガル公式ドキュメント (Vibe Coding明記)
 ├── SESSION_HANDOVER.md      # 本ファイル (次回再開用完全ハンドオーバー)
 ├── src/
-│   ├── main.rs              # アプリ起動エントリーポイント (ウィンドウサイズ 2400x2400 設定)
+│   ├── main.rs              # アプリ起動エントリーポイント (デフォルトウィンドウサイズ 1600x1600 設定)
 │   ├── config.rs            # AppConfig & SessionConfig (セッション・設定の ~/.config/rooney/config.toml 永続化)
 │   ├── app/
 │   │   ├── mod.rs           # App 構造体定義、cosmic::Application 実装、init() によるセッション復元
-│   │   ├── message.rs       # Message 列挙型定義 (タブ、ファイルツリー、モーダル、AIチャットストリーミング等)
-│   │   ├── keybindings.rs   # handle_key_event (キーボードショートカット、モーダルキーハンドリング)
-│   │   ├── update.rs        # handle_update (非同期Task/Streamディスパッチ、ファイルCRUD、タブ同期、AIチャット)
+│   │   ├── message.rs       # Message 列挙型 (ActiveHeaderMenu, タブ, ファイルツリー, モーダル, AIチャット)
+│   │   ├── keybindings.rs   # handle_key_event (キーボードショートカット、モーダル・メニューキーハンドリング)
+│   │   ├── update.rs        # handle_update (非同期Task/Streamディスパッチ、メニュー開閉、ファイルCRUD、タブ同期)
 │   │   ├── state.rs         # save_config, open_file, クリップボード, 行編集ヘルパー
 │   │   └── ui/
-│   │       ├── mod.rs       # view() ルートUIマウント (ヘッダー、サイドバー、エディタ、AIチャット、モーダル)
-│   │       ├── header.rs    # render_header (タイトル、Editメニュー、Chatトグル、フォント、テーマ)
+│   │       ├── mod.rs       # view() ルートUIマウント (ヘッダーメニューオーバーレイ、モーダル、エディタ)
+│   │       ├── header.rs    # render_header_start (5つの集約ボタン), render_header_menu_overlay (ドロップダウン)
 │   │       ├── tab_bar.rs   # render_tab_bar (タブ切り替え、未保存●、閉じる、新規タブボタン)
-│   │       ├── editor_area.rs# render_editor_area (左右分割ペイン、Markdownプレビューコンテナ)
-│   │       ├── context_menu.rs# render_context_menu (右クリック浮動メニュー)
-│   │       ├── modal.rs     # render_active_modal (新規ファイル、新規フォルダ、リネーム、削除確認モーダル)
+│   │       ├── context_menu.rs# render_context_menu (右クリック浮動メニュー, 1600x1600クランプ対応)
+│   │       ├── modal.rs     # render_active_modal (新規ファイル, 新規フォルダ, リネーム, 削除, Aestheticsモーダル)
 │   │       ├── ai_chat.rs   # render_ai_chat_panel (ストリーミング描画、タイピング▋、Stop/Sendボタン、文脈添付)
-│   │       └── settings.rs  # render_settings_view (テーマ、透過度、ディミングスライダー)
+│   │       └── search_bar.rs# render_search_bar (Ctrl+F ファイル内検索バー)
 │   ├── editor/
 │   │   ├── mod.rs           # resolve_numpad_char (Waylandテンキー物理キーコード解決ユーティリティ)
 │   │   ├── buffer.rs        # TextBuffer (Ropey、単語移動、行削除/複製、コメントトグル、インデント、Undo/Redo)
@@ -276,25 +299,28 @@ Rooney/
 | マウス左ドラッグ | テキスト範囲選択（ビジュアルハイライト） |
 | エディタ上マウス右クリック | エディタコンテキストメニュー表示（Copy, Cut, Paste, Select All, Undo, Redo） |
 | ファイルツリー上マウス右クリック | ファイル/ディレクトリ/ルートのコンテキストメニュー表示（New File, New Folder, Rename, Delete, Refresh） |
-| ヘッダー `󰧑 Edit` | 編集ツールバーの表示/非表示切り替え |
-| ヘッダー `󰭹 Chat` | AIチャットパネルの表示/非表示切り替え |
+| ヘッダー `󰈔 File ▾` | ファイルメニュー展開（新規、開く、フォルダ、保存、閉じる） |
+| ヘッダー `󰧑 Edit ▾` | 編集メニュー展開（Undo, Redo, Cut, Copy, Paste, Select All, コメント, 削除, 複製） |
+| ヘッダー `󰈈 View ▾` | 表示メニュー展開（Split/Single、ファイルツリー、Markdownプレビュー） |
+| ヘッダー `󰚩 AI ▾` | AIメニュー展開（チャットパネル、選択添付、ファイル添付、FIM補完） |
+| ヘッダー `󰒓 Aesthetics` | 外観設定モーダル表示（テーマ、フォント、フォントサイズ、透過度、AIモデル） |
 | チャット `󰓛 Stop` | AIコード生成の即時中断・ストリーミング停止 |
 | テンキー `0`〜`9` / 記号 (`+`, `-`, `*`, `/`, `.`, `,`, `=`) | 数字および四則演算子記号の直接入力（英字/IME両モード完全対応） |
 | テンキー `Enter` | 改行の挿入 / 新規ファイル作成モーダルの確定 |
 | `Tab`（未選択時） | AI補完（ゴーストテキスト）の確定挿入 / インデント（4スペース） |
-| `Esc` | 検索バー終了 / AI補完破棄 / モーダル終了 / コンテキストメニュー終了 / 選択解除 |
+| `Esc` | 検索バー終了 / AI補完破棄 / モーダル終了 / コンテキストメニュー終了 / メニュー閉じる / 選択解除 |
 | `Ctrl + B` | ファイルツリーサイドバーの表示/非表示トグル |
 | `Ctrl + \` または `Ctrl + E` | 左右2分割（Split / Single）レイアウト切り替え |
 | `Ctrl + M` | Markdownプレビューの切り替え |
 | `Ctrl + I` または `Alt + Enter` | Local AI FIM 補完の手動トリガー（`Ctrl + Space` は IME 専用に解放） |
-| `A-` / `A+` | フォントサイズの縮小 / 拡大 |
 
 ---
 
 ## 5. 現在のビルドおよびテスト状態
 
 - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings** (完全クリーン)
-- `cargo test`: **29/29 passed (0 failed)**
+- `cargo test`: **30/30 passed (0 failed)**
+  - `test_active_header_menu_and_actions` ... ok (新規追加)
   - `test_char_advance_ascii_and_cjk` ... ok
   - `test_buffer_selection_and_deletion` ... ok
   - `test_file_type_icons_extended` ... ok
@@ -319,8 +345,8 @@ Rooney/
   - `test_ai_chat_data_structures` ... ok
   - `test_ai_chat_streaming_accumulation` ... ok
   - `test_tab_synchronization_on_rename_and_delete` ... ok
-  - `test_file_tree_context_menu_state_and_right_click` ... ok (新規追加)
-  - `test_file_tree_width_and_item_gutter` ... ok (新規追加)
+  - `test_file_tree_context_menu_state_and_right_click` ... ok
+  - `test_file_tree_width_and_item_gutter` ... ok
   - `test_ollama_connectivity_and_models` ... ok
   - `test_ollama_chat_streaming` ... ok
   - `test_ollama_fim_generation` ... ok

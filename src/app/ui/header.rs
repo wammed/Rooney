@@ -1,62 +1,42 @@
-use crate::app::message::Message;
+use crate::app::message::{ActiveHeaderMenu, Message};
 use crate::app::App;
 use crate::editor::SplitLayout;
 use crate::ui::file_tree_view::FileTreeMessage;
-use crate::theme::themes::ThemeId;
+use cosmic::iced::widget::{column, row};
+use cosmic::iced::{Alignment, Length};
 use cosmic::prelude::*;
-use cosmic::widget::{button, dropdown};
+use cosmic::widget::{button, container, text, Space};
 
 impl App {
     pub(crate) fn render_header_start(&self) -> Vec<Element<'_, Message>> {
-        let is_split = self.split_layout == SplitLayout::Split;
-        let is_preview = self.current_pane().is_markdown_preview;
-        let ai_on = self.ollama.is_enabled;
-
         vec![
-            button::text(if self.file_tree.is_visible {
-                "  Files "
+            button::text(if self.active_header_menu == Some(ActiveHeaderMenu::File) {
+                " 󰈔 File ▴"
             } else {
-                "  Files "
+                " 󰈔 File ▾"
             })
-            .on_press(Message::FileTreeMsg(FileTreeMessage::ToggleVisibility))
+            .on_press(Message::ToggleHeaderMenu(ActiveHeaderMenu::File))
             .into(),
-            button::text("  New ").on_press(Message::PromptNewFile).into(),
-            button::text(" 󰈔 Open ").on_press(Message::OpenFilePrompt).into(),
-            button::text(" 󰆓 Save ").on_press(Message::SaveFile).into(),
-            button::text(if self.show_edit_menu {
+            button::text(if self.active_header_menu == Some(ActiveHeaderMenu::Edit) {
                 " 󰧑 Edit ▴"
             } else {
                 " 󰧑 Edit ▾"
             })
-            .on_press(Message::ToggleEditMenu)
+            .on_press(Message::ToggleHeaderMenu(ActiveHeaderMenu::Edit))
             .into(),
-            button::text(if is_split {
-                "  Single "
+            button::text(if self.active_header_menu == Some(ActiveHeaderMenu::View) {
+                " 󰈈 View ▴"
             } else {
-                "  Split "
+                " 󰈈 View ▾"
             })
-            .on_press(Message::ToggleSplit)
+            .on_press(Message::ToggleHeaderMenu(ActiveHeaderMenu::View))
             .into(),
-            button::text(if is_preview {
-                "  Edit "
+            button::text(if self.active_header_menu == Some(ActiveHeaderMenu::Ai) {
+                " 󰚩 AI ▴"
             } else {
-                "  Preview "
+                " 󰚩 AI ▾"
             })
-            .on_press(Message::ToggleMarkdownPreview)
-            .into(),
-            button::text(if ai_on {
-                " 󰚩 AI: ON "
-            } else {
-                " 󰚩 AI: OFF "
-            })
-            .on_press(Message::ToggleAi)
-            .into(),
-            button::text(if self.show_ai_chat {
-                " 󰭹 Chat: ON "
-            } else {
-                " 󰭹 Chat "
-            })
-            .on_press(Message::ToggleAiChat)
+            .on_press(Message::ToggleHeaderMenu(ActiveHeaderMenu::Ai))
             .into(),
             button::text(" 󰒓 Aesthetics ")
                 .on_press(Message::ToggleSettings)
@@ -65,36 +45,135 @@ impl App {
     }
 
     pub(crate) fn render_header_end(&self) -> Vec<Element<'_, Message>> {
-        let cur_theme_idx = ThemeId::ALL
-            .iter()
-            .position(|&t| t == self.theme.config.id)
-            .unwrap_or(0);
+        vec![]
+    }
 
-        let cur_font_idx = self
-            .font_names
-            .iter()
-            .position(|f| f == &self.font_manager.current_font)
-            .unwrap_or(0);
+    pub(crate) fn render_header_menu_overlay<'a>(
+        &'a self,
+        base_view: Element<'a, Message>,
+    ) -> Element<'a, Message> {
+        let Some(menu) = self.active_header_menu else {
+            return base_view;
+        };
 
-        vec![
-            button::text(" A- ")
-                .on_press(Message::DecreaseFontSize)
-                .into(),
-            button::text(" A+ ")
-                .on_press(Message::IncreaseFontSize)
-                .into(),
-            dropdown(
-                &self.theme_names,
-                Some(cur_theme_idx),
-                Message::SelectTheme,
+        let theme = &self.theme;
+        let menu_w = 240.0;
+        let menu_y = 4.0;
+        let menu_x = match menu {
+            ActiveHeaderMenu::File => 8.0,
+            ActiveHeaderMenu::Edit => 92.0,
+            ActiveHeaderMenu::View => 176.0,
+            ActiveHeaderMenu::Ai => 264.0,
+        };
+
+        let make_item =
+            |icon: &'static str, label: &'static str, shortcut: &'static str, msg: Message| {
+                let content = row::with_capacity(3)
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .padding([5, 10])
+                    .push(
+                        text(format!("{icon}  {label}"))
+                            .size(12.5)
+                            .class(cosmic::theme::Text::Color(theme.config.fg)),
+                    )
+                    .push(cosmic::iced::widget::space::horizontal())
+                    .push(
+                        text(shortcut)
+                            .size(11.0)
+                            .class(cosmic::theme::Text::Color(theme.config.comment)),
+                    );
+
+                button::custom(content)
+                    .on_press(msg)
+                    .class(cosmic::theme::Button::Transparent)
+                    .width(Length::Fill)
+            };
+
+        let mut menu_items = column::with_capacity(8).spacing(2).padding(4);
+
+        match menu {
+            ActiveHeaderMenu::File => {
+                menu_items = menu_items
+                    .push(make_item("", "New File", "Ctrl+N", Message::PromptNewFile))
+                    .push(make_item("󰈔", "Open File...", "Ctrl+O", Message::OpenFilePrompt))
+                    .push(make_item("", "Open Folder...", "Ctrl+Shift+O", Message::OpenFolderPrompt))
+                    .push(make_item("󰆓", "Save", "Ctrl+S", Message::SaveFile))
+                    .push(make_item("󰆓", "Save As...", "Ctrl+Shift+S", Message::SaveFileAsPrompt))
+                    .push(make_item(
+                        if self.file_tree.is_visible { "" } else { "" },
+                        if self.file_tree.is_visible { "Hide File Tree" } else { "Show File Tree" },
+                        "Ctrl+B",
+                        Message::FileTreeMsg(FileTreeMessage::ToggleVisibility),
+                    ));
+            }
+            ActiveHeaderMenu::Edit => {
+                menu_items = menu_items
+                    .push(make_item("󰕌", "Undo", "Ctrl+Z", Message::Undo))
+                    .push(make_item("󰑎", "Redo", "Ctrl+Y", Message::Redo))
+                    .push(make_item("󰆐", "Cut", "Ctrl+X", Message::Cut))
+                    .push(make_item("󰆏", "Copy", "Ctrl+C", Message::Copy))
+                    .push(make_item("󰆒", "Paste", "Ctrl+V", Message::Paste))
+                    .push(make_item("󰒅", "Select All", "Ctrl+A", Message::SelectAll));
+            }
+            ActiveHeaderMenu::View => {
+                let is_split = self.split_layout == SplitLayout::Split;
+                let is_preview = self.current_pane().is_markdown_preview;
+
+                menu_items = menu_items
+                    .push(make_item(
+                        "",
+                        if is_split { "Single Pane" } else { "Split Pane" },
+                        "Ctrl+\\",
+                        Message::ToggleSplit,
+                    ))
+                    .push(make_item(
+                        if is_preview { "" } else { "" },
+                        if is_preview { "Markdown Edit" } else { "Markdown Preview" },
+                        "Ctrl+M",
+                        Message::ToggleMarkdownPreview,
+                    ))
+                    .push(make_item("", "Find in File", "Ctrl+F", Message::ToggleSearch));
+            }
+            ActiveHeaderMenu::Ai => {
+                let ai_on = self.ollama.is_enabled;
+
+                menu_items = menu_items
+                    .push(make_item(
+                        "󰚩",
+                        if ai_on { "Disable FIM" } else { "Enable FIM" },
+                        "Ctrl+I",
+                        Message::ToggleAi,
+                    ))
+                    .push(make_item(
+                        "󰭹",
+                        if self.show_ai_chat { "Close Chat Panel" } else { "Open Chat Panel" },
+                        "Ctrl+Shift+A",
+                        Message::ToggleAiChat,
+                    ))
+                    .push(make_item("󰚩", "Trigger Suggestion", "Alt+Enter", Message::TriggerAiFim));
+            }
+        }
+
+        let menu_box = container(menu_items)
+            .class(cosmic::theme::Container::Card)
+            .padding(4)
+            .width(Length::Fixed(menu_w));
+
+        let positioned = row::with_capacity(2)
+            .push(Space::new().width(Length::Fixed(menu_x)))
+            .push(
+                column::with_capacity(2)
+                    .push(Space::new().height(Length::Fixed(menu_y)))
+                    .push(menu_box),
             )
-            .into(),
-            dropdown(
-                &self.font_names,
-                Some(cur_font_idx),
-                Message::SelectFont,
-            )
-            .into(),
-        ]
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        let backdrop = button::custom(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseHeaderMenu)
+            .class(cosmic::theme::Button::Transparent);
+
+        cosmic::iced::widget::stack(vec![base_view, backdrop.into(), positioned.into()]).into()
     }
 }

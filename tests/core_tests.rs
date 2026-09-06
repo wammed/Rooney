@@ -773,3 +773,26 @@ fn test_file_tree_width_and_item_gutter() {
     let _ = fs::remove_dir_all(&temp_dir);
 }
 
+#[test]
+fn test_active_header_menu_and_actions() {
+    use rooney::app::message::{ActiveHeaderMenu, Message};
+
+    let menu_file = ActiveHeaderMenu::File;
+    let menu_edit = ActiveHeaderMenu::Edit;
+    let menu_view = ActiveHeaderMenu::View;
+    let menu_ai = ActiveHeaderMenu::Ai;
+
+    assert_eq!(menu_file, ActiveHeaderMenu::File);
+    assert_ne!(menu_file, menu_edit);
+    assert_ne!(menu_view, menu_ai);
+
+    let msg_toggle = Message::ToggleHeaderMenu(ActiveHeaderMenu::File);
+    let msg_close = Message::CloseHeaderMenu;
+
+    match msg_toggle {
+        Message::ToggleHeaderMenu(m) => assert_eq!(m, ActiveHeaderMenu::File),
+        _ => panic!("Expected ToggleHeaderMenu"),
+    }
+    assert!(matches!(msg_close, Message::CloseHeaderMenu));
+}
+

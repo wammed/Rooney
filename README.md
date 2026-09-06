@@ -50,10 +50,10 @@ Pop!_OS COSMIC DE（libcosmic / Wayland）ネイティブの超高速・軽量�
      - 未命名バッファの場合は自動で「名前を付けて保存（Save As）」ダイアログを表示。
      - ネストしたフォルダが存在しない場合も自動で親ディレクトリを作成して安全に保存。
 
-4. **Nerd Font の全面採用 & システムフォント選択**
+4. **Nerd Font の全面採用 & 外観（Aesthetics）設定**
    - システム内のフォント（`JetBrainsMono Nerd Font` 等）を自動検出。
    - ファイル種別ごとの鮮やかな Nerd Font アイコン（Rust ``, Markdown ``, TOML ``, Python ``, JS ``, TS ``, C/C++ ``, Shell ``, Git `` 等）。
-   - ヘッダーバーのドロップダウンからシステムフォントおよびフォントサイズ（`A-` / `A+`）をリアルタイム変更可能。
+   - **`󰒓 Aesthetics` モーダル**: ヘッダーの Aesthetics ボタンから、20種類のテーマ切り替え、システムフォント選択、フォントサイズ調整（`A-` / `A+`）、Wayland透明度、背景ディミング、ローカルAIモデル選択をすべて1つの洗練されたモーダルで一元管理。
 
 5. **20種類の Classic & Neon テーマ**
    - **Classic (10)**: Tokyo Night, Catppuccin Mocha, Catppuccin Latte, Nord, Gruvbox Dark, Gruvbox Light, Solarized Dark, Solarized Light, One Dark, Monokai Pro
@@ -62,7 +62,7 @@ Pop!_OS COSMIC DE（libcosmic / Wayland）ネイティブの超高速・軽量�
 6. **Wayland ネイティブ透過 & 背景ディミング**
    - Wayland ウィンドウのアルファ透明度（0.1〜1.0）スライダー。
    - 背景ディミングオーバーレイ（0%〜100%）。
-   - デフォルトウィンドウサイズ 2400x2400 の広々とした作業領域。
+   - デフォルトウィンドウサイズ **1600x1600** の快適で広々とした作業領域。
 
 7. **Local AI FIM (Fill-in-the-Middle) 補完**
    - ローカルの Ollama（`http://localhost:11434`）と高速非同期連携。
@@ -75,8 +75,13 @@ Pop!_OS COSMIC DE（libcosmic / Wayland）ネイティブの超高速・軽量�
    - 選択したテーマ、フォント、フォントサイズ、Wayland透明度、背景ディミング、分割ペイン配置（Single/Split）、ファイルツリーの開閉状態、AI有効化/モデルを `~/.config/rooney/config.toml` に自動保存。
    - アプリを再起動しても直前の作業環境が完全復元されます。
 
-9. **エディタ内編集メニュー & マウス操作（ドラッグ選択・右クリック・Wayland クリップボード）**
-   - **ヘッダー編集メニュー**: ヘッダーの「`󰧑 Edit ▾`」ボタンから、元に戻す、やり直し、切り取り、コピー、貼り付け、全選択を素早く操作。
+9. **タイトルバー統合ドメインメニュー & マウス操作（右クリック・Wayland クリップボード）**
+   - **テキストラベル付きドメイン集約メニュー**: 単独アイコン化を行わず、テキストラベルを保った5つの集約メニューボタンを配置。
+     - **`󰈔 File ▾`**: 新規ファイル、開く、フォルダを開く、保存、名前を付けて保存、タブを閉じる
+     - **`󰧑 Edit ▾`**: 元に戻す、やり直し、切り取り、コピー、貼り付け、全選択、コメント切り替え、行削除、行複製
+     - **`󰈈 View ▾`**: 左右分割切り替え、ファイルツリー表示、Markdownプレビュー
+     - **`󰚩 AI ▾`**: AIチャットパネル、選択コード添付、ファイル全文添付、FIM補完トリガー
+     - **`󰒓 Aesthetics`**: テーマ、フォント、フォントサイズ、透過度、ディミング、AIモデル設定モーダル
    - **右クリックコンテキストメニュー**: エディタ上で右クリックすると、カーソル位置にコンテキストメニュー（Copy, Cut, Paste, Select All, Undo, Redo）をポップアップ表示。不透明カード背景（`Container::Card`）、整列したショートカット表示、画面端クランプ、全画面バックドロップによるクリックキャンセルを完備。
    - **マウスドラッグ選択**: マウスで直感的にテキスト範囲を選択（視覚的ハイライト表示）。
    - **Wayland システムクリップボード連携**: `Ctrl + C`、`Ctrl + X`、`Ctrl + V`、右クリックメニュー、Editメニューすべてでシステムクリップボードとリアルタイム同期。
@@ -167,19 +172,20 @@ Pop!_OS COSMIC DE（libcosmic / Wayland）ネイティブの超高速・軽量�
 | `Ctrl + Y` または `Ctrl + Shift + Z` | やり直す (Redo) |
 | マウス左ドラッグ | テキスト範囲選択（ビジュアルハイライト） |
 | エディタ上マウス右クリック | エディタコンテキストメニュー表示（Copy, Cut, Paste, Select All, Undo, Redo） |
-| ファイルツリー上マウス右クリック | ファイルツリーコンテキストメニュー表示（New File, New Folder, Rename, Delete, Refresh） |
-| ヘッダー `󰧑 Edit` | 編集ツールバーの表示/非表示切り替え |
-| ヘッダー `󰭹 Chat` | AIチャットパネルの表示/非表示切り替え |
+| ヘッダー `󰈔 File ▾` | ファイルメニュー展開（新規、開く、フォルダ、保存、閉じる） |
+| ヘッダー `󰧑 Edit ▾` | 編集メニュー展開（Undo, Redo, Cut, Copy, Paste, Select All, コメント, 削除, 複製） |
+| ヘッダー `󰈈 View ▾` | 表示メニュー展開（Split/Single、ファイルツリー、Markdownプレビュー） |
+| ヘッダー `󰚩 AI ▾` | AIメニュー展開（チャットパネル、選択添付、ファイル添付、FIM補完） |
+| ヘッダー `󰒓 Aesthetics` | 外観設定モーダル表示（テーマ、フォント、フォントサイズ、透過度、AIモデル） |
 | チャット `󰓛 Stop` | AIコード生成の即時中断・ストリーミング停止 |
 | テンキー `0`〜`9` / 記号 (`+`, `-`, `*`, `/`, `.`, `,`, `=`) | 数字および演算子記号の直接入力（英字/IME両モード完全対応） |
 | テンキー `Enter` | 改行の挿入 / 新規ファイル作成モーダルの確定 |
 | `Tab`（未選択時） | AI補完の確定挿入 / 4スペース挿入 |
-| `Esc` | 検索バー終了 / AI補完破棄 / モーダル終了 / 選択解除 / メニューキャンセル |
+| `Esc` | 検索バー終了 / AI補完破棄 / モーダル終了 / メニュー閉じる / 選択解除 |
 | `Ctrl + B` | ファイルツリーサイドバーの表示/非表示 |
 | `Ctrl + \` または `Ctrl + E` | 左右2分割（Split / Single）レイアウト切り替え |
 | `Ctrl + M` | Markdownプレビューの切り替え |
 | `Ctrl + I` または `Alt + Enter` | Local AI FIM 補完の手動トリガー（`Ctrl + Space` は IME 専用に解放） |
-| `A-` / `A+` | フォントサイズの縮小 / 拡大 |
 
 ---
 
@@ -195,7 +201,7 @@ cargo build --release
 # 実行
 cargo run
 
-# テスト実行 (27テスト)
+# テスト実行 (30テスト)
 cargo test
 ```
 
@@ -239,10 +245,10 @@ Zero LSP overhead and zero heavy child processes: features in-process Tree-sitte
      - Automatically prompts "Save As" if the buffer is untitled or unnamed.
      - Automatically creates intermediate directories with `create_dir_all`.
 
-4. **Nerd Font Integration & System Font Selector**
+4. **Nerd Font Integration & Aesthetics Preferences**
    - Auto-detects installed monospace and Nerd Fonts (e.g., `JetBrainsMono Nerd Font`, `FiraCode Nerd Font`).
    - Colored Nerd Font icons for each file extension (Rust ``, Markdown ``, TOML ``, Python ``, JS ``, TS ``, C/C++ ``, Shell ``, Git ``, etc.).
-   - Switch fonts and adjust font sizes (`A-` / `A+`) on the fly from the top header bar.
+   - **`󰒓 Aesthetics` Modal**: Cleanly consolidates all visual and model preferences into a single modal dialog: select from 20 themes, choose system monospace fonts, adjust font size (`A-` / `A+`), control Wayland transparency & background dimming, and choose local Ollama AI models.
 
 5. **20 Classic & Neon Themes**
    - **Classic (10)**: Tokyo Night, Catppuccin Mocha, Catppuccin Latte, Nord, Gruvbox Dark, Gruvbox Light, Solarized Dark, Solarized Light, One Dark, Monokai Pro
@@ -250,7 +256,7 @@ Zero LSP overhead and zero heavy child processes: features in-process Tree-sitte
 
 6. **Wayland Native Transparency & Background Dimming**
    - Adjustable window alpha transparency (0.1 to 1.0) and background dimming (0% to 100%).
-   - Generous default window size (2400x2400) optimized for modern high-resolution displays.
+   - Comfortable default window size of **1600x1600** for uncluttered productivity.
 
 7. **Local AI FIM (Fill-in-the-Middle) Code Completion**
    - Direct asynchronous communication with local Ollama (`http://localhost:11434`).
@@ -263,8 +269,13 @@ Zero LSP overhead and zero heavy child processes: features in-process Tree-sitte
    - Theme, font family, font size, Wayland opacity, dimming overlay, dual-pane layout, sidebar visibility, and local AI model settings are automatically persisted to `~/.config/rooney/config.toml`.
    - Your entire workspace environment is seamlessly restored when relaunching the editor.
 
-9. **Edit Menu & Mouse Clipboard Integration (Selection, Context Menu, Wayland Clipboard)**
-   - **Header Edit Menu**: Quick-access dropdown toolbar for Undo, Redo, Cut, Copy, Paste, and Select All via the header `󰧑 Edit ▾` button.
+9. **Consolidated Header Domain Menus & Mouse Operations**
+   - **Text-Labeled Consolidated Menus**: Eliminates header clutter without reducing buttons to cryptic lone icons:
+     - **`󰈔 File ▾`**: New File, Open File, Open Folder, Save File, Save File As, Close Tab
+     - **`󰧑 Edit ▾`**: Undo, Redo, Cut, Copy, Paste, Select All, Toggle Comment, Delete Line, Duplicate Line
+     - **`󰈈 View ▾`**: Toggle Split/Single, Toggle File Tree, Toggle Markdown Preview
+     - **`󰚩 AI ▾`**: Toggle AI Chat, Attach Selection, Attach File, Trigger FIM Completion
+     - **`󰒓 Aesthetics`**: Preferences Modal (Themes, Fonts, Size, Transparency, AI Model)
    - **Right-Click Context Menu**: Right-click anywhere in the editor to bring up a floating context menu at the mouse cursor. Features opaque card styling (`Container::Card`), aligned icons, labels, and shortcuts, edge-of-screen clamping, and full-screen dismissal on backdrop click.
    - **Mouse Drag Selection**: Intuitive click-and-drag visual text selection with theme-matched highlighting.
    - **Wayland System Clipboard**: Full bi-directional integration with the system clipboard via `Ctrl + C`, `Ctrl + X`, `Ctrl + V`, right-click menu, and the header Edit menu.
@@ -358,18 +369,20 @@ Zero LSP overhead and zero heavy child processes: features in-process Tree-sitte
 | Mouse Left Drag | Drag-select text with visual highlight |
 | Editor Right Click | Open editor context menu (Copy, Cut, Paste, Select All, Undo, Redo) |
 | File Tree Right Click | Open file tree context menu (New File, New Folder, Rename, Delete, Refresh) |
-| Header `󰧑 Edit` | Toggle Edit toolbar visibility |
-| Header `󰭹 Chat` | Toggle AI Chat panel visibility |
+| Header `󰈔 File ▾` | Open File menu (New, Open, Open Folder, Save, Save As, Close Tab) |
+| Header `󰧑 Edit ▾` | Open Edit menu (Undo, Redo, Cut, Copy, Paste, Select All, Comment, Delete, Duplicate) |
+| Header `󰈈 View ▾` | Open View menu (Toggle Split, File Tree, Markdown Preview) |
+| Header `󰚩 AI ▾` | Open AI menu (Toggle Chat, Attach Selection, Attach File, FIM Completion) |
+| Header `󰒓 Aesthetics` | Open Aesthetics Preferences modal (Themes, Fonts, Size, Transparency, AI Models) |
 | Chat `󰓛 Stop` | Stop/cancel active AI generation |
 | Numpad `0`–`9` / Operators (`+`, `-`, `*`, `/`, `.`, `,`, `=`) | Direct numeric and operator entry (both English and IME modes) |
 | Numpad `Enter` | Insert newline / Confirm modal dialog |
 | `Tab` (no selection) | Accept AI suggestion / Insert 4 spaces |
-| `Esc` | Close search / Dismiss AI suggestion / Close modals / Clear selection / Cancel dialogs |
+| `Esc` | Close search / Dismiss AI suggestion / Close modals / Close menus / Clear selection |
 | `Ctrl + B` | Toggle File Tree sidebar visibility |
 | `Ctrl + \` or `Ctrl + E` | Toggle Dual-Pane Split / Single layout |
 | `Ctrl + M` | Toggle Markdown Live Preview |
 | `Ctrl + I` or `Alt + Enter` | Manually trigger Local AI FIM (`Ctrl + Space` reserved for IME) |
-| `A-` / `A+` | Decrease / Increase Font Size |
 
 ---
 
@@ -385,7 +398,7 @@ cargo build --release
 # Run locally
 cargo run
 
-# Run unit tests (27 tests)
+# Run unit tests (30 tests)
 cargo test
 ```
 

@@ -303,6 +303,10 @@ impl App {
                         self.file_tree_context_menu = None;
                         return Task::none();
                     }
+                    if self.active_header_menu.is_some() {
+                        self.active_header_menu = None;
+                        return Task::none();
+                    }
                     if self.show_edit_menu {
                         self.show_edit_menu = false;
                         return Task::none();
