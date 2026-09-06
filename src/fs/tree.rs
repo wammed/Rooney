@@ -183,6 +183,10 @@ impl FileTree {
         expanded: &HashSet<PathBuf>,
         out: &mut Vec<FileItem>,
     ) {
+        if depth > 48 {
+            return;
+        }
+
         let Ok(entries) = fs::read_dir(dir) else {
             return;
         };

@@ -5,7 +5,50 @@ use crate::editor::SplitLayout;
 use crate::ui::file_tree_view::FileTreeMessage;
 use crate::theme::themes::ThemeId;
 use cosmic::app::Task;
+use std::path::Path;
 use std::time::Duration;
+
+/// Validate whether a file or folder name is safe and valid (no path separators, no directory traversal).
+pub fn is_valid_file_or_folder_name(name: &str) -> bool {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if trimmed.contains('/') || trimmed.contains('\\') || trimmed == "." || trimmed == ".." {
+        return false;
+    }
+    if trimmed.contains('\0') {
+        return false;
+    }
+    true
+}
+
+/// Determine whether a file contains credentials or sensitive keys that should not be auto-sent to AI.
+pub fn is_sensitive_file(path: &Path) -> bool {
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    if file_name.starts_with(".env")
+        || file_name == ".git-credentials"
+        || file_name == ".netrc"
+        || file_name == "id_rsa"
+        || file_name == "id_ed25519"
+        || file_name == "id_ecdsa"
+        || file_name == "id_dsa"
+        || file_name == "credentials"
+        || file_name.ends_with(".pem")
+        || file_name.ends_with(".key")
+        || file_name.ends_with(".pfx")
+        || file_name.ends_with(".p12")
+    {
+        return true;
+    }
+
+    false
+}
 
 impl App {
     pub(crate) fn handle_update(&mut self, message: Message) -> Task<Message> {
@@ -317,6 +360,13 @@ impl App {
                     return Task::none();
                 }
 
+                // Privacy guard: skip automatic FIM generation for sensitive files (.env, keys, credentials)
+                if let Some(ref path) = self.current_pane().file_path {
+                    if is_sensitive_file(path) {
+                        return Task::none();
+                    }
+                }
+
                 let active_pane = self.active_pane;
                 let (prefix, suffix) = self.current_pane().buffer.get_fim_prefix_suffix(1500);
 
@@ -511,8 +561,8 @@ impl App {
 
             Message::ConfirmNewFile => {
                 let raw_name = self.new_file_name_input.trim();
-                if raw_name.is_empty() {
-                    self.status_msg = Some("File name cannot be empty".into());
+                if !is_valid_file_or_folder_name(raw_name) {
+                    self.status_msg = Some("Invalid file name: path separators and '..' are not allowed".into());
                     return Task::none();
                 }
 
@@ -671,8 +721,8 @@ impl App {
 
             Message::ConfirmNewFolder => {
                 let raw_name = self.new_folder_name_input.trim();
-                if raw_name.is_empty() {
-                    self.status_msg = Some("Folder name cannot be empty".into());
+                if !is_valid_file_or_folder_name(raw_name) {
+                    self.status_msg = Some("Invalid folder name: path separators and '..' are not allowed".into());
                     return Task::none();
                 }
 
@@ -714,8 +764,8 @@ impl App {
 
             Message::ConfirmRename => {
                 let new_name = self.rename_name_input.trim().to_string();
-                if new_name.is_empty() {
-                    self.status_msg = Some("Name cannot be empty".into());
+                if !is_valid_file_or_folder_name(&new_name) {
+                    self.status_msg = Some("Invalid name: path separators and '..' are not allowed".into());
                     return Task::none();
                 }
 
@@ -778,7 +828,28 @@ impl App {
 
             Message::ConfirmDelete => {
                 if let Some(path) = self.delete_target_path.take() {
-                    let result = if path.is_dir() {
+                    let is_root = path == Path::new("/") || path.parent().is_none();
+                    let is_home = directories::BaseDirs::new()
+                        .map(|b| path == b.home_dir())
+                        .unwrap_or(false);
+                    let is_tree_root = path == self.file_tree.root;
+
+                    if is_root || is_home || is_tree_root {
+                        self.status_msg = Some(
+                            "Safety guard: Root, home, or workspace root cannot be deleted".into(),
+                        );
+                        self.show_delete_modal = false;
+                        return Task::none();
+                    }
+
+                    let is_symlink = path
+                        .symlink_metadata()
+                        .map(|m| m.file_type().is_symlink())
+                        .unwrap_or(false);
+
+                    let result = if is_symlink {
+                        std::fs::remove_file(&path)
+                    } else if path.is_dir() {
                         std::fs::remove_dir_all(&path)
                     } else {
                         std::fs::remove_file(&path)

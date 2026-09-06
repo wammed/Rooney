@@ -796,3 +796,82 @@ fn test_active_header_menu_and_actions() {
     assert!(matches!(msg_close, Message::CloseHeaderMenu));
 }
 
+#[test]
+fn test_filename_sanitization_and_path_traversal_guards() {
+    use rooney::app::update::is_valid_file_or_folder_name;
+
+    // Valid names
+    assert!(is_valid_file_or_folder_name("main.rs"));
+    assert!(is_valid_file_or_folder_name("test-123_abc.conf"));
+    assert!(is_valid_file_or_folder_name(".gitignore"));
+    assert!(is_valid_file_or_folder_name(".env.local"));
+
+    // Path traversal / injection attempts
+    assert!(!is_valid_file_or_folder_name("../etc/passwd"));
+    assert!(!is_valid_file_or_folder_name(".."));
+    assert!(!is_valid_file_or_folder_name("."));
+    assert!(!is_valid_file_or_folder_name("/etc/shadow"));
+    assert!(!is_valid_file_or_folder_name("sub/folder/file.rs"));
+    assert!(!is_valid_file_or_folder_name("dir\\file.txt"));
+    assert!(!is_valid_file_or_folder_name(""));
+    assert!(!is_valid_file_or_folder_name("   "));
+    assert!(!is_valid_file_or_folder_name("file\0null"));
+}
+
+#[test]
+fn test_sensitive_file_ai_protection() {
+    use rooney::app::update::is_sensitive_file;
+    use std::path::Path;
+
+    // Sensitive files that must be protected
+    assert!(is_sensitive_file(Path::new(".env")));
+    assert!(is_sensitive_file(Path::new(".env.local")));
+    assert!(is_sensitive_file(Path::new(".env.production")));
+    assert!(is_sensitive_file(Path::new("/home/user/.ssh/id_rsa")));
+    assert!(is_sensitive_file(Path::new("id_ed25519")));
+    assert!(is_sensitive_file(Path::new("server.key")));
+    assert!(is_sensitive_file(Path::new("cert.pem")));
+    assert!(is_sensitive_file(Path::new("keystore.p12")));
+    assert!(is_sensitive_file(Path::new(".git-credentials")));
+    assert!(is_sensitive_file(Path::new(".netrc")));
+    assert!(is_sensitive_file(Path::new("credentials")));
+
+    // Normal files that are allowed for AI
+    assert!(!is_sensitive_file(Path::new("main.rs")));
+    assert!(!is_sensitive_file(Path::new("index.ts")));
+    assert!(!is_sensitive_file(Path::new("README.md")));
+    assert!(!is_sensitive_file(Path::new("Cargo.toml")));
+}
+
+#[test]
+fn test_atomic_save_and_file_size_limits() {
+    use rooney::editor::pane::EditorPane;
+    use std::fs;
+
+    let temp_dir = std::env::temp_dir().join(format!("rooney_atomic_test_{}", std::process::id()));
+    let _ = fs::create_dir_all(&temp_dir);
+    let target_file = temp_dir.join("test_save.txt");
+
+    // Test initial write
+    let initial_content = "Hello, Atomic World!";
+    let res = EditorPane::atomic_write_file(&target_file, initial_content);
+    assert!(res.is_ok());
+    assert_eq!(fs::read_to_string(&target_file).unwrap(), initial_content);
+
+    // Test atomic replacement
+    let updated_content = "Updated content securely replaced!";
+    let res2 = EditorPane::atomic_write_file(&target_file, updated_content);
+    assert!(res2.is_ok());
+    assert_eq!(fs::read_to_string(&target_file).unwrap(), updated_content);
+
+    // Verify no temporary files are left over in the directory
+    let entries: Vec<_> = fs::read_dir(&temp_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].file_name(), "test_save.txt");
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+

@@ -61,6 +61,19 @@ impl EditorTab {
     }
 
     pub fn load_file(&mut self, path: &Path) -> std::io::Result<()> {
+        let metadata = std::fs::metadata(path)?;
+        // Safety guard: reject files > 50MB to prevent memory exhaustion and UI lockup
+        const MAX_FILE_SIZE: u64 = 50 * 1024 * 1024;
+        if metadata.len() > MAX_FILE_SIZE {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::FileTooLarge,
+                format!(
+                    "File size ({} MB) exceeds safety threshold of 50 MB",
+                    metadata.len() / (1024 * 1024)
+                ),
+            ));
+        }
+
         let content = std::fs::read_to_string(path)?;
         let name = path
             .file_name()
@@ -92,11 +105,8 @@ impl EditorTab {
 
     pub fn save_file(&mut self) -> std::io::Result<()> {
         if let Some(ref path) = self.file_path {
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
             let text = self.buffer.full_text();
-            std::fs::write(path, text)?;
+            Self::atomic_write_file(path, &text)?;
             self.buffer.is_modified = false;
             Ok(())
         } else {
@@ -108,11 +118,8 @@ impl EditorTab {
     }
 
     pub fn save_file_as(&mut self, path: &Path) -> std::io::Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
         let text = self.buffer.full_text();
-        std::fs::write(path, text)?;
+        Self::atomic_write_file(path, &text)?;
         self.file_path = Some(path.to_path_buf());
         self.file_name = path
             .file_name()
@@ -129,6 +136,47 @@ impl EditorTab {
             self.markdown_doc = Some(MarkdownDocument::parse(&self.buffer.full_text()));
         } else {
             self.markdown_doc = None;
+        }
+
+        Ok(())
+    }
+
+    /// Atomically write file contents to disk using a temporary sibling file and rename.
+    /// This guarantees that a system crash, power failure, or error will not truncate the original file.
+    pub fn atomic_write_file(path: &Path, content: &str) -> std::io::Result<()> {
+        use std::io::Write;
+
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let existing_permissions = path.metadata().ok().map(|m| m.permissions());
+        let pid = std::process::id();
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unnamed");
+        let temp_path = path.with_file_name(format!(".{file_name}.tmp.{pid}"));
+
+        let write_result = (|| -> std::io::Result<()> {
+            let mut file = std::fs::File::create(&temp_path)?;
+            file.write_all(content.as_bytes())?;
+            file.sync_all()?;
+            Ok(())
+        })();
+
+        if let Err(e) = write_result {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(e);
+        }
+
+        if let Some(perms) = existing_permissions {
+            let _ = std::fs::set_permissions(&temp_path, perms);
+        }
+
+        if let Err(e) = std::fs::rename(&temp_path, path) {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(e);
         }
 
         Ok(())
@@ -237,6 +285,10 @@ impl EditorPane {
             active_tab_idx: 0,
             next_tab_id: 2,
         }
+    }
+
+    pub fn atomic_write_file(path: &Path, content: &str) -> std::io::Result<()> {
+        EditorTab::atomic_write_file(path, content)
     }
 
     pub fn active_tab(&self) -> &EditorTab {

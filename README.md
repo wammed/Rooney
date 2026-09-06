@@ -46,9 +46,12 @@ Pop!_OS COSMIC DE（libcosmic / Wayland）ネイティブの超高速・軽量�
      - サイドバーのファイルツリールートを任意のフォルダに変更。
    - **親フォルダ移動（``）**:
      - ワンクリックで親ディレクトリ（`..`）に遡るナビゲーション。
-   - **ファイルの安全な保存（`Ctrl + S` / `Ctrl + Shift + S` / `󰆓 Save`）**:
+   - **ファイルの安全なアトミック保存（`Ctrl + S` / `Ctrl + Shift + S` / `󰆓 Save`）**:
+     - 一時ファイル書き出しと原子的置換（Atomic Write）により、クラッシュや電源断による0バイト破損を根絶。
+     - 50MBを超える巨大ファイルの誤オープンを自動遮断し、メモリ枯渇 (OOM) やUIフリーズを未然に防止。
+     - ファイル・フォルダ作成やリネーム時のパストラバーサル（`..` や `/`）を自動検知してブロック。
+     - ルート `/` やホームディレクトリの誤った再帰削除を防止するセーフガードを完備。
      - 未命名バッファの場合は自動で「名前を付けて保存（Save As）」ダイアログを表示。
-     - ネストしたフォルダが存在しない場合も自動で親ディレクトリを作成して安全に保存。
 
 4. **Nerd Font の全面採用 & 外観（Aesthetics）設定**
    - システム内のフォント（`JetBrainsMono Nerd Font` 等）を自動検出。
@@ -64,9 +67,10 @@ Pop!_OS COSMIC DE（libcosmic / Wayland）ネイティブの超高速・軽量�
    - 背景ディミングオーバーレイ（0%〜100%）。
    - デフォルトウィンドウサイズ **1600x1600** の快適で広々とした作業領域。
 
-7. **Local AI FIM (Fill-in-the-Middle) 補完**
+7. **Local AI FIM (Fill-in-the-Middle) 補完 & プライバシー保護**
    - ローカルの Ollama（`http://localhost:11434`）と高速非同期連携。
    - `deepseek-coder-v2`, `gemma4-coder`, `qwen2.5-coder` 等の利用可能なモデルを自動検出。
+   - **機密ファイル自動シールド**: `.env*`、秘密鍵（`id_rsa`、`*.pem`、`*.key`）、認証情報ファイルの編集中は、自動FIM送信を自動バイパスして情報漏洩を防止。
    - 入力中の文脈に応じたゴーストテキストサジェスト。
    - `Tab` キーで即座に確定挿入、`Esc` で破棄。
    - `Ctrl + I` または `Alt + Enter` で手動生成トリガー。
@@ -201,7 +205,7 @@ cargo build --release
 # 実行
 cargo run
 
-# テスト実行 (30テスト)
+# テスト実行 (33テスト)
 cargo test
 ```
 
@@ -241,9 +245,12 @@ Zero LSP overhead and zero heavy child processes: features in-process Tree-sitte
      - Switch the active root of the sidebar file tree to any workspace or folder.
    - **Navigate Up (``)**:
      - One-click parent directory (`..`) navigation.
-   - **Safe File Saving (`Ctrl + S` / `Ctrl + Shift + S` / `󰆓 Save`)**:
-     - Automatically prompts "Save As" if the buffer is untitled or unnamed.
-     - Automatically creates intermediate directories with `create_dir_all`.
+   - **Safe Atomic File Saving (`Ctrl + S` / `Ctrl + Shift + S` / `󰆓 Save`)**:
+     - Atomic write via sibling temporary file replacement (`.{file}.tmp.{pid}`) prevents 0-byte truncation on crash or power loss.
+     - 50MB file size safety threshold blocks opening massive or device files to prevent out-of-memory (OOM) UI freezes.
+     - Filename sanitization in modal dialogs actively blocks path traversal (`..`, `/`, `\`, NUL bytes).
+     - Deletion guardrails protect root `/` and user home directories, with safe symlink removal.
+     - Prompts "Save As" automatically if buffer is untitled or unnamed.
 
 4. **Nerd Font Integration & Aesthetics Preferences**
    - Auto-detects installed monospace and Nerd Fonts (e.g., `JetBrainsMono Nerd Font`, `FiraCode Nerd Font`).
@@ -258,9 +265,10 @@ Zero LSP overhead and zero heavy child processes: features in-process Tree-sitte
    - Adjustable window alpha transparency (0.1 to 1.0) and background dimming (0% to 100%).
    - Comfortable default window size of **1600x1600** for uncluttered productivity.
 
-7. **Local AI FIM (Fill-in-the-Middle) Code Completion**
+7. **Local AI FIM (Fill-in-the-Middle) Code Completion & Privacy Shield**
    - Direct asynchronous communication with local Ollama (`http://localhost:11434`).
    - Automatically detects installed coding models (e.g., `deepseek-coder-v2`, `gemma4-coder`, `qwen2.5-coder`).
+   - **Sensitive File Shield**: Automatically suppresses outbound AI requests when editing sensitive files (`.env*`, `id_rsa`, `*.pem`, `*.key`, `credentials`) to protect private credentials.
    - Context-aware inline ghost text suggestions.
    - Press `Tab` to accept, `Esc` to dismiss.
    - Trigger suggestions manually with `Ctrl + I` or `Alt + Enter`.
@@ -398,7 +406,7 @@ cargo build --release
 # Run locally
 cargo run
 
-# Run unit tests (30 tests)
+# Run unit tests (33 tests)
 cargo test
 ```
 

@@ -326,6 +326,14 @@ impl OllamaClient {
 
             line_buffer.push_str(&String::from_utf8_lossy(&bytes));
 
+            // Memory guard: prevent unbounded memory consumption if stream contains no newlines
+            if line_buffer.len() > 1024 * 1024 {
+                let _ = tx.unbounded_send(ChatStreamEvent::Error(
+                    "Stream line buffer exceeded 1MB safety threshold".into(),
+                ));
+                return;
+            }
+
             while let Some(pos) = line_buffer.find('\n') {
                 let line = line_buffer[..pos].trim().to_string();
                 line_buffer = line_buffer[pos + 1..].to_string();

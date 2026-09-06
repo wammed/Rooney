@@ -205,10 +205,37 @@
   - `src/main.rs` でデフォルトウィンドウサイズを `1600.0 x 1600.0` に設定。
   - コンテキストメニュー等の画面端クランプ座標を `1550.0` / `1500.0` に最適化。
 - **テスト・静的解析の完全遵守**:
-  - `test_active_header_menu_and_actions` 単体テストを追加。
   - `cargo test`: 27 core tests + 3 ollama tests = **30/30 passed (0 failed)**。
   - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings**。
   - `cargo build --release`: 完全クリーンビルド成功。
+
+### セッション 15: 包括的セキュリティ・堅牢性強化（パストラバーサル防止、アトミック保存、機密ファイル保護、DoS防止）
+- **セキュリティ・堅牢性の全項目改善**:
+  1. **パストラバーサル・ディレクトリ脱出の防止**:
+     - `is_valid_file_or_folder_name` を新設し、ファイル名・フォルダ名入力およびリネームにおいて、パス区切り文字（`/`, `\`）、`..`、`.`、NULバイトを完全に拒否。
+     - 意図せぬワークスペース外へのファイル作成・上書き・リネーム移動を根本遮断。
+  2. **危険な再帰削除の防止（ルート・ホーム保護 & シンボリックリンク安全処理）**:
+     - `ConfirmDelete` において、ルート `/`、ホームディレクトリ、ワークスペースルートの削除を検出し、安全違反として遮断。
+     - `symlink_metadata()` によりシンボリックリンク判定を行い、ディレクトリリンクであってもリンク先への再帰削除ではなく単一ファイル削除（リンク自体の解除）を実行。
+  3. **ファイル保存の原子的置換（Atomic Write）**:
+     - `EditorTab::atomic_write_file` を実装。
+     - 同一ディレクトリ内に一時ファイル（`.{filename}.tmp.{pid}`）を同期書き込み (`sync_all`) し、既存ファイルのパーミッションを保持した上で `rename` による原子的上書き置換を実行。保存途中のOSクラッシュや電源断による0バイト破損を根絶。
+  4. **大容量ファイル・デバイスファイル読み込み制限（50MB上限）**:
+     - `load_file` で `std::fs::metadata` のファイルサイズを検証。50MBを超える場合は `ErrorKind::FileTooLarge` で安全に拒否し、メモリ枯渇 (OOM kill) やUIフリーズを未然に防止。
+  5. **機密ファイルのAI自動補完シールド（プライバシー保護）**:
+     - `is_sensitive_file` を新設（`.env*`, `id_rsa`, `id_ed25519`, `credentials`, `*.pem`, `*.key` 等を自動識別）。
+     - 機密ファイルを開いている際、Ollamaへの自動FIM補完リクエスト送信を自動的にバイパス。
+  6. **AIストリーミング受信バッファのメモリ上限保護**:
+     - `chat_generate_stream` で改行のない異常なストリーム受信時に `line_buffer` が無制限に肥大化しないよう、1MBのセーフティガードを設定。
+  7. **フォントキャッシュ Mutex のパニック耐性向上**:
+     - `intern_font_name` の `.unwrap()` を `.unwrap_or_else(|e| e.into_inner())` に変更し、万一の Mutex Poisoning 時でもエディタがクラッシュせず描画継続可能に。
+  8. **ファイルツリー再帰深度上限ガード**:
+     - `FileTree::scan_dir` に `depth > 48` のガードを設け、循環シンボリックリンクによるスタックオーバーフローを徹底防止。
+- **テスト・静的解析の完全遵守**:
+  - `test_filename_sanitization_and_path_traversal_guards`, `test_sensitive_file_ai_protection`, `test_atomic_save_and_file_size_limits` を追加。
+  - `cargo test`: 30 core tests + 3 ollama tests = **33/33 passed (0 failed)**。
+  - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings**。
+  - `cargo build --release`: 最適化リリースバイナリの完全クリーンビルド成功。
 
 ---
 
@@ -319,8 +346,11 @@ Rooney/
 ## 5. 現在のビルドおよびテスト状態
 
 - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings** (完全クリーン)
-- `cargo test`: **30/30 passed (0 failed)**
-  - `test_active_header_menu_and_actions` ... ok (新規追加)
+- `cargo test`: **33/33 passed (0 failed)**
+  - `test_filename_sanitization_and_path_traversal_guards` ... ok (新規追加)
+  - `test_sensitive_file_ai_protection` ... ok (新規追加)
+  - `test_atomic_save_and_file_size_limits` ... ok (新規追加)
+  - `test_active_header_menu_and_actions` ... ok
   - `test_char_advance_ascii_and_cjk` ... ok
   - `test_buffer_selection_and_deletion` ... ok
   - `test_file_type_icons_extended` ... ok

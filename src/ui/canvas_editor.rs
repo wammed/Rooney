@@ -20,7 +20,7 @@ fn intern_font_name(name: &str) -> &'static str {
 
     static CACHE: OnceLock<Mutex<HashSet<&'static str>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashSet::new()));
-    let mut set = cache.lock().unwrap();
+    let mut set = cache.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(&interned) = set.get(name) {
         interned
     } else {
