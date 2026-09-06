@@ -104,3 +104,31 @@ fn test_file_tree_scanning() {
     let tree = FileTree::new(".");
     assert!(!tree.items.is_empty());
 }
+
+#[test]
+fn test_japanese_text_and_width() {
+    use unicode_width::UnicodeWidthChar;
+
+    let mut buf = TextBuffer::new("こんにちは世界！\nHello World");
+    assert_eq!(buf.line_count(), 2);
+    assert_eq!(buf.line_text(0), Some("こんにちは世界！".to_string()));
+
+    // Test CJK character display widths
+    let c = 'あ';
+    assert_eq!(c.width().unwrap_or(1), 2);
+    let a = 'a';
+    assert_eq!(a.width().unwrap_or(1), 1);
+
+    // Insert Japanese text into buffer
+    buf.cursor = (0, 5); // after "こんにちは"
+    buf.insert_str("、素晴らしき");
+    assert_eq!(buf.line_text(0), Some("こんにちは、素晴らしき世界！".to_string()));
+
+    // Undo Japanese insertion
+    buf.undo();
+    assert_eq!(buf.line_text(0), Some("こんにちは世界！".to_string()));
+
+    // Redo Japanese insertion
+    buf.redo();
+    assert_eq!(buf.line_text(0), Some("こんにちは、素晴らしき世界！".to_string()));
+}

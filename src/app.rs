@@ -24,6 +24,9 @@ pub enum Message {
     FileTreeMsg(FileTreeMessage),
     ToggleSplit,
     SetActivePane(PaneId),
+    ClickPane(PaneId, usize, usize),
+    ScrollPane(PaneId, f32),
+    TogglePaneMode(PaneId),
     ToggleMarkdownPreview,
     SelectTheme(usize),
     SelectFont(usize),
@@ -136,7 +139,7 @@ A lightweight, fast, in-process code and markdown editor.
         right_pane.buffer = crate::editor::buffer::TextBuffer::new(sample_md);
         right_pane.highlighter = crate::syntax::Highlighter::new(crate::syntax::SupportedLanguage::Markdown);
         right_pane.highlighter.update_source(sample_md);
-        right_pane.is_markdown_preview = true;
+        right_pane.is_markdown_preview = false;
         right_pane.markdown_doc = Some(crate::markdown::MarkdownDocument::parse(sample_md));
 
         let theme_names: Vec<String> = ThemeId::ALL.iter().map(|t| t.display_name().to_string()).collect();
@@ -167,7 +170,7 @@ A lightweight, fast, in-process code and markdown editor.
         let readme_path = current_dir.join("README.md");
         if readme_path.exists() {
             let _ = app.right_pane.load_file(&readme_path);
-            app.right_pane.is_markdown_preview = true;
+            app.right_pane.is_markdown_preview = false;
         }
 
         let client_clone = app.ollama.clone();
@@ -206,14 +209,40 @@ A lightweight, fast, in-process code and markdown editor.
             }
 
             Message::Event(event) => {
-                if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
-                    key,
-                    modifiers,
-                    text,
-                    ..
-                }) = event
-                {
-                    self._last_key_press = Instant::now();
+                match event {
+                    iced::Event::InputMethod(ime_event) => {
+                        match ime_event {
+                            cosmic::iced::advanced::input_method::Event::Commit(committed_text) => {
+                                let pane = self.current_pane_mut();
+                                pane.clear_ghost_text();
+                                pane.preedit = None;
+                                pane.buffer.insert_str(&committed_text);
+                                pane.on_content_changed();
+                            }
+                            cosmic::iced::advanced::input_method::Event::Preedit(preedit_text, selection) => {
+                                let pane = self.current_pane_mut();
+                                pane.clear_ghost_text();
+                                if preedit_text.is_empty() {
+                                    pane.preedit = None;
+                                } else {
+                                    pane.preedit = Some((preedit_text, selection));
+                                }
+                            }
+                            cosmic::iced::advanced::input_method::Event::Closed => {
+                                let pane = self.current_pane_mut();
+                                pane.preedit = None;
+                            }
+                            _ => {}
+                        }
+                        return Task::none();
+                    }
+                    iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                        key,
+                        modifiers,
+                        text,
+                        ..
+                    }) => {
+                        self._last_key_press = Instant::now();
 
                     // Shortcut: Ctrl + S (Save)
                     if modifiers.control() && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("s")) {
@@ -360,13 +389,50 @@ A lightweight, fast, in-process code and markdown editor.
                             let s = t.as_str();
                             if !s.is_empty() && !s.chars().all(|c| c.is_control()) {
                                 let pane = self.current_pane_mut();
-                                pane.clear_ghost_text();
-                                pane.buffer.insert_str(s);
-                                pane.on_content_changed();
-                                return Task::none();
+                                if pane.preedit.is_none() {
+                                    pane.clear_ghost_text();
+                                    pane.buffer.insert_str(s);
+                                    pane.on_content_changed();
+                                    return Task::none();
+                                }
                             }
                         }
                     }
+                        Task::none()
+                    }
+                    _ => Task::none(),
+                }
+            }
+
+            Message::ClickPane(pane_id, line, col) => {
+                self.active_pane = pane_id;
+                let pane = self.current_pane_mut();
+                pane.clear_ghost_text();
+                pane.preedit = None;
+                pane.buffer.cursor = (line, col);
+                pane.buffer.clamp_cursor();
+                pane.buffer.selection_anchor = None;
+                Task::none()
+            }
+
+            Message::ScrollPane(pane_id, delta_y) => {
+                let target_pane = match pane_id {
+                    PaneId::Left => &mut self.left_pane,
+                    PaneId::Right => &mut self.right_pane,
+                };
+                target_pane.scroll_y = (target_pane.scroll_y + delta_y).max(0.0);
+                Task::none()
+            }
+
+            Message::TogglePaneMode(pane_id) => {
+                let target_pane = match pane_id {
+                    PaneId::Left => &mut self.left_pane,
+                    PaneId::Right => &mut self.right_pane,
+                };
+                target_pane.is_markdown_preview = !target_pane.is_markdown_preview;
+                if target_pane.is_markdown_preview && target_pane.markdown_doc.is_none() {
+                    let text = target_pane.buffer.full_text();
+                    target_pane.markdown_doc = Some(crate::markdown::MarkdownDocument::parse(&text));
                 }
                 Task::none()
             }
@@ -693,32 +759,51 @@ A lightweight, fast, in-process code and markdown editor.
                 .into()
         };
 
-        // Tab header for left pane
-        let left_tab = row::with_capacity(3)
+        // Tab header for left pane (with independent Edit/Preview toggle)
+        let left_tab = row::with_capacity(4)
             .push(
-                text(format!(
-                    "{} {}{}",
-                    if self.active_pane == PaneId::Left { "●" } else { "○" },
-                    self.left_pane.file_name,
-                    if self.left_pane.buffer.is_modified { " *" } else { "" }
-                ))
-                .size(12.0)
-                .class(cosmic::theme::Text::Color(if self.active_pane == PaneId::Left {
-                    theme.config.accent
+                button::custom(
+                    row::with_capacity(2)
+                        .push(
+                            text(format!(
+                                "{} {}{}",
+                                if self.active_pane == PaneId::Left { "●" } else { "○" },
+                                self.left_pane.file_name,
+                                if self.left_pane.buffer.is_modified { " *" } else { "" }
+                            ))
+                            .size(12.0)
+                            .class(cosmic::theme::Text::Color(if self.active_pane == PaneId::Left {
+                                theme.config.accent
+                            } else {
+                                theme.config.fg
+                            })),
+                        )
+                        .align_y(Alignment::Center),
+                )
+                .on_press(Message::SetActivePane(PaneId::Left))
+                .padding([4, 8]),
+            )
+            .push(cosmic::iced::widget::space::horizontal())
+            .push(
+                button::text(if self.left_pane.is_markdown_preview {
+                    "  Edit "
                 } else {
-                    theme.config.fg
-                })),
+                    "  Preview "
+                })
+                .on_press(Message::TogglePaneMode(PaneId::Left))
+                .padding([2, 6]),
             )
             .align_y(Alignment::Center)
-            .padding([4, 12]);
+            .padding([2, 8])
+            .width(Length::Fill);
 
         let left_col = column::with_capacity(2)
-            .push(
-                button::custom(left_tab)
-                    .on_press(Message::SetActivePane(PaneId::Left))
-                    .padding(0),
-            )
+            .push(left_tab)
             .push(left_element)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        let left_pane_box = container(left_col)
             .width(Length::Fill)
             .height(Length::Fill);
 
@@ -753,43 +838,63 @@ A lightweight, fast, in-process code and markdown editor.
                     .into()
             };
 
-            let right_tab = row::with_capacity(3)
+            // Tab header for right pane (with independent Edit/Preview toggle)
+            let right_tab = row::with_capacity(4)
                 .push(
-                    text(format!(
-                        "{} {}{}",
-                        if self.active_pane == PaneId::Right { "●" } else { "○" },
-                        self.right_pane.file_name,
-                        if self.right_pane.buffer.is_modified { " *" } else { "" }
-                    ))
-                    .size(12.0)
-                    .class(cosmic::theme::Text::Color(if self.active_pane == PaneId::Right {
-                        theme.config.accent
+                    button::custom(
+                        row::with_capacity(2)
+                            .push(
+                                text(format!(
+                                    "{} {}{}",
+                                    if self.active_pane == PaneId::Right { "●" } else { "○" },
+                                    self.right_pane.file_name,
+                                    if self.right_pane.buffer.is_modified { " *" } else { "" }
+                                ))
+                                .size(12.0)
+                                .class(cosmic::theme::Text::Color(if self.active_pane == PaneId::Right {
+                                    theme.config.accent
+                                } else {
+                                    theme.config.fg
+                                })),
+                            )
+                            .align_y(Alignment::Center),
+                    )
+                    .on_press(Message::SetActivePane(PaneId::Right))
+                    .padding([4, 8]),
+                )
+                .push(cosmic::iced::widget::space::horizontal())
+                .push(
+                    button::text(if self.right_pane.is_markdown_preview {
+                        "  Edit "
                     } else {
-                        theme.config.fg
-                    })),
+                        "  Preview "
+                    })
+                    .on_press(Message::TogglePaneMode(PaneId::Right))
+                    .padding([2, 6]),
                 )
                 .align_y(Alignment::Center)
-                .padding([4, 12]);
+                .padding([2, 8])
+                .width(Length::Fill);
 
             let right_col = column::with_capacity(2)
-                .push(
-                    button::custom(right_tab)
-                        .on_press(Message::SetActivePane(PaneId::Right))
-                        .padding(0),
-                )
+                .push(right_tab)
                 .push(right_element)
                 .width(Length::Fill)
                 .height(Length::Fill);
 
+            let right_pane_box = container(right_col)
+                .width(Length::Fill)
+                .height(Length::Fill);
+
             row::with_capacity(3)
-                .push(left_col)
-                .push(Space::new().width(Length::Fixed(2.0)))
-                .push(right_col)
+                .push(left_pane_box)
+                .push(Space::new().width(Length::Fixed(4.0)))
+                .push(right_pane_box)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
         } else {
-            left_col.into()
+            left_pane_box.into()
         };
 
         let mut main_row = row::with_capacity(3).width(Length::Fill).height(Length::Fill);

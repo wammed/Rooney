@@ -25,6 +25,7 @@ pub struct EditorPane {
     pub scroll_y: f32,
     pub scroll_x: f32,
     pub ghost_text: Option<String>,
+    pub preedit: Option<(String, Option<std::ops::Range<usize>>)>,
     pub is_markdown_preview: bool,
     pub markdown_doc: Option<MarkdownDocument>,
     pub last_edit_time: Instant,
@@ -42,6 +43,7 @@ impl EditorPane {
             scroll_y: 0.0,
             scroll_x: 0.0,
             ghost_text: None,
+            preedit: None,
             is_markdown_preview: false,
             markdown_doc: None,
             last_edit_time: Instant::now(),
@@ -68,6 +70,7 @@ impl EditorPane {
         self.scroll_y = 0.0;
         self.scroll_x = 0.0;
         self.ghost_text = None;
+        self.preedit = None;
 
         if lang == SupportedLanguage::Markdown {
             self.markdown_doc = Some(MarkdownDocument::parse(&content));
