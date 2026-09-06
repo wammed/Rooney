@@ -2,7 +2,7 @@ pub mod buffer;
 pub mod pane;
 
 pub use buffer::TextBuffer;
-pub use pane::{EditorPane, PaneId, SplitLayout};
+pub use pane::{EditorPane, EditorTab, PaneId, SplitLayout};
 
 use cosmic::iced::keyboard::key::{Code, Physical};
 

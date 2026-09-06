@@ -113,7 +113,78 @@
       - 独立した専用カーソルキー（`ArrowLeft` 等）や専用 `Delete` キーは `resolve_numpad_char` で `None` となるため、移動・削除操作が一切損なわれず完璧に共存。
       - 通常文字入力フォールバックでも `.filter(!empty).or_else(...)` を採用し、空文字列によるフォールバック握りつぶしを根本排除。
       - テンキーの **Enter**（`Code::NumpadEnter`）もエディタ改行およびモーダル確定の両方でシームレスに動作。
-      - `tests/core_tests.rs::test_numpad_key_resolution` で 0〜9, +, -, *, /, ., ,, = の正引き、および専用矢印・文字キーの `None` 判定を自動テスト化。全16テスト通過。
+      - `tests/core_tests.rs::test_numpad_key_resolution` で 0〜9, +, -, *, /, ., ,, = の正引き、および専用矢印・文字キーの `None` 判定を自動テスト化。
+
+### セッション 11: Tree-sitter多言語拡張・検索置換・行編集・パフォーマンス最適化・Clippy警告完全解消
+- **Tree-sitter 言語・設定ファイルの大幅拡張（12+言語）**:
+  - `tree-sitter-python`, `tree-sitter-javascript`, `tree-sitter-typescript`, `tree-sitter-c`, `tree-sitter-cpp`, `tree-sitter-bash`, `tree-sitter-fish`, `tree-sitter-json`, `tree-sitter-toml-ng`, `tree-sitter-yaml` を導入。
+  - Rust, Python, JS/TS, C/C++, Bash, Fish, TOML, YAML, JSON, INI/Conf, Markdown を完全ハイライト。
+  - ファイルツリーアイコンに `.fish` (`󰈺`), `.yaml` (``), `.ini` (``), `.tsx`/`.jsx` (``) 等を追加。
+- **インクリメンタルファイル内検索 (`Ctrl + F`) & リアルタイムハイライト**:
+  - `Ctrl + F` でエディタ上部に検索バーを展開。
+  - マッチ箇所をエディタ内で黄色ハイライト描画、アクティブマッチを白枠強調。
+  - `Enter` / `▼`（次の一致）、`Shift + Enter` / `▲`（前の一致）、`Esc` / `✕`（閉じる）。
+- **高度なカーソル移動・行編集ショートカット**:
+  - `Ctrl + Left` / `Ctrl + Right`: 単語単位移動（`+Shift` で単語選択）。
+  - `Ctrl + /`: 行コメントトグル（言語別の `//` または `#` を自動判定）。
+  - `Ctrl + Shift + K`: 行削除。
+  - `Ctrl + D`: 行複製。
+  - `Tab` / `Shift + Tab`（選択時）: 複数行の一括インデント / アンインデント（4スペース）。
+- **メモリリークの根絶 & パフォーマンス最適化**:
+  - `canvas_editor.rs` の毎フレーム `Box::leak` を `intern_font_name`（`OnceLock<Mutex<HashSet<&'static str>>>` キャッシュ）に置換し、メモリリークを完全解消。
+  - `pane.on_content_changed` において、Markdownプレビューが非アクティブな時はMarkdown ASTパースをスキップし、毎打鍵の遅延を極小化。
+  - `FileTree::scan_dir` で `node_modules`, `.venv`, `target`, `dist`, `build`, `.idea`, `.vscode` 等の大規模ディレクトリを自動除外。
+- **コード品質向上**:
+  - `cargo clippy`: 全15件の警告を修正し、**0警告** を達成。
+  - `cargo test`: 19件のユニットテスト + 2件のOllamaテスト = **全21件パス (0 failure)**。
+
+### セッション 10〜11: タブ形式マルチバッファ管理と `src/app/` モジュール分割
+- **タブ形式のマルチバッファ管理**:
+  - `EditorTab` および `EditorPane` による左右ペインそれぞれの独立複数タブ管理。
+  - 未保存バッファのインジケータ（`●`）、タブ追加・閉じるボタン、`Ctrl + T`, `Ctrl + W`, `Ctrl + Tab`, `Ctrl + Shift + Tab` ショートカット。
+  - 最後のタブを閉じた際のクリーンな Untitled タブ自動フォールバック。
+- **`src/app/` の責任分割**:
+  - 巨大化していた単一の `src/app.rs` を `src/app/` サブモジュール（`mod.rs`, `keybindings.rs`, `update.rs`, `state.rs`, `message.rs`, `ui/`）へ分割。
+  - 責務ごとの明確な分離により、拡張性とテスト容易性を飛躍的に向上。
+
+### セッション 12: ファイルツリー操作・AIチャットストリーミングパネル・セッション永続化（新機能群）
+- **ファイルツリー コンテキスト操作 & ディレクトリ管理機能**:
+  - サイドバーヘッダーおよび各アイテムにクイックアクション（新規ファイル `＋`, フォルダ作成 ``, リネーム ``, 削除 ``）を配置。
+  - 画面中央のモーダルダイアログでファイル名・フォルダ名・リネーム・削除確認（誤操作防止）を安全に実行。
+  - ファイルやディレクトリのリネーム時、左右両ペインで開いている該当タブのファイルパスおよびタブ表示名をリアルタイムに自動同期。
+  - ファイルやディレクトリの削除時、開いていた該当タブを安全に自動クローズ。
+- **AI チャット / 複数行コード生成パネル & リアルタイム・ストリーミング（SSE）**:
+  - ヘッダーの `󰭹 Chat` ボタンまたは `Ctrl + Shift + A` で展開・格納できる右側AIアシスタントパネル。
+  - `stream: true` による非同期チャンク受信（`futures_channel::mpsc` & `cosmic::task::stream`）。1トークンずつリアルタイムに流れるタイピングアニメーション（`▋` カーソル付き）を実装。
+  - いつでも生成を中断できる `󰓛 Stop` ボタン（および生成中の Enter キーでの即時キャンセル）を完備。
+  - `Attach Selection`（選択範囲コード添付）および `Attach File`（アクティブファイル全体添付）機能。
+  - 生成されたコードブロックをワンクリックでカーソル位置へ挿入（Insert at Cursor）またはクリップボードコピー。
+- **ワークスペースセッションの自動永続化**:
+  - 左右ペインで開いていたタブ一覧、アクティブタブ番号、カーソル位置（行・列）、ワークスペースルートディレクトリ、AIチャットパネル開閉状態を `~/.config/rooney/config.toml` に自動保存。
+  - 次回エディタ起動時に、前回の作業状態が寸分違わずそのまま自動復元。
+- **テスト・静的解析の完全遵守**:
+  - セッションシリアライズ・復元テスト、タブ同期テスト、AI Chatストリーミング蓄積テスト、Ollamaチャットストリーミング実走テストを追加。
+  - `cargo test`: 24 core tests + 3 ollama tests = **27/27 passed**。
+  - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings**。
+### セッション 13: ファイルツリー右クリックコンテキストメニュー & アクションアイコン配置・スクロールバー重なり解消
+- **ファイルツリー右クリックコンテキストメニュー（Pop!_OS COSMIC / Wayland ネイティブ）**:
+  - `cosmic::widget::mouse_area` による右クリックイベントディスパッチを実装。
+  - 各ファイル、ディレクトリ、ツリールートヘッダー、空きスペースへの右クリック（`RightClick(path, is_dir)`, `RightClickRoot`）を検出し、マウス座標へ美しいフローティングカードメニューを表示。
+  - **ディレクトリ**: `  New File Here...`, `  New Folder Here...`, `  Rename Folder...`, `  Delete Folder...`, `  Refresh Tree`
+  - **ファイル**: `󰈙  Open File`, `  Rename File...`, `  Delete File...`, `  Refresh Tree`
+  - **ワークスペースルート / 余白**: `  New File in Root...`, `  New Folder in Root...`, `  Open Folder...`, `  Refresh Tree`
+  - 背景（Backdrop）クリックまたは `Esc` キーで自然に即座キャンセル・クローズ。
+- **ファイルツリー右側アイコンの重なり解消 & ガターマージン設計**:
+  - 各行のアクションボタン（``, ``, ``）の右側に `Space::new().width(Length::Fixed(16.0))` の専用ガターマージンを新設。
+  - スクロールバーが表示されてもボタンと完全に分離され、重なりや誤クリックを徹底防止。
+  - ヘッダー右端にも `14.0px` の専用スペースを確保し、サイドバー区切り線との干渉を解消。
+  - アイコンボタンのパディングを `[1, 3]` に最適化し、サイドバー最小幅を `280.0px` に拡張して視認性と操作性を大幅向上。
+  - エディタペインとの境界スペースを `2.0px` に拡張。
+- **テスト・静的解析の完全遵守**:
+  - `test_file_tree_context_menu_state_and_right_click` および `test_file_tree_width_and_item_gutter` 単体テストを追加。
+  - `cargo test`: 26 core tests + 3 ollama tests = **29/29 passed**。
+  - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings**。
+  - `cargo build --release`: クリーンビルド完了。
 
 ---
 
@@ -121,29 +192,44 @@
 
 ```
 Rooney/
-├── Cargo.toml               # 依存関係定義 (libcosmic, ropey, tree-sitter, rfd, ollama, etc.)
+├── Cargo.toml               # 依存関係定義 (libcosmic, ropey, tree-sitter多言語, futures-channel, rfd, ollama, etc.)
 ├── README.md                # 日本語・英語バイリンガル公式ドキュメント (Vibe Coding明記)
 ├── SESSION_HANDOVER.md      # 本ファイル (次回再開用完全ハンドオーバー)
 ├── src/
 │   ├── main.rs              # アプリ起動エントリーポイント (ウィンドウサイズ 1800x1800 設定)
-│   ├── app.rs               # COSMIC Application 実装、Messageディスパッチ、キーバインド、モーダル・メニューUI
-│   ├── config.rs            # AppConfig (設定の ~/.config/rooney/config.toml 永続化)
+│   ├── config.rs            # AppConfig & SessionConfig (セッション・設定の ~/.config/rooney/config.toml 永続化)
+│   ├── app/
+│   │   ├── mod.rs           # App 構造体定義、cosmic::Application 実装、init() によるセッション復元
+│   │   ├── message.rs       # Message 列挙型定義 (タブ、ファイルツリー、モーダル、AIチャットストリーミング等)
+│   │   ├── keybindings.rs   # handle_key_event (キーボードショートカット、モーダルキーハンドリング)
+│   │   ├── update.rs        # handle_update (非同期Task/Streamディスパッチ、ファイルCRUD、タブ同期、AIチャット)
+│   │   ├── state.rs         # save_config, open_file, クリップボード, 行編集ヘルパー
+│   │   └── ui/
+│   │       ├── mod.rs       # view() ルートUIマウント (ヘッダー、サイドバー、エディタ、AIチャット、モーダル)
+│   │       ├── header.rs    # render_header (タイトル、Editメニュー、Chatトグル、フォント、テーマ)
+│   │       ├── tab_bar.rs   # render_tab_bar (タブ切り替え、未保存●、閉じる、新規タブボタン)
+│   │       ├── editor_area.rs# render_editor_area (左右分割ペイン、Markdownプレビューコンテナ)
+│   │       ├── context_menu.rs# render_context_menu (右クリック浮動メニュー)
+│   │       ├── modal.rs     # render_active_modal (新規ファイル、新規フォルダ、リネーム、削除確認モーダル)
+│   │       ├── ai_chat.rs   # render_ai_chat_panel (ストリーミング描画、タイピング▋、Stop/Sendボタン、文脈添付)
+│   │       └── settings.rs  # render_settings_view (テーマ、透過度、ディミングスライダー)
 │   ├── editor/
 │   │   ├── mod.rs           # resolve_numpad_char (Waylandテンキー物理キーコード解決ユーティリティ)
-│   │   ├── buffer.rs        # TextBuffer (Ropeyラッパー、カーソル移動、選択、Undo/Redo、FIM文脈抽出)
-│   │   └── pane.rs          # EditorPane (ペイン状態、ファイル読込/保存/SaveAs、言語判別)
+│   │   ├── buffer.rs        # TextBuffer (Ropey、単語移動、行削除/複製、コメントトグル、インデント、Undo/Redo)
+│   │   └── pane.rs          # EditorPane & EditorTab (タブ管理、ファイル読込/保存、検索マッチ、言語判別)
 │   ├── syntax/
-│   │   └── mod.rs           # Tree-sitter Highlighter (Rust, Markdown, Python, JS, PlainText)
+│   │   ├── mod.rs
+│   │   └── highlighter.rs   # Highlighter & classify_node (12+言語のTree-sitter/字句解析エンジン)
 │   ├── markdown/
 │   │   ├── mod.rs
 │   │   └── renderer.rs      # MarkdownDocument (pulldown-cmark によるAST構築)
 │   ├── fs/
 │   │   ├── mod.rs
-│   │   └── tree.rs          # FileTree (階層スキャン、Nerd Font アイコン、set_root, go_to_parent)
+│   │   └── tree.rs          # FileTree (除外パターン、Nerd Font アイコン、ディレクトリ走査)
 │   ├── ui/
 │   │   ├── mod.rs
-│   │   ├── canvas_editor.rs # EditorCanvas (cosmic Widget 実装、char_advance サブピクセル描画、マウス選択、IME)
-│   │   ├── file_tree_view.rs# view_file_tree (サイドバーUI、// ボタン)
+│   │   ├── canvas_editor.rs # EditorCanvas (intern_font_name、検索ハイライト、サブピクセル文字幅、IME)
+│   │   ├── file_tree_view.rs# view_file_tree (サイドバーUI、/// アクションボタン)
 │   │   └── markdown_view.rs # view_markdown (リッチMarkdownプレビューコンテナ)
 │   ├── theme/
 │   │   ├── mod.rs
@@ -151,10 +237,11 @@ Rooney/
 │   ├── font/
 │   │   └── mod.rs           # FontManager (fontconfig によるシステムNerd Font検出とサイズ管理)
 │   └── ai/
-│       └── mod.rs           # OllamaClient (FIM補完リクエスト、モデル自動検出)
+│       ├── mod.rs           # ChatMessage, ChatRole, ChatStreamEvent 再エクスポート
+│       └── ollama.rs        # OllamaClient (FIM補完、chat_generate_stream ストリーミング、モデル自動検出)
 └── tests/
-    ├── core_tests.rs        # 14件のユニットテスト (テンキー物理解決、文字幅・CJKアドバンス、設定永続化、選択削除、ツリー、保存)
-    └── ollama_tests.rs      # 2件の統合テスト (Ollama 接続性、FIM生成テスト)
+    ├── core_tests.rs        # 24件のユニットテスト (セッション復元、タブ同期、AIストリーミング蓄積、構文、検索等)
+    └── ollama_tests.rs      # 3件の統合テスト (Ollama 接続性、FIM生成、チャットストリーミング実走テスト)
 ```
 
 ---
@@ -168,19 +255,34 @@ Rooney/
 | `Ctrl + Shift + O` | フォルダを開く（サイドバーのツリールートを変更） |
 | `Ctrl + S` | ファイル保存（未命名バッファの場合は自動で Save As） |
 | `Ctrl + Shift + S` | 名前を付けて保存（Save As） |
+| `Ctrl + T` | 新規タブを開く |
+| `Ctrl + W` | 現在のタブを閉じる |
+| `Ctrl + Tab` / `Ctrl + PageDown` | 次のタブへ切り替え |
+| `Ctrl + Shift + Tab` / `Ctrl + PageUp` | 前のタブへ切り替え |
+| `Ctrl + F` | ファイル内検索バーの表示 / 非表示トグル |
+| `Enter` / `Shift + Enter`（検索時） | 次の一致 / 前の一致へジャンプ |
+| `Ctrl + /` | 行コメントのトグル（言語別自動判定） |
+| `Ctrl + Shift + K` | 現在行の丸ごと削除 |
+| `Ctrl + D` | 現在行の複製 |
+| `Ctrl + Left` / `Ctrl + Right` | 単語単位のカーソル移動（+Shiftで単語選択） |
+| `Tab` / `Shift + Tab`（選択時） | 選択範囲の一括インデント / アンインデント（4スペース） |
 | `Ctrl + C` | 選択テキストのコピー（Wayland システムクリップボード） |
 | `Ctrl + X` | 選択テキストの切り取り（Wayland システムクリップボード） |
 | `Ctrl + V` | 貼り付け（Wayland システムクリップボードから挿入） |
 | `Ctrl + A` | バッファ全選択 |
+| `Ctrl + Shift + A` | AI チャットパネルの開閉トグル |
 | `Ctrl + Z` | 元に戻す (Undo) |
 | `Ctrl + Y` または `Ctrl + Shift + Z` | やり直す (Redo) |
 | マウス左ドラッグ | テキスト範囲選択（ビジュアルハイライト） |
-| マウス右クリック | コンテキストメニュー表示（Copy, Cut, Paste, Select All, Undo, Redo） |
+| エディタ上マウス右クリック | エディタコンテキストメニュー表示（Copy, Cut, Paste, Select All, Undo, Redo） |
+| ファイルツリー上マウス右クリック | ファイル/ディレクトリ/ルートのコンテキストメニュー表示（New File, New Folder, Rename, Delete, Refresh） |
 | ヘッダー `󰧑 Edit` | 編集ツールバーの表示/非表示切り替え |
+| ヘッダー `󰭹 Chat` | AIチャットパネルの表示/非表示切り替え |
+| チャット `󰓛 Stop` | AIコード生成の即時中断・ストリーミング停止 |
 | テンキー `0`〜`9` / 記号 (`+`, `-`, `*`, `/`, `.`, `,`, `=`) | 数字および四則演算子記号の直接入力（英字/IME両モード完全対応） |
 | テンキー `Enter` | 改行の挿入 / 新規ファイル作成モーダルの確定 |
-| `Tab` | AI補完（ゴーストテキスト）の確定挿入 / インデント（4スペース） |
-| `Esc` | AI補完の破棄 / 選択解除 / メニュー・モーダルのキャンセル |
+| `Tab`（未選択時） | AI補完（ゴーストテキスト）の確定挿入 / インデント（4スペース） |
+| `Esc` | 検索バー終了 / AI補完破棄 / モーダル終了 / コンテキストメニュー終了 / 選択解除 |
 | `Ctrl + B` | ファイルツリーサイドバーの表示/非表示トグル |
 | `Ctrl + \` または `Ctrl + E` | 左右2分割（Split / Single）レイアウト切り替え |
 | `Ctrl + M` | Markdownプレビューの切り替え |
@@ -191,34 +293,49 @@ Rooney/
 
 ## 5. 現在のビルドおよびテスト状態
 
-- `cargo check`: **0 errors, 0 warnings** (通過)
-- `cargo test`: **16/16 passed (0 failed)**
+- `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings** (完全クリーン)
+- `cargo test`: **29/29 passed (0 failed)**
   - `test_char_advance_ascii_and_cjk` ... ok
-  - `test_numpad_key_resolution` ... ok
-  - `test_app_config_roundtrip` ... ok
   - `test_buffer_selection_and_deletion` ... ok
-  - `test_file_type_icons_nerd_font` ... ok
-  - `test_file_tree_scanning` ... ok
+  - `test_file_type_icons_extended` ... ok
   - `test_file_tree_navigation` ... ok
-  - `test_text_buffer_basic_operations` ... ok
-  - `test_text_buffer_multiline_and_cursor` ... ok
-  - `test_text_buffer_fim_extraction` ... ok
-  - `test_japanese_text_and_width` ... ok
+  - `test_file_tree_scanning` ... ok
+  - `test_file_type_icons_nerd_font` ... ok
   - `test_markdown_parsing` ... ok
-  - `test_theme_system_20_themes` ... ok
+  - `test_multi_language_detection` ... ok
+  - `test_numpad_key_resolution` ... ok
   - `test_editor_pane_saving` ... ok
+  - `test_japanese_text_and_width` ... ok
+  - `test_search_matches_and_navigation` ... ok
+  - `test_app_config_roundtrip` ... ok
+  - `test_text_buffer_basic_operations` ... ok
+  - `test_text_buffer_fim_extraction` ... ok
+  - `test_theme_system_20_themes` ... ok
+  - `test_text_buffer_multiline_and_cursor` ... ok
+  - `test_pane_tab_management` ... ok
+  - `test_word_navigation_and_line_operations` ... ok
+  - `test_tree_sitter_highlighting_all_languages` ... ok
+  - `test_session_serialization_roundtrip` ... ok
+  - `test_ai_chat_data_structures` ... ok
+  - `test_ai_chat_streaming_accumulation` ... ok
+  - `test_tab_synchronization_on_rename_and_delete` ... ok
+  - `test_file_tree_context_menu_state_and_right_click` ... ok (新規追加)
+  - `test_file_tree_width_and_item_gutter` ... ok (新規追加)
   - `test_ollama_connectivity_and_models` ... ok
+  - `test_ollama_chat_streaming` ... ok
   - `test_ollama_fim_generation` ... ok
-- `cargo build`: **Clean dev build (Code 0)**
+- `cargo build --release`: **Clean release build (Code 0)**
 
 ---
 
 ## 6. 次回再開時の推奨作業・機能拡張案
 
-1. **エディタ内検索・置換（`Ctrl + F` / `Ctrl + H`）**:
-   - 簡易検索・置換バーUIを上部または下部にオーバーレイ表示。
-2. **追加言語の Tree-sitter パーサー拡充**:
-   - `tree-sitter-python`, `tree-sitter-javascript`, `tree-sitter-c` などを追加してハイライト精度をさらに強化可能。
-3. **タブ形式のマルチバッファ管理**:
-   - 各ペインで複数のファイルをタブで切り替え可能にする拡張。
+1. **ファイルツリー内でのドラッグ＆ドロップ（DnD）移動**:
+   - ファイルを別のフォルダへドラッグして移動するGUI操作。
+2. **ミニマップ（Minimap）またはアウトライン表示**:
+   - コード全体の縮小表示や、Tree-sitter関数一覧（Symbol Outline）のサイドパネル。
+3. **Git 変更行ガターハイライト（Diff Gutter）**:
+   - 変更・追加・削除行を行番号脇にカラーバー表示。
+
+
 

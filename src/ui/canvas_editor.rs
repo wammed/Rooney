@@ -14,6 +14,22 @@ use cosmic::iced::mouse;
 use cosmic::iced::{Color, Element, Font, Length, Pixels, Point, Rectangle, Size, Vector};
 use unicode_width::UnicodeWidthChar;
 
+fn intern_font_name(name: &str) -> &'static str {
+    use std::collections::HashSet;
+    use std::sync::{Mutex, OnceLock};
+
+    static CACHE: OnceLock<Mutex<HashSet<&'static str>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashSet::new()));
+    let mut set = cache.lock().unwrap();
+    if let Some(&interned) = set.get(name) {
+        interned
+    } else {
+        let leaked: &'static str = Box::leak(name.to_string().into_boxed_str());
+        set.insert(leaked);
+        leaked
+    }
+}
+
 #[derive(Default)]
 pub struct CanvasState {
     pub is_dragging: bool,
@@ -139,8 +155,8 @@ impl<'a> EditorCanvas<'a> {
                 let chars: Vec<char> = line_text.chars().collect();
 
                 let mut pixel_offset = 0.0;
-                for i in row.char_start..cursor.1.min(chars.len()) {
-                    pixel_offset += Self::char_advance(chars[i], self.font_size);
+                for &ch in &chars[row.char_start..cursor.1.min(chars.len())] {
+                    pixel_offset += Self::char_advance(ch, self.font_size);
                 }
 
                 let x = gutter + 10.0 + pixel_offset - self.pane.scroll_x;
@@ -165,13 +181,13 @@ impl<'a> EditorCanvas<'a> {
             let mut acc_width = 0.0;
             let mut chosen_col = row.char_start;
 
-            for i in row.char_start..row.char_end.min(chars.len()) {
-                let char_pixel_w = Self::char_advance(chars[i], self.font_size);
+            for (idx_offset, &ch) in chars[row.char_start..row.char_end.min(chars.len())].iter().enumerate() {
+                let char_pixel_w = Self::char_advance(ch, self.font_size);
                 if acc_width + char_pixel_w / 2.0 >= rel_x {
                     break;
                 }
                 acc_width += char_pixel_w;
-                chosen_col = i + 1;
+                chosen_col = row.char_start + idx_offset + 1;
             }
             (row.line_idx, chosen_col)
         } else if let Some(last) = visual_rows.last() {
@@ -218,8 +234,7 @@ impl<'a> EditorCanvas<'a> {
                 .with_width(1.0),
         );
 
-        let font_leak: &'static str = Box::leak(self.font_name.to_string().into_boxed_str());
-        let font = Font::with_name(font_leak);
+        let font = Font::with_name(intern_font_name(self.font_name));
         let text_size = Pixels(self.font_size);
 
         // 3. Build soft-wrapped visual rows
@@ -278,13 +293,13 @@ impl<'a> EditorCanvas<'a> {
 
                         if line_sel_start < line_sel_end {
                             let mut start_x_offset = 0.0;
-                            for i in row.char_start..line_sel_start.min(chars.len()) {
-                                start_x_offset += Self::char_advance(chars[i], self.font_size);
+                            for &ch in &chars[row.char_start..line_sel_start.min(chars.len())] {
+                                start_x_offset += Self::char_advance(ch, self.font_size);
                             }
 
                             let mut sel_w = 0.0;
-                            for i in line_sel_start..line_sel_end.min(chars.len()) {
-                                sel_w += Self::char_advance(chars[i], self.font_size);
+                            for &ch in &chars[line_sel_start..line_sel_end.min(chars.len())] {
+                                sel_w += Self::char_advance(ch, self.font_size);
                             }
 
                             let sel_rect = Rectangle {
@@ -298,6 +313,60 @@ impl<'a> EditorCanvas<'a> {
                                 sel_rect.size(),
                                 self.theme.config.selection_bg,
                             );
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4.2 Draw Search Match Highlights
+        if !self.pane.search_matches.is_empty() {
+            for (match_idx, &(m_line, m_start, m_end)) in self.pane.search_matches.iter().enumerate() {
+                for (v_idx, row) in visual_rows.iter().enumerate() {
+                    let y = (v_idx as f32) * self.line_height - self.pane.scroll_y;
+                    if y + self.line_height < 0.0 || y > bounds.height {
+                        continue;
+                    }
+
+                    if row.line_idx == m_line {
+                        let match_vis_start = m_start.max(row.char_start);
+                        let match_vis_end = m_end.min(row.char_end);
+
+                        if match_vis_start < match_vis_end {
+                            let line_text = buffer.line_text(row.line_idx).unwrap_or_default();
+                            let chars: Vec<char> = line_text.chars().collect();
+
+                            let mut x_offset = 0.0;
+                            for &ch in &chars[row.char_start..match_vis_start.min(chars.len())] {
+                                x_offset += Self::char_advance(ch, self.font_size);
+                            }
+
+                            let mut match_w = 0.0;
+                            for &ch in &chars[match_vis_start..match_vis_end.min(chars.len())] {
+                                match_w += Self::char_advance(ch, self.font_size);
+                            }
+
+                            let is_current = match_idx == self.pane.current_match_idx;
+                            let match_rect = Rectangle {
+                                x: gutter + 10.0 + x_offset - self.pane.scroll_x,
+                                y,
+                                width: match_w.max(4.0),
+                                height: self.line_height,
+                            };
+
+                            let match_color = if is_current {
+                                Color::from_rgba(1.0, 0.8, 0.2, 0.6)
+                            } else {
+                                Color::from_rgba(1.0, 0.9, 0.3, 0.3)
+                            };
+                            frame.fill_rectangle(match_rect.position(), match_rect.size(), match_color);
+
+                            if is_current {
+                                frame.stroke(
+                                    &Path::rectangle(match_rect.position(), match_rect.size()),
+                                    Stroke::default().with_color(Color::WHITE).with_width(1.0),
+                                );
+                            }
                         }
                     }
                 }
@@ -613,15 +682,13 @@ impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
                 }
             }
 
-            Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
-                if cursor.is_over(bounds) {
-                    let y_delta = match delta {
-                        mouse::ScrollDelta::Lines { y, .. } => *y * self.line_height * 2.0,
-                        mouse::ScrollDelta::Pixels { y, .. } => *y,
-                    };
-                    shell.publish(Message::ScrollPane(self.pane.id, -y_delta));
-                    shell.capture_event();
-                }
+            Event::Mouse(mouse::Event::WheelScrolled { delta }) if cursor.is_over(bounds) => {
+                let y_delta = match delta {
+                    mouse::ScrollDelta::Lines { y, .. } => *y * self.line_height * 2.0,
+                    mouse::ScrollDelta::Pixels { y, .. } => *y,
+                };
+                shell.publish(Message::ScrollPane(self.pane.id, -y_delta));
+                shell.capture_event();
             }
 
             _ => {}

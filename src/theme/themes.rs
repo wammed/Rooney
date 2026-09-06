@@ -1,9 +1,10 @@
 use cosmic::iced::Color;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ThemeId {
     // 10 Classic Themes
+    #[default]
     TokyoNight,
     CatppuccinMocha,
     CatppuccinLatte,
@@ -94,11 +95,6 @@ impl ThemeId {
     }
 }
 
-impl Default for ThemeId {
-    fn default() -> Self {
-        ThemeId::TokyoNight
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct ThemeConfig {

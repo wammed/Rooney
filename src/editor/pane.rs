@@ -1,6 +1,7 @@
 use crate::editor::buffer::TextBuffer;
 use crate::markdown::MarkdownDocument;
 use crate::syntax::{Highlighter, SupportedLanguage};
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -16,8 +17,8 @@ pub enum SplitLayout {
     Split,
 }
 
-pub struct EditorPane {
-    pub id: PaneId,
+pub struct EditorTab {
+    pub id: usize,
     pub file_path: Option<PathBuf>,
     pub file_name: String,
     pub buffer: TextBuffer,
@@ -28,12 +29,16 @@ pub struct EditorPane {
     pub preedit: Option<(String, Option<std::ops::Range<usize>>)>,
     pub is_markdown_preview: bool,
     pub markdown_doc: Option<MarkdownDocument>,
+    pub search_query: Option<String>,
+    pub search_matches: Vec<(usize, usize, usize)>, // (line_idx, col_start, col_end)
+    pub current_match_idx: usize,
+    pub is_search_open: bool,
     pub last_edit_time: Instant,
     pub last_cursor_time: Instant,
 }
 
-impl EditorPane {
-    pub fn new(id: PaneId, title: &str) -> Self {
+impl EditorTab {
+    pub fn new(id: usize, title: &str) -> Self {
         Self {
             id,
             file_path: None,
@@ -46,6 +51,10 @@ impl EditorPane {
             preedit: None,
             is_markdown_preview: false,
             markdown_doc: None,
+            search_query: None,
+            search_matches: Vec::new(),
+            current_match_idx: 0,
+            is_search_open: false,
             last_edit_time: Instant::now(),
             last_cursor_time: Instant::now(),
         }
@@ -72,7 +81,7 @@ impl EditorPane {
         self.ghost_text = None;
         self.preedit = None;
 
-        if lang == SupportedLanguage::Markdown {
+        if lang == SupportedLanguage::Markdown && self.is_markdown_preview {
             self.markdown_doc = Some(MarkdownDocument::parse(&content));
         } else {
             self.markdown_doc = None;
@@ -116,7 +125,7 @@ impl EditorPane {
         self.highlighter = Highlighter::new(lang);
         self.highlighter.update_source(&self.buffer.full_text());
 
-        if lang == SupportedLanguage::Markdown {
+        if lang == SupportedLanguage::Markdown && self.is_markdown_preview {
             self.markdown_doc = Some(MarkdownDocument::parse(&self.buffer.full_text()));
         } else {
             self.markdown_doc = None;
@@ -131,9 +140,69 @@ impl EditorPane {
         let text = self.buffer.full_text();
         self.highlighter.update_source(&text);
 
-        if self.highlighter.lang == SupportedLanguage::Markdown {
+        if self.highlighter.lang == SupportedLanguage::Markdown && self.is_markdown_preview {
             self.markdown_doc = Some(MarkdownDocument::parse(&text));
         }
+
+        if let Some(ref q) = self.search_query.clone() {
+            self.update_search(q);
+        }
+    }
+
+    pub fn update_search(&mut self, query: &str) {
+        if query.is_empty() {
+            self.search_query = None;
+            self.search_matches.clear();
+            self.current_match_idx = 0;
+            return;
+        }
+
+        self.search_query = Some(query.to_string());
+        let mut matches = Vec::new();
+        let q_lower = query.to_lowercase();
+        let q_len = query.chars().count();
+
+        for line_idx in 0..self.buffer.line_count() {
+            if let Some(line) = self.buffer.line_text(line_idx) {
+                let line_lower = line.to_lowercase();
+                let mut start_byte = 0;
+                while let Some(byte_pos) = line_lower[start_byte..].find(&q_lower) {
+                    let actual_byte = start_byte + byte_pos;
+                    let char_start = line[..actual_byte].chars().count();
+                    matches.push((line_idx, char_start, char_start + q_len));
+                    start_byte = actual_byte + q_lower.len().max(1);
+                }
+            }
+        }
+
+        self.search_matches = matches;
+        if self.current_match_idx >= self.search_matches.len() {
+            self.current_match_idx = 0;
+        }
+    }
+
+    pub fn next_search_match(&mut self) -> Option<(usize, usize)> {
+        if self.search_matches.is_empty() {
+            return None;
+        }
+        self.current_match_idx = (self.current_match_idx + 1) % self.search_matches.len();
+        let (line, start, _) = self.search_matches[self.current_match_idx];
+        self.buffer.cursor = (line, start);
+        Some((line, start))
+    }
+
+    pub fn prev_search_match(&mut self) -> Option<(usize, usize)> {
+        if self.search_matches.is_empty() {
+            return None;
+        }
+        if self.current_match_idx == 0 {
+            self.current_match_idx = self.search_matches.len() - 1;
+        } else {
+            self.current_match_idx -= 1;
+        }
+        let (line, start, _) = self.search_matches[self.current_match_idx];
+        self.buffer.cursor = (line, start);
+        Some((line, start))
     }
 
     pub fn accept_ghost_text(&mut self) -> bool {
@@ -149,5 +218,124 @@ impl EditorPane {
 
     pub fn clear_ghost_text(&mut self) {
         self.ghost_text = None;
+    }
+}
+
+pub struct EditorPane {
+    pub id: PaneId,
+    pub tabs: Vec<EditorTab>,
+    pub active_tab_idx: usize,
+    next_tab_id: usize,
+}
+
+impl EditorPane {
+    pub fn new(id: PaneId, title: &str) -> Self {
+        let first_tab = EditorTab::new(1, title);
+        Self {
+            id,
+            tabs: vec![first_tab],
+            active_tab_idx: 0,
+            next_tab_id: 2,
+        }
+    }
+
+    pub fn active_tab(&self) -> &EditorTab {
+        &self.tabs[self.active_tab_idx]
+    }
+
+    pub fn active_tab_mut(&mut self) -> &mut EditorTab {
+        &mut self.tabs[self.active_tab_idx]
+    }
+
+    pub fn open_file(&mut self, path: &Path) -> std::io::Result<()> {
+        // 1. If already opened in a tab, switch to it
+        if let Some(pos) = self
+            .tabs
+            .iter()
+            .position(|t| t.file_path.as_deref() == Some(path))
+        {
+            self.active_tab_idx = pos;
+            return Ok(());
+        }
+
+        // 2. If current tab is untouched and untitled, reuse it
+        let current_is_untouched = {
+            let cur = &self.tabs[self.active_tab_idx];
+            cur.file_path.is_none() && !cur.buffer.is_modified && cur.buffer.full_text().is_empty()
+        };
+        if current_is_untouched {
+            self.tabs[self.active_tab_idx].load_file(path)?;
+            return Ok(());
+        }
+
+        // 3. Otherwise, open a new tab
+        let id = self.next_tab_id;
+        self.next_tab_id += 1;
+        let mut tab = EditorTab::new(id, "Untitled");
+        tab.load_file(path)?;
+        self.tabs.push(tab);
+        self.active_tab_idx = self.tabs.len() - 1;
+        Ok(())
+    }
+
+    pub fn new_tab(&mut self, title: &str) -> usize {
+        let id = self.next_tab_id;
+        self.next_tab_id += 1;
+        let tab = EditorTab::new(id, title);
+        self.tabs.push(tab);
+        self.active_tab_idx = self.tabs.len() - 1;
+        self.active_tab_idx
+    }
+
+    pub fn close_tab(&mut self, idx: usize) {
+        if idx < self.tabs.len() {
+            self.tabs.remove(idx);
+            if self.tabs.is_empty() {
+                let id = self.next_tab_id;
+                self.next_tab_id += 1;
+                self.tabs.push(EditorTab::new(id, "Untitled"));
+                self.active_tab_idx = 0;
+            } else if self.active_tab_idx >= self.tabs.len() {
+                self.active_tab_idx = self.tabs.len() - 1;
+            } else if self.active_tab_idx > idx {
+                self.active_tab_idx -= 1;
+            }
+        }
+    }
+
+    pub fn select_tab(&mut self, idx: usize) {
+        if idx < self.tabs.len() {
+            self.active_tab_idx = idx;
+        }
+    }
+
+    pub fn next_tab(&mut self) {
+        if !self.tabs.is_empty() {
+            self.active_tab_idx = (self.active_tab_idx + 1) % self.tabs.len();
+        }
+    }
+
+    pub fn prev_tab(&mut self) {
+        if !self.tabs.is_empty() {
+            self.active_tab_idx = if self.active_tab_idx == 0 {
+                self.tabs.len() - 1
+            } else {
+                self.active_tab_idx - 1
+            };
+        }
+    }
+}
+
+impl Deref for EditorPane {
+    type Target = EditorTab;
+
+    fn deref(&self) -> &Self::Target {
+        self.active_tab()
+    }
+}
+
+impl DerefMut for EditorPane {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.active_tab_mut()
     }
 }

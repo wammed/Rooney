@@ -57,19 +57,35 @@ impl FileTypeIcon {
                 glyph: "",
                 color: Color::from_rgb(0.2, 0.75, 0.95),
             },
-            "py" => Self {
+            "py" | "pyi" => Self {
                 glyph: "",
                 color: Color::from_rgb(0.25, 0.6, 0.85),
             },
-            "js" => Self {
+            "js" | "mjs" | "cjs" => Self {
                 glyph: "",
                 color: Color::from_rgb(0.95, 0.85, 0.2),
             },
-            "ts" => Self {
+            "ts" | "mts" | "cts" => Self {
                 glyph: "",
                 color: Color::from_rgb(0.2, 0.55, 0.85),
             },
-            "json" => Self {
+            "jsx" | "tsx" => Self {
+                glyph: "",
+                color: Color::from_rgb(0.3, 0.8, 0.95),
+            },
+            "fish" => Self {
+                glyph: "󰈺",
+                color: Color::from_rgb(0.2, 0.85, 0.65),
+            },
+            "yaml" | "yml" => Self {
+                glyph: "",
+                color: Color::from_rgb(0.8, 0.45, 0.85),
+            },
+            "ini" | "conf" | "cfg" => Self {
+                glyph: "",
+                color: Color::from_rgb(0.65, 0.7, 0.75),
+            },
+            "json" | "jsonc" => Self {
                 glyph: "",
                 color: Color::from_rgb(0.85, 0.85, 0.25),
             },
@@ -77,7 +93,7 @@ impl FileTypeIcon {
                 glyph: "",
                 color: Color::from_rgb(0.95, 0.4, 0.2),
             },
-            "css" => Self {
+            "css" | "scss" => Self {
                 glyph: "",
                 color: Color::from_rgb(0.25, 0.5, 0.95),
             },
@@ -89,7 +105,7 @@ impl FileTypeIcon {
                 glyph: "",
                 color: Color::from_rgb(0.35, 0.55, 0.85),
             },
-            "cpp" | "hpp" | "cc" => Self {
+            "cpp" | "hpp" | "cc" | "cxx" => Self {
                 glyph: "",
                 color: Color::from_rgb(0.15, 0.45, 0.8),
             },
@@ -148,7 +164,7 @@ impl FileTree {
             selected_path: None,
             items: Vec::new(),
             is_visible: true,
-            width: 250.0,
+            width: 280.0,
         };
 
         tree.refresh();
@@ -182,7 +198,20 @@ impl FileTree {
                 .unwrap_or("")
                 .to_string();
 
-            if name == ".git" || name == "target" {
+            if matches!(
+                name.as_str(),
+                ".git"
+                    | "target"
+                    | "node_modules"
+                    | ".venv"
+                    | "venv"
+                    | "__pycache__"
+                    | "dist"
+                    | "build"
+                    | ".idea"
+                    | ".vscode"
+                    | ".next"
+            ) {
                 continue;
             }
 
@@ -193,8 +222,8 @@ impl FileTree {
             }
         }
 
-        dirs.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
-        files.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+        dirs.sort_by_key(|a| a.0.to_lowercase());
+        files.sort_by_key(|a| a.0.to_lowercase());
 
         for (name, path) in dirs {
             let is_expanded = expanded.contains(&path);

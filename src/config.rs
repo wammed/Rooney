@@ -3,6 +3,27 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct TabSessionInfo {
+    pub file_path: Option<PathBuf>,
+    pub file_name: String,
+    pub cursor_line: usize,
+    pub cursor_col: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct PaneSessionInfo {
+    pub tabs: Vec<TabSessionInfo>,
+    pub active_tab_idx: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct SessionConfig {
+    pub root_dir: Option<PathBuf>,
+    pub left_pane: PaneSessionInfo,
+    pub right_pane: Option<PaneSessionInfo>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub theme: ThemeId,
@@ -14,6 +35,10 @@ pub struct AppConfig {
     pub file_tree_visible: bool,
     pub ai_enabled: bool,
     pub ai_model: String,
+    #[serde(default)]
+    pub ai_chat_visible: bool,
+    #[serde(default)]
+    pub session: SessionConfig,
 }
 
 impl Default for AppConfig {
@@ -28,6 +53,8 @@ impl Default for AppConfig {
             file_tree_visible: true,
             ai_enabled: true,
             ai_model: "deepseek-coder-v2:16b".to_string(),
+            ai_chat_visible: false,
+            session: SessionConfig::default(),
         }
     }
 }

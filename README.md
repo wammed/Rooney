@@ -86,6 +86,56 @@ Pop!_OS COSMIC DE（libcosmic / Wayland）ネイティブの超高速・軽量�
     - Wayland / Pop!_OS COSMIC 環境において、クライアントに NumLock の有効状態が同期されない場合でも、物理キーコードを自動識別して直接英字入力時・IME使用時の両方で数字・記号を確実に入力。
     - 独立した専用カーソルキー（矢印、Delete、Home、End、PageUp、PageDown）との競合を完全に排除し、操作性を両立。
 
+11. **多言語 Tree-sitter & 設定ファイル構文ハイライト（12+言語対応）**
+    - 外部LSP不要で、インプロセスAST構文解析による高精度・高速ハイライトを実現。
+    - **対応言語**:
+      - **システム / プログラミング言語**: Rust (`.rs`), Python (`.py`/`.pyi`), JavaScript (`.js`/`.jsx`/`.mjs`/`.cjs`), TypeScript (`.ts`/`.tsx`/`.mts`/`.cts`), C (`.c`/`.h`), C++ (`.cpp`/`.hpp`/`.cc`/`.cxx`)
+      - **シェルスクリプト**: Bash / POSIX Shell (`.sh`/`.bash`/`.zsh`), Fish (`.fish`, `config.fish`)
+      - **設定ファイル & データ形式**: TOML (`.toml`, `Cargo.lock`), YAML (`.yaml`/`.yml`), JSON (`.json`/`.jsonc`), INI / Conf (`.ini`/`.conf`/`.cfg`/`.gitconfig`)
+      - **マークダウン**: Markdown (`.md`/`.markdown`)
+    - ファイルツリーにも各言語ごとのカラー Nerd Font アイコン（Fish `󰈺`, YAML ``, INI ``, TSX `` 等）を自動表示。
+
+12. **インクリメンタルファイル内検索 (`Ctrl + F`) & 画面ハイライト**
+    - `Ctrl + F` でエディタ上部にミニマルで洗練された検索バーを展開。
+    - 入力と同時にファイル内の一致箇所をリアルタイム走査し、エディタ内で黄色ハイライト表示。
+    - `Enter` / `▼` で次の一致へ、`Shift + Enter` / `▲` で前の一致へスムーズにカーソルジャンプ。
+13. **高度なカーソル移動 & 行編集ショートカット**
+    - **単語移動**: `Ctrl + Left` / `Ctrl + Right` で単語区切り単位ジャンプ（`Shift`併用で単語単位選択）。
+    - **行コメントのトグル**: `Ctrl + /` で選択行または現在行を言語に応じたコメント記号（`//` または `#`）で一括トグル。
+    - **行削除**: `Ctrl + Shift + K` でカーソル行を丸ごと削除。
+    - **行複製**: `Ctrl + D` でカーソル行を下行に複製。
+    - **一括インデント**: 複数行選択時の `Tab` で一括インデント（4スペース）、`Shift + Tab` で一括アンインデント。
+
+14. **タブ形式のマルチバッファ管理（Multi-Tab Buffer Management）**
+    - 左右ペインそれぞれで独立した複数タブの切り替え・管理に対応。
+    - 未保存バッファの視覚的インジケータ（`●`）、アクティブタブのハイライト表示。
+    - `Ctrl + T` で新規タブ作成、`Ctrl + W` でアクティブタブを閉じる、`Ctrl + Tab` / `Ctrl + Shift + Tab` でスムーズに巡回。
+    - 全タブを閉じても自動的にクリーンな Untitled タブへフォールバックし、クラッシュを完全防止。
+
+15. **ファイルツリーの右クリックコンテキストメニュー & ディレクトリ管理**
+    - **右クリックコンテキストメニュー**: ファイル、ディレクトリ、またはツリーの余白/ルートを右クリックすると、カーソル位置に専用のコンテキストメニューがポップアップ（New File, New Folder, Rename, Delete, Refresh）。
+    - **スクロールバー干渉を根絶したガターマージン設計**: アクションボタン（``, ``, ``）とスクロールバー・左右ペイン境界の間に十分な余白（16px）を確保。アイコンが重なって隠れる問題を解消し、スムーズで快適なクリック操作を実現。
+    - **新規作成（`` / ``）**: 選択ディレクトリ直下にファイルまたはフォルダをモーダルダイアログから作成。
+    - **リネーム（``）**: ファイルやディレクトリの名前を変更。開いているタブのパス・タブ名もリアルタイムに自動同期。
+    - **安全な削除（``）**: 誤操作を防ぐ確認モーダルを表示し、確認後にファイルまたはディレクトリ（再帰的）を完全削除。開いていた該当タブも安全に自動クローズ。
+
+16. **AI チャット / 複数行コード生成パネル（`Ctrl + Shift + A` / `󰭹 Chat`）**
+    - ヘッダーの `󰭹 Chat` ボタンまたは `Ctrl + Shift + A` で展開・格納できる専用の右側AIアシスタントパネル。
+    - **リアルタイム・トークンストリーミング & タイピングアニメーション**:
+      - Ollama の `stream: true`（ndjson / SSE）を非同期ストリーミング受信し、1トークンずつリアルタイムに流れるように描画。
+      - 生成中は文末にアニメーションタイピングカーソル（`▋`）および思考状態（`󰚩 Thinking...`）を表示。
+      - いつでも生成を瞬時に中断できる `󰓛 Stop` ボタン（または生成中の Enter 打鍵）を搭載。
+    - **ワンクリック文脈添付**:
+      - `󰈔 Attach Selection`: エディタ上で選択しているコード行をMarkdownコードブロック形式でチャット入力欄に即座に添付。
+      - `󰈙 Attach File`: 現在アクティブなファイル全体のコードを自動添付。
+    - **AIレスポンスのワンクリック挿入 & コピー**:
+      - `󰈔 Insert`: 生成されたコードブロックをエディタのアクティブカーソル位置へ直接挿入。
+      - `󰆏 Copy`: 生成されたコードをクリップボードにコピー。
+
+17. **ワークスペースセッションの自動永続化**
+    - 前回開いていた左右ペインの全タブ一覧、アクティブタブ番号、カーソル行・列位置、ルートフォルダ、およびAIチャットパネルの開閉状態を `~/.config/rooney/config.toml` に自動記録。
+    - 次回エディタ起動時に、前回の作業状態が寸分違わずそのまま自動復元されます。
+
 ---
 
 ### キーボードショートカット & マウス操作 ⌨️
@@ -97,19 +147,34 @@ Pop!_OS COSMIC DE（libcosmic / Wayland）ネイティブの超高速・軽量�
 | `Ctrl + Shift + O` | フォルダを開く（ツリールート変更） |
 | `Ctrl + S` | ファイル保存（未命名バッファは名前を付けて保存） |
 | `Ctrl + Shift + S` | 名前を付けて保存（Save As） |
+| `Ctrl + T` | 新規タブ作成 |
+| `Ctrl + W` | アクティブタブを閉じる |
+| `Ctrl + Tab` / `Ctrl + PageDown` | 次のタブへ切り替え |
+| `Ctrl + Shift + Tab` / `Ctrl + PageUp` | 前のタブへ切り替え |
+| `Ctrl + F` | ファイル内検索バーの表示 / 非表示 |
+| `Enter` / `Shift + Enter`（検索時） | 次の一致 / 前の一致へジャンプ |
+| `Ctrl + /` | 行コメントのトグル（言語別自動判定） |
+| `Ctrl + Shift + K` | 現在行の丸ごと削除 |
+| `Ctrl + D` | 現在行の複製 |
+| `Ctrl + Left` / `Ctrl + Right` | 単語単位のカーソル移動（+Shiftで単語選択） |
+| `Tab` / `Shift + Tab`（選択時） | 選択範囲の一括インデント / アンインデント |
 | `Ctrl + C` | 選択テキストのコピー（システムクリップボード） |
 | `Ctrl + X` | 選択テキストの切り取り（システムクリップボード） |
 | `Ctrl + V` | 貼り付け（システムクリップボードから挿入） |
 | `Ctrl + A` | バッファ全選択 |
+| `Ctrl + Shift + A` | AI チャットパネルの開閉トグル |
 | `Ctrl + Z` | 元に戻す (Undo) |
 | `Ctrl + Y` または `Ctrl + Shift + Z` | やり直す (Redo) |
 | マウス左ドラッグ | テキスト範囲選択（ビジュアルハイライト） |
-| マウス右クリック | コンテキストメニュー表示（Copy, Cut, Paste, Select All, Undo, Redo） |
+| エディタ上マウス右クリック | エディタコンテキストメニュー表示（Copy, Cut, Paste, Select All, Undo, Redo） |
+| ファイルツリー上マウス右クリック | ファイルツリーコンテキストメニュー表示（New File, New Folder, Rename, Delete, Refresh） |
 | ヘッダー `󰧑 Edit` | 編集ツールバーの表示/非表示切り替え |
+| ヘッダー `󰭹 Chat` | AIチャットパネルの表示/非表示切り替え |
+| チャット `󰓛 Stop` | AIコード生成の即時中断・ストリーミング停止 |
 | テンキー `0`〜`9` / 記号 (`+`, `-`, `*`, `/`, `.`, `,`, `=`) | 数字および演算子記号の直接入力（英字/IME両モード完全対応） |
 | テンキー `Enter` | 改行の挿入 / 新規ファイル作成モーダルの確定 |
-| `Tab` | AI補完の確定挿入 / インデント（4スペース） |
-| `Esc` | AI補完の破棄 / 選択解除 / メニュー・ダイアログキャンセル |
+| `Tab`（未選択時） | AI補完の確定挿入 / 4スペース挿入 |
+| `Esc` | 検索バー終了 / AI補完破棄 / モーダル終了 / 選択解除 / メニューキャンセル |
 | `Ctrl + B` | ファイルツリーサイドバーの表示/非表示 |
 | `Ctrl + \` または `Ctrl + E` | 左右2分割（Split / Single）レイアウト切り替え |
 | `Ctrl + M` | Markdownプレビューの切り替え |
@@ -130,7 +195,7 @@ cargo build --release
 # 実行
 cargo run
 
-# テスト実行 (16テスト)
+# テスト実行 (27テスト)
 cargo test
 ```
 
@@ -209,30 +274,97 @@ Zero LSP overhead and zero heavy child processes: features in-process Tree-sitte
     - Solves Wayland/XKB NumLock state desynchronization: intelligently maps physical keycodes so numeric keypad input works seamlessly across both direct English input and IME modes.
     - Dedicated navigation keys (arrows, Delete, Home, End, PageUp, PageDown) remain 100% functional and unhindered.
 
+11. **Multi-Language Tree-sitter & Configuration Syntax Highlighting (12+ Languages)**
+    - Zero-LSP in-process AST syntax parsing for high speed and pinpoint highlighting accuracy.
+    - **Supported Languages**:
+      - **Systems & Programming**: Rust (`.rs`), Python (`.py`/`.pyi`), JavaScript (`.js`/`.jsx`/`.mjs`/`.cjs`), TypeScript (`.ts`/`.tsx`/`.mts`/`.cts`), C (`.c`/`.h`), C++ (`.cpp`/`.hpp`/`.cc`/`.cxx`)
+      - **Shell Scripts**: Bash / POSIX Shell (`.sh`/`.bash`/`.zsh`), Fish (`.fish`, `config.fish`)
+      - **Configs & Formats**: TOML (`.toml`, `Cargo.lock`), YAML (`.yaml`/`.yml`), JSON (`.json`/`.jsonc`), INI / Conf (`.ini`/`.conf`/`.cfg`/`.gitconfig`)
+      - **Markdown**: Markdown (`.md`/`.markdown`)
+    - Rich colored Nerd Font file icons in the file tree for each file type (Fish `󰈺`, YAML ``, INI ``, TSX ``, etc.).
+
+12. **Incremental In-File Search (`Ctrl + F`) & Canvas Highlights**
+    - Press `Ctrl + F` to reveal a floating, minimalist in-pane search bar.
+    - Real-time full-buffer search with instant canvas match highlights.
+    - Jump between matches with `Enter` / `▼` (Next) and `Shift + Enter` / `▲` (Previous).
+    - Match count indicator (e.g. `3/12`), close with `Esc` / `✕` to return to editing.
+
+13. **Advanced Cursor Navigation & Line Editing Shortcuts**
+    - **Word Navigation**: `Ctrl + Left` / `Ctrl + Right` jump word-by-word (`Shift` modifier for word selection).
+    - **Comment Toggle**: `Ctrl + /` toggles line comments using the appropriate syntax (`//` or `#`).
+    - **Line Deletion**: `Ctrl + Shift + K` deletes the current line entirely.
+    - **Line Duplication**: `Ctrl + D` duplicates the current line below.
+    - **Block Indent**: Select multiple lines and press `Tab` to indent (4 spaces) or `Shift + Tab` to unindent.
+
+14. **Tabbed Multi-Buffer Management & Tab Bar**
+    - Open multiple files per pane (both Single and Dual-Pane Split modes) with fluid tab switching.
+    - Features colored file icons, filename, unsaved dirty indicator (`●`), individual close buttons (`✕`), and add tab button (`＋`).
+    - Smart tab switching: opening an already-opened file from the file tree or chooser focuses its existing tab without duplication.
+    - Full keyboard navigation: `Ctrl + T` (New Tab), `Ctrl + W` (Close Tab), `Ctrl + Tab` / `Ctrl + PageDown` (Next Tab), `Ctrl + Shift + Tab` / `Ctrl + PageUp` (Previous Tab).
+
+15. **File Tree Right-Click Context Menu & Directory Management**
+    - **Right-Click Context Menu**: Right-click any file, folder, or empty background in the file tree to open a native floating context menu (New File, New Folder, Rename, Delete, Refresh).
+    - **Scrollbar Gutter Margin Design**: Dedicated 16px right gutter space between row action buttons (``, ``, ``) and the vertical scrollbar / pane boundary, ensuring zero overlap and smooth clicking.
+    - **Create New (`` / ``)**: Create files or folders directly in the selected directory via centered modal dialog.
+    - **Rename (``)**: Rename files or directories on disk; all open tabs referencing the file or children within the directory automatically synchronize their file paths and tab titles in real time.
+    - **Safe Deletion (``)**: Confirm removal with a modal dialog to prevent accidental deletion, then remove files or directories recursively. Automatically and safely closes any active tabs referencing deleted files.
+
+16. **AI Chat & Code Generation Panel (`Ctrl + Shift + A` / `󰭹 Chat`)**
+    - Collapsible dedicated AI assistant panel on the right side of the editor.
+    - **Real-Time Token Streaming & Typing Animation**:
+      - Asynchronous token streaming via Ollama's `stream: true` (ndjson / SSE), rendering generated responses line-by-line in real time.
+      - Features an animated typing cursor (`▋`) and thinking status indicator (`󰚩 Thinking...`).
+      - Instant generation cancellation via the dynamic `󰓛 Stop` button or by hitting `Enter` during streaming.
+    - **Context Attachment**:
+      - `󰈔 Attach Selection`: Attaches the currently selected code in the editor into the chat input as a markdown code block.
+      - `󰈙 Attach File`: Attaches the full text of the active file into the chat prompt.
+    - **Code Insertion & Clipboard Copy**:
+      - `󰈔 Insert`: Inserts the generated code block directly at the current cursor position in the active editor buffer.
+      - `󰆏 Copy`: Copies the generated code to the system clipboard.
+
+17. **Automatic Workspace Session Persistence**
+    - Automatically serializes and saves open tabs in both left and right panes, active tab indices, cursor positions (line and column), workspace root folder, and AI chat panel visibility to `~/.config/rooney/config.toml`.
+    - Seamlessly restores your entire editing session on application relaunch.
+
 ---
 
 ### Keyboard Shortcuts & Mouse Operations ⌨️
 
 | Action / Shortcut | Description |
 |---|---|
+| `Ctrl + T` | Open new blank tab |
+| `Ctrl + W` | Close active tab |
+| `Ctrl + Tab` / `Ctrl + PageDown` | Switch to next tab |
+| `Ctrl + Shift + Tab` / `Ctrl + PageUp` | Switch to previous tab |
 | `Ctrl + N` | Create New File (opens filename prompt dialog) |
 | `Ctrl + O` | Open File (native system file chooser) |
 | `Ctrl + Shift + O` | Open Folder (switch file tree root) |
 | `Ctrl + S` | Save File (prompts Save As if buffer is untitled) |
 | `Ctrl + Shift + S` | Save File As |
+| `Ctrl + F` | Toggle Find in File search bar |
+| `Enter` / `Shift + Enter` (in search) | Jump to next / previous search match |
+| `Ctrl + /` | Toggle line comment (auto-detected syntax) |
+| `Ctrl + Shift + K` | Delete current line |
+| `Ctrl + D` | Duplicate current line |
+| `Ctrl + Left` / `Ctrl + Right` | Word-by-word cursor jump (+Shift to select) |
+| `Tab` / `Shift + Tab` (with selection) | Multi-line block indent / unindent (4 spaces) |
 | `Ctrl + C` | Copy selected text to system clipboard |
 | `Ctrl + X` | Cut selected text to system clipboard |
 | `Ctrl + V` | Paste from system clipboard |
 | `Ctrl + A` | Select All in active buffer |
+| `Ctrl + Shift + A` | Toggle AI Chat Panel |
 | `Ctrl + Z` | Undo |
 | `Ctrl + Y` or `Ctrl + Shift + Z` | Redo |
 | Mouse Left Drag | Drag-select text with visual highlight |
-| Mouse Right Click | Open context menu (Copy, Cut, Paste, Select All, Undo, Redo) |
+| Editor Right Click | Open editor context menu (Copy, Cut, Paste, Select All, Undo, Redo) |
+| File Tree Right Click | Open file tree context menu (New File, New Folder, Rename, Delete, Refresh) |
 | Header `󰧑 Edit` | Toggle Edit toolbar visibility |
+| Header `󰭹 Chat` | Toggle AI Chat panel visibility |
+| Chat `󰓛 Stop` | Stop/cancel active AI generation |
 | Numpad `0`–`9` / Operators (`+`, `-`, `*`, `/`, `.`, `,`, `=`) | Direct numeric and operator entry (both English and IME modes) |
 | Numpad `Enter` | Insert newline / Confirm modal dialog |
-| `Tab` | Accept AI suggestion / Indent (4 spaces) |
-| `Esc` | Dismiss AI suggestion / Clear selection / Cancel dialog & menus |
+| `Tab` (no selection) | Accept AI suggestion / Insert 4 spaces |
+| `Esc` | Close search / Dismiss AI suggestion / Close modals / Clear selection / Cancel dialogs |
 | `Ctrl + B` | Toggle File Tree sidebar visibility |
 | `Ctrl + \` or `Ctrl + E` | Toggle Dual-Pane Split / Single layout |
 | `Ctrl + M` | Toggle Markdown Live Preview |
@@ -253,7 +385,7 @@ cargo build --release
 # Run locally
 cargo run
 
-# Run unit tests (16 tests)
+# Run unit tests (27 tests)
 cargo test
 ```
 

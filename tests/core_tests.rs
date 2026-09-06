@@ -306,4 +306,470 @@ fn test_numpad_key_resolution() {
     }
 }
 
+#[test]
+fn test_multi_language_detection() {
+    use rooney::syntax::SupportedLanguage;
+
+    let cases = [
+        ("src/main.rs", SupportedLanguage::Rust),
+        ("app.py", SupportedLanguage::Python),
+        ("script.pyi", SupportedLanguage::Python),
+        ("index.js", SupportedLanguage::JavaScript),
+        ("component.jsx", SupportedLanguage::JavaScript),
+        ("server.mjs", SupportedLanguage::JavaScript),
+        ("main.ts", SupportedLanguage::TypeScript),
+        ("App.tsx", SupportedLanguage::TypeScript),
+        ("main.c", SupportedLanguage::C),
+        ("header.h", SupportedLanguage::C),
+        ("main.cpp", SupportedLanguage::Cpp),
+        ("util.hpp", SupportedLanguage::Cpp),
+        ("deploy.sh", SupportedLanguage::Bash),
+        (".bashrc", SupportedLanguage::Bash),
+        ("config.fish", SupportedLanguage::Fish),
+        ("test.fish", SupportedLanguage::Fish),
+        ("Cargo.toml", SupportedLanguage::Toml),
+        ("Cargo.lock", SupportedLanguage::Toml),
+        ("docker-compose.yaml", SupportedLanguage::Yaml),
+        ("app.yml", SupportedLanguage::Yaml),
+        ("package.json", SupportedLanguage::Json),
+        (".gitconfig", SupportedLanguage::Ini),
+        ("settings.ini", SupportedLanguage::Ini),
+        ("server.conf", SupportedLanguage::Ini),
+        ("README.md", SupportedLanguage::Markdown),
+        ("notes.txt", SupportedLanguage::PlainText),
+    ];
+
+    for (file, expected) in cases {
+        let detected = SupportedLanguage::from_path(Path::new(file));
+        assert_eq!(detected, expected, "Failed detection for {file}");
+    }
+}
+
+#[test]
+fn test_tree_sitter_highlighting_all_languages() {
+    use rooney::syntax::{Highlighter, SupportedLanguage};
+
+    let snippets = [
+        (SupportedLanguage::Rust, "fn main() { let x = 42; }"),
+        (SupportedLanguage::Python, "def greet(name):\n    return f'hello {name}'"),
+        (SupportedLanguage::JavaScript, "const add = (a, b) => { return a + b; };"),
+        (SupportedLanguage::TypeScript, "function add(a: number, b: number): number { return a + b; }"),
+        (SupportedLanguage::C, "int main(int argc, char** argv) { return 0; }"),
+        (SupportedLanguage::Cpp, "class App { public: virtual ~App() = default; };"),
+        (SupportedLanguage::Bash, "if [ -f $file ]; then\n  echo \"found\"\nfi"),
+        (SupportedLanguage::Fish, "function greet\n  echo \"hello $argv\"\nend"),
+        (SupportedLanguage::Toml, "[package]\nname = \"rooney\"\nversion = 1"),
+        (SupportedLanguage::Yaml, "name: rooney\nversion: 1.0"),
+        (SupportedLanguage::Json, "{\n  \"name\": \"rooney\",\n  \"count\": 42\n}"),
+        (SupportedLanguage::Ini, "[core]\n  repositoryformatversion = 0"),
+    ];
+
+    for (lang, code) in snippets {
+        let mut highlighter = Highlighter::new(lang);
+        highlighter.update_source(code);
+        let spans = highlighter.highlight_line(code.lines().next().unwrap(), 0);
+        assert!(!spans.is_empty(), "Spans should not be empty for {lang:?}");
+    }
+}
+
+#[test]
+fn test_search_matches_and_navigation() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+
+    let mut pane = EditorPane::new(PaneId::Left, "Test");
+    pane.buffer = TextBuffer::new("apple banana apple cherry\nsecond apple line");
+    pane.update_search("apple");
+
+    assert_eq!(pane.search_matches.len(), 3);
+    assert_eq!(pane.current_match_idx, 0);
+
+    let next = pane.next_search_match();
+    assert_eq!(next, Some((0, 13))); // second "apple"
+    assert_eq!(pane.current_match_idx, 1);
+
+    let next = pane.next_search_match();
+    assert_eq!(next, Some((1, 7))); // third "apple" on line 1
+    assert_eq!(pane.current_match_idx, 2);
+
+    let prev = pane.prev_search_match();
+    assert_eq!(prev, Some((0, 13)));
+    assert_eq!(pane.current_match_idx, 1);
+}
+
+#[test]
+fn test_word_navigation_and_line_operations() {
+    let mut buf = TextBuffer::new("hello world from rooney\nsecond line here");
+    buf.cursor = (0, 0);
+
+    buf.move_word_right(false);
+    assert_eq!(buf.cursor, (0, 6)); // after "hello "
+
+    buf.move_word_right(false);
+    assert_eq!(buf.cursor, (0, 12)); // after "world "
+
+    buf.move_word_left(false);
+    assert_eq!(buf.cursor, (0, 6)); // back to "world"
+
+    // Line duplication
+    buf.cursor = (0, 2);
+    buf.duplicate_line();
+    assert_eq!(buf.line_count(), 3);
+    assert_eq!(buf.line_text(1), Some("hello world from rooney".to_string()));
+
+    // Line deletion
+    buf.cursor = (1, 0);
+    buf.delete_line();
+    assert_eq!(buf.line_count(), 2);
+    assert_eq!(buf.line_text(1), Some("second line here".to_string()));
+
+    // Comment toggle
+    buf.cursor = (0, 0);
+    buf.toggle_comment("//");
+    assert_eq!(buf.line_text(0), Some("// hello world from rooney".to_string()));
+
+    buf.toggle_comment("//");
+    assert_eq!(buf.line_text(0), Some("hello world from rooney".to_string()));
+}
+
+#[test]
+fn test_file_type_icons_extended() {
+    let fish_icon = FileTypeIcon::for_path(Path::new("config.fish"), false, false);
+    assert_eq!(fish_icon.glyph, "󰈺");
+
+    let yaml_icon = FileTypeIcon::for_path(Path::new("docker-compose.yml"), false, false);
+    assert_eq!(yaml_icon.glyph, "");
+
+    let ini_icon = FileTypeIcon::for_path(Path::new("config.ini"), false, false);
+    assert_eq!(ini_icon.glyph, "");
+
+    let tsx_icon = FileTypeIcon::for_path(Path::new("App.tsx"), false, false);
+    assert_eq!(tsx_icon.glyph, "");
+}
+
+#[test]
+fn test_pane_tab_management() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use std::fs;
+
+    let mut pane = EditorPane::new(PaneId::Left, "Welcome");
+    assert_eq!(pane.tabs.len(), 1);
+    assert_eq!(pane.active_tab_idx, 0);
+    assert_eq!(pane.file_name, "Welcome");
+
+    // Add a new tab
+    pane.new_tab("Script.py");
+    assert_eq!(pane.tabs.len(), 2);
+    assert_eq!(pane.active_tab_idx, 1);
+    assert_eq!(pane.file_name, "Script.py");
+
+    pane.buffer.insert_str("print('hello tab 2')");
+    assert_eq!(pane.buffer.full_text(), "print('hello tab 2')");
+
+    // Switch back to tab 0
+    pane.select_tab(0);
+    assert_eq!(pane.active_tab_idx, 0);
+    assert_eq!(pane.file_name, "Welcome");
+    assert_eq!(pane.buffer.full_text(), "");
+
+    // Cycle through tabs with next_tab / prev_tab
+    pane.next_tab();
+    assert_eq!(pane.active_tab_idx, 1);
+    assert_eq!(pane.buffer.full_text(), "print('hello tab 2')");
+
+    pane.next_tab();
+    assert_eq!(pane.active_tab_idx, 0);
+
+    pane.prev_tab();
+    assert_eq!(pane.active_tab_idx, 1);
+
+    // Open file into pane
+    let temp_dir = std::env::temp_dir().join("rooney_test_tabs");
+    let _ = fs::create_dir_all(&temp_dir);
+    let test_file = temp_dir.join("tab_test.rs");
+    fs::write(&test_file, "fn tab_func() {}").unwrap();
+
+    // Opening test_file creates a new tab because current tab is dirty/non-empty
+    assert!(pane.open_file(&test_file).is_ok());
+    assert_eq!(pane.tabs.len(), 3);
+    assert_eq!(pane.active_tab_idx, 2);
+    assert_eq!(pane.file_name, "tab_test.rs");
+    assert_eq!(pane.buffer.full_text(), "fn tab_func() {}");
+
+    // Re-opening the same file switches to existing tab without duplicating
+    assert!(pane.open_file(&test_file).is_ok());
+    assert_eq!(pane.tabs.len(), 3);
+    assert_eq!(pane.active_tab_idx, 2);
+
+    // Close active tab
+    pane.close_tab(2);
+    assert_eq!(pane.tabs.len(), 2);
+    assert_eq!(pane.active_tab_idx, 1);
+
+    // Close remaining tabs until empty -> should fallback to a new Untitled tab
+    pane.close_tab(1);
+    assert_eq!(pane.tabs.len(), 1);
+    pane.close_tab(0);
+    assert_eq!(pane.tabs.len(), 1);
+    assert_eq!(pane.active_tab_idx, 0);
+    assert_eq!(pane.file_name, "Untitled");
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_session_serialization_roundtrip() {
+    use rooney::config::{AppConfig, PaneSessionInfo, SessionConfig, TabSessionInfo};
+    use std::path::PathBuf;
+
+    let session = SessionConfig {
+        root_dir: Some(PathBuf::from("/home/user/project")),
+        left_pane: PaneSessionInfo {
+            active_tab_idx: 1,
+            tabs: vec![
+                TabSessionInfo {
+                    file_path: Some(PathBuf::from("/home/user/project/src/main.rs")),
+                    file_name: "main.rs".to_string(),
+                    cursor_line: 12,
+                    cursor_col: 4,
+                },
+                TabSessionInfo {
+                    file_path: Some(PathBuf::from("/home/user/project/Cargo.toml")),
+                    file_name: "Cargo.toml".to_string(),
+                    cursor_line: 5,
+                    cursor_col: 0,
+                },
+            ],
+        },
+        right_pane: Some(PaneSessionInfo {
+            active_tab_idx: 0,
+            tabs: vec![TabSessionInfo {
+                file_path: None,
+                file_name: "Untitled".to_string(),
+                cursor_line: 0,
+                cursor_col: 0,
+            }],
+        }),
+    };
+
+    let config = AppConfig {
+        ai_chat_visible: true,
+        session,
+        ..Default::default()
+    };
+
+    let toml_str = toml::to_string_pretty(&config).expect("Failed to serialize AppConfig");
+    assert!(toml_str.contains("ai_chat_visible = true"));
+    assert!(toml_str.contains("main.rs"));
+    assert!(toml_str.contains("Cargo.toml"));
+
+    let deserialized: AppConfig =
+        toml::from_str(&toml_str).expect("Failed to deserialize AppConfig");
+    assert!(deserialized.ai_chat_visible);
+    assert_eq!(
+        deserialized.session.root_dir,
+        Some(PathBuf::from("/home/user/project"))
+    );
+    assert_eq!(deserialized.session.left_pane.active_tab_idx, 1);
+    assert_eq!(deserialized.session.left_pane.tabs.len(), 2);
+    assert_eq!(
+        deserialized.session.left_pane.tabs[0].file_path,
+        Some(PathBuf::from("/home/user/project/src/main.rs"))
+    );
+    assert_eq!(deserialized.session.left_pane.tabs[0].cursor_line, 12);
+    assert_eq!(deserialized.session.left_pane.tabs[0].cursor_col, 4);
+    assert!(deserialized.session.right_pane.is_some());
+    let right_pane = deserialized.session.right_pane.unwrap();
+    assert_eq!(right_pane.tabs.len(), 1);
+    assert_eq!(right_pane.tabs[0].file_path, None);
+}
+
+#[test]
+fn test_ai_chat_data_structures() {
+    use rooney::ai::{ChatMessage, ChatRole};
+
+    let user_msg = ChatMessage {
+        role: ChatRole::User,
+        content: "Write a Rust hello world".to_string(),
+    };
+    assert_eq!(user_msg.role, ChatRole::User);
+    assert_eq!(user_msg.content, "Write a Rust hello world");
+
+    let assistant_msg = ChatMessage {
+        role: ChatRole::Assistant,
+        content: "```rust\nfn main() {\n    println!(\"Hello World\");\n}\n```".to_string(),
+    };
+    assert_eq!(assistant_msg.role, ChatRole::Assistant);
+
+    // Verify code block extraction
+    let text = &assistant_msg.content;
+    let extracted = if let Some(start) = text.find("```") {
+        let after_start = &text[start + 3..];
+        if let Some(newline_pos) = after_start.find('\n') {
+            let code_start = &after_start[newline_pos + 1..];
+            if let Some(end_fence) = code_start.rfind("```") {
+                code_start[..end_fence].trim_end().to_string()
+            } else {
+                text.to_string()
+            }
+        } else {
+            text.to_string()
+        }
+    } else {
+        text.to_string()
+    };
+
+    assert_eq!(extracted, "fn main() {\n    println!(\"Hello World\");\n}");
+}
+
+#[test]
+fn test_ai_chat_streaming_accumulation() {
+    use rooney::ai::{ChatMessage, ChatRole, ChatStreamEvent};
+
+    let mut assistant_msg = ChatMessage {
+        role: ChatRole::Assistant,
+        content: String::new(),
+    };
+
+    let events = vec![
+        ChatStreamEvent::Chunk("Hello".to_string()),
+        ChatStreamEvent::Chunk(", ".to_string()),
+        ChatStreamEvent::Chunk("world".to_string()),
+        ChatStreamEvent::Chunk("!".to_string()),
+        ChatStreamEvent::Done,
+    ];
+
+    for ev in events {
+        match ev {
+            ChatStreamEvent::Chunk(c) => assistant_msg.content.push_str(&c),
+            ChatStreamEvent::Done => break,
+            ChatStreamEvent::Error(_) => panic!("Unexpected error event"),
+        }
+    }
+
+    assert_eq!(assistant_msg.content, "Hello, world!");
+}
+
+#[test]
+fn test_tab_synchronization_on_rename_and_delete() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use std::fs;
+
+    let temp_dir = std::env::temp_dir().join("rooney_test_rename_sync");
+    let _ = fs::create_dir_all(&temp_dir);
+
+    let old_file = temp_dir.join("original.rs");
+    fs::write(&old_file, "pub fn foo() {}").unwrap();
+
+    let mut pane = EditorPane::new(PaneId::Left, "Welcome");
+    assert!(pane.open_file(&old_file).is_ok());
+    assert_eq!(pane.file_name, "original.rs");
+    assert_eq!(pane.file_path, Some(old_file.clone()));
+
+    // Simulate rename to updated.rs
+    let new_file = temp_dir.join("updated.rs");
+    fs::rename(&old_file, &new_file).unwrap();
+
+    // Tab synchronization logic
+    for tab in &mut pane.tabs {
+        if let Some(ref mut tab_path) = tab.file_path {
+            if *tab_path == old_file {
+                *tab_path = new_file.clone();
+                tab.file_name = "updated.rs".to_string();
+            }
+        }
+    }
+
+    assert_eq!(pane.tabs[pane.active_tab_idx].file_name, "updated.rs");
+    assert_eq!(
+        pane.tabs[pane.active_tab_idx].file_path,
+        Some(new_file.clone())
+    );
+
+    // Simulate delete
+    fs::remove_file(&new_file).unwrap();
+
+    // Tab delete logic
+    let mut idx = 0;
+    while idx < pane.tabs.len() {
+        let matches = pane.tabs[idx]
+            .file_path
+            .as_ref()
+            .map(|p| p == &new_file || p.starts_with(&new_file))
+            .unwrap_or(false);
+        if matches {
+            pane.close_tab(idx);
+        } else {
+            idx += 1;
+        }
+    }
+
+    // Should have closed the file tab and fallen back to Untitled
+    assert_eq!(pane.tabs.len(), 1);
+    assert_eq!(pane.file_name, "Untitled");
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_file_tree_context_menu_state_and_right_click() {
+    use rooney::app::FileTreeContextMenuState;
+    use rooney::ui::file_tree_view::FileTreeMessage;
+    use std::path::PathBuf;
+
+    // Test FileTreeMessage variants
+    let item_path = PathBuf::from("/tmp/rooney_test/main.rs");
+    let right_click_file = FileTreeMessage::RightClick(item_path.clone(), false);
+    if let FileTreeMessage::RightClick(path, is_dir) = right_click_file {
+        assert_eq!(path, item_path);
+        assert!(!is_dir);
+    } else {
+        panic!("Expected RightClick variant");
+    }
+
+    let dir_path = PathBuf::from("/tmp/rooney_test/src");
+    let right_click_dir = FileTreeMessage::RightClick(dir_path.clone(), true);
+    if let FileTreeMessage::RightClick(path, is_dir) = right_click_dir {
+        assert_eq!(path, dir_path);
+        assert!(is_dir);
+    } else {
+        panic!("Expected RightClick variant");
+    }
+
+    let right_click_root = FileTreeMessage::RightClickRoot;
+    assert!(matches!(right_click_root, FileTreeMessage::RightClickRoot));
+
+    // Test FileTreeContextMenuState
+    let menu_file = FileTreeContextMenuState {
+        target: Some(item_path.clone()),
+        is_dir: false,
+        x: 120.0,
+        y: 250.0,
+    };
+    assert_eq!(menu_file.target, Some(item_path));
+    assert!(!menu_file.is_dir);
+    assert_eq!(menu_file.x, 120.0);
+    assert_eq!(menu_file.y, 250.0);
+
+    let menu_root = FileTreeContextMenuState {
+        target: None,
+        is_dir: true,
+        x: 80.0,
+        y: 100.0,
+    };
+    assert!(menu_root.target.is_none());
+    assert!(menu_root.is_dir);
+}
+
+#[test]
+fn test_file_tree_width_and_item_gutter() {
+    use std::fs;
+    let temp_dir = std::env::temp_dir().join(format!("rooney_tree_test_{}", std::process::id()));
+    let _ = fs::create_dir_all(&temp_dir);
+
+    let tree = FileTree::new(&temp_dir);
+    // Tree default width should be 280.0
+    assert_eq!(tree.width, 280.0);
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
 

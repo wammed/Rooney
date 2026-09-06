@@ -63,9 +63,7 @@ impl MarkdownDocument {
                     list_depth += 1;
                 }
                 Event::End(TagEnd::List(_)) => {
-                    if list_depth > 0 {
-                        list_depth -= 1;
-                    }
+                    list_depth = list_depth.saturating_sub(1);
                 }
                 Event::Start(Tag::Item) => {
                     in_list_item = true;

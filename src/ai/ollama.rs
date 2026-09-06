@@ -38,6 +38,36 @@ struct GenerateOptions {
     stop: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChatRole {
+    User,
+    Assistant,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChatStreamEvent {
+    Chunk(String),
+    Done,
+    Error(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatMessage {
+    pub role: ChatRole,
+    pub content: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ChatGeneratePayload {
+    model: String,
+    prompt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    system: Option<String>,
+    stream: bool,
+    options: GenerateOptions,
+}
+
 #[derive(Debug, Deserialize)]
 struct GenerateResponse {
     response: String,
@@ -197,5 +227,138 @@ impl OllamaClient {
         };
 
         Ok(final_text)
+    }
+
+    pub async fn chat_generate(
+        &self,
+        system_prompt: Option<&str>,
+        prompt: &str,
+    ) -> Result<String, String> {
+        let url = format!("{}/api/generate", self.endpoint);
+        let default_system = "You are an expert AI software engineering assistant integrated directly inside Rooney (CosmicCode) editor. Provide clean, concise code, answers, and refactorings. Wrap code snippets in markdown codeblocks.";
+        let sys = system_prompt.unwrap_or(default_system).to_string();
+
+        let payload = ChatGeneratePayload {
+            model: self.active_model.clone(),
+            prompt: prompt.to_string(),
+            system: Some(sys),
+            stream: false,
+            options: GenerateOptions {
+                temperature: 0.3,
+                num_predict: 2048,
+                stop: Vec::new(),
+            },
+        };
+
+        let resp = self
+            .client
+            .post(&url)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| format!("Ollama request error: {e}"))?;
+
+        if !resp.status().is_success() {
+            return Err(format!("Ollama returned status {}", resp.status()));
+        }
+
+        let result: GenerateResponse = resp
+            .json()
+            .await
+            .map_err(|e| format!("Invalid JSON response: {e}"))?;
+
+        Ok(result.response)
+    }
+
+    pub async fn chat_generate_stream(
+        &self,
+        system_prompt: Option<&str>,
+        prompt: &str,
+        tx: futures_channel::mpsc::UnboundedSender<ChatStreamEvent>,
+        cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) {
+        let url = format!("{}/api/generate", self.endpoint);
+        let default_system = "You are an expert AI software engineering assistant integrated directly inside Rooney (CosmicCode) editor. Provide clean, concise code, answers, and refactorings. Wrap code snippets in markdown codeblocks.";
+        let sys = system_prompt.unwrap_or(default_system).to_string();
+
+        let payload = ChatGeneratePayload {
+            model: self.active_model.clone(),
+            prompt: prompt.to_string(),
+            system: Some(sys),
+            stream: true,
+            options: GenerateOptions {
+                temperature: 0.3,
+                num_predict: 2048,
+                stop: Vec::new(),
+            },
+        };
+
+        let resp = match self.client.post(&url).json(&payload).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                let _ = tx.unbounded_send(ChatStreamEvent::Error(format!("Ollama request error: {e}")));
+                return;
+            }
+        };
+
+        if !resp.status().is_success() {
+            let _ = tx.unbounded_send(ChatStreamEvent::Error(format!("Ollama returned status {}", resp.status())));
+            return;
+        }
+
+        let mut byte_stream = resp.bytes_stream();
+        let mut line_buffer = String::new();
+
+        use futures_util::StreamExt;
+        while let Some(item) = byte_stream.next().await {
+            if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                let _ = tx.unbounded_send(ChatStreamEvent::Done);
+                return;
+            }
+
+            let bytes = match item {
+                Ok(b) => b,
+                Err(e) => {
+                    let _ = tx.unbounded_send(ChatStreamEvent::Error(format!("Stream read error: {e}")));
+                    return;
+                }
+            };
+
+            line_buffer.push_str(&String::from_utf8_lossy(&bytes));
+
+            while let Some(pos) = line_buffer.find('\n') {
+                let line = line_buffer[..pos].trim().to_string();
+                line_buffer = line_buffer[pos + 1..].to_string();
+
+                if line.is_empty() {
+                    continue;
+                }
+
+                #[derive(Deserialize)]
+                struct StreamChunk {
+                    response: Option<String>,
+                    done: Option<bool>,
+                    error: Option<String>,
+                }
+
+                if let Ok(chunk) = serde_json::from_str::<StreamChunk>(&line) {
+                    if let Some(err) = chunk.error {
+                        let _ = tx.unbounded_send(ChatStreamEvent::Error(err));
+                        return;
+                    }
+                    if let Some(token) = chunk.response {
+                        if !token.is_empty() {
+                            let _ = tx.unbounded_send(ChatStreamEvent::Chunk(token));
+                        }
+                    }
+                    if chunk.done.unwrap_or(false) {
+                        let _ = tx.unbounded_send(ChatStreamEvent::Done);
+                        return;
+                    }
+                }
+            }
+        }
+
+        let _ = tx.unbounded_send(ChatStreamEvent::Done);
     }
 }

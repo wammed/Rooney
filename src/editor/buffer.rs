@@ -134,7 +134,7 @@ impl TextBuffer {
         let lines_added = s.chars().filter(|&c| c == '\n').count();
         if lines_added > 0 {
             self.cursor.0 += lines_added;
-            let last_line = s.split('\n').last().unwrap_or("");
+            let last_line = s.split('\n').next_back().unwrap_or("");
             self.cursor.1 = last_line.chars().count();
         } else {
             self.cursor.1 += s.chars().count();
@@ -318,5 +318,209 @@ impl TextBuffer {
         let suffix = self.rope.slice(cursor_idx..suffix_end).to_string();
 
         (prefix, suffix)
+    }
+
+    pub fn move_word_left(&mut self, select: bool) {
+        if select && self.selection_anchor.is_none() {
+            self.selection_anchor = Some(self.cursor);
+        } else if !select {
+            self.selection_anchor = None;
+        }
+
+        if self.cursor.1 == 0 {
+            if self.cursor.0 > 0 {
+                self.cursor.0 -= 1;
+                self.cursor.1 = self.line_char_count(self.cursor.0);
+            }
+            return;
+        }
+
+        let Some(line) = self.line_text(self.cursor.0) else {
+            return;
+        };
+        let chars: Vec<char> = line.chars().collect();
+        let mut col = self.cursor.1.min(chars.len());
+
+        while col > 0 && chars[col - 1].is_whitespace() {
+            col -= 1;
+        }
+        if col > 0 && !chars[col - 1].is_alphanumeric() && chars[col - 1] != '_' {
+            while col > 0
+                && !chars[col - 1].is_alphanumeric()
+                && chars[col - 1] != '_'
+                && !chars[col - 1].is_whitespace()
+            {
+                col -= 1;
+            }
+        } else {
+            while col > 0 && (chars[col - 1].is_alphanumeric() || chars[col - 1] == '_') {
+                col -= 1;
+            }
+        }
+        self.cursor.1 = col;
+    }
+
+    pub fn move_word_right(&mut self, select: bool) {
+        if select && self.selection_anchor.is_none() {
+            self.selection_anchor = Some(self.cursor);
+        } else if !select {
+            self.selection_anchor = None;
+        }
+
+        let line_len = self.line_char_count(self.cursor.0);
+        if self.cursor.1 >= line_len {
+            if self.cursor.0 + 1 < self.rope.len_lines() {
+                self.cursor.0 += 1;
+                self.cursor.1 = 0;
+            }
+            return;
+        }
+
+        let Some(line) = self.line_text(self.cursor.0) else {
+            return;
+        };
+        let chars: Vec<char> = line.chars().collect();
+        let mut col = self.cursor.1;
+
+        if col < chars.len()
+            && !chars[col].is_alphanumeric()
+            && chars[col] != '_'
+            && !chars[col].is_whitespace()
+        {
+            while col < chars.len()
+                && !chars[col].is_alphanumeric()
+                && chars[col] != '_'
+                && !chars[col].is_whitespace()
+            {
+                col += 1;
+            }
+        } else {
+            while col < chars.len() && (chars[col].is_alphanumeric() || chars[col] == '_') {
+                col += 1;
+            }
+        }
+        while col < chars.len() && chars[col].is_whitespace() {
+            col += 1;
+        }
+        self.cursor.1 = col;
+    }
+
+    pub fn delete_line(&mut self) {
+        self.push_undo();
+        let line = self.cursor.0;
+        if self.rope.len_lines() == 0 {
+            return;
+        }
+        let start_idx = self.rope.line_to_char(line);
+        let end_idx = if line + 1 < self.rope.len_lines() {
+            self.rope.line_to_char(line + 1)
+        } else {
+            self.rope.len_chars()
+        };
+
+        if start_idx < end_idx {
+            self.rope.remove(start_idx..end_idx);
+        }
+        self.selection_anchor = None;
+        self.clamp_cursor();
+    }
+
+    pub fn duplicate_line(&mut self) {
+        let line = self.cursor.0;
+        if let Some(line_str) = self.line_text(line) {
+            self.push_undo();
+            let insert_idx = if line + 1 < self.rope.len_lines() {
+                self.rope.line_to_char(line + 1)
+            } else {
+                let len = self.rope.len_chars();
+                self.rope.insert_char(len, '\n');
+                self.rope.len_chars()
+            };
+            self.rope.insert(insert_idx, &format!("{}\n", line_str));
+            self.cursor.0 += 1;
+            self.clamp_cursor();
+        }
+    }
+
+    pub fn toggle_comment(&mut self, prefix: &str) {
+        let (start_line, end_line) = if let Some(anchor) = self.selection_anchor {
+            (self.cursor.0.min(anchor.0), self.cursor.0.max(anchor.0))
+        } else {
+            (self.cursor.0, self.cursor.0)
+        };
+
+        self.push_undo();
+        let comment_str = format!("{} ", prefix);
+
+        let mut all_commented = true;
+        for l in start_line..=end_line {
+            if let Some(txt) = self.line_text(l) {
+                let trimmed = txt.trim_start();
+                if !trimmed.is_empty() && !trimmed.starts_with(prefix) {
+                    all_commented = false;
+                    break;
+                }
+            }
+        }
+
+        for l in start_line..=end_line {
+            if let Some(txt) = self.line_text(l) {
+                let line_start = self.rope.line_to_char(l);
+                if all_commented {
+                    if let Some(pos) = txt.find(prefix) {
+                        let to_remove = if txt[pos..].starts_with(&comment_str) {
+                            comment_str.len()
+                        } else {
+                            prefix.len()
+                        };
+                        let char_pos = txt[..pos].chars().count();
+                        self.rope
+                            .remove(line_start + char_pos..line_start + char_pos + to_remove);
+                    }
+                } else {
+                    let indent = txt.len() - txt.trim_start().len();
+                    let char_indent = txt[..indent].chars().count();
+                    self.rope.insert(line_start + char_indent, &comment_str);
+                }
+            }
+        }
+        self.clamp_cursor();
+    }
+
+    pub fn indent_selection(&mut self) {
+        let (start_line, end_line) = if let Some(anchor) = self.selection_anchor {
+            (self.cursor.0.min(anchor.0), self.cursor.0.max(anchor.0))
+        } else {
+            (self.cursor.0, self.cursor.0)
+        };
+
+        self.push_undo();
+        for l in start_line..=end_line {
+            let line_start = self.rope.line_to_char(l);
+            self.rope.insert(line_start, "    ");
+        }
+        self.cursor.1 += 4;
+        self.clamp_cursor();
+    }
+
+    pub fn unindent_selection(&mut self) {
+        let (start_line, end_line) = if let Some(anchor) = self.selection_anchor {
+            (self.cursor.0.min(anchor.0), self.cursor.0.max(anchor.0))
+        } else {
+            (self.cursor.0, self.cursor.0)
+        };
+
+        self.push_undo();
+        for l in start_line..=end_line {
+            if let Some(txt) = self.line_text(l) {
+                let spaces = txt.chars().take_while(|&c| c == ' ').count().min(4);
+                if spaces > 0 {
+                    let line_start = self.rope.line_to_char(l);
+                    self.rope.remove(line_start..line_start + spaces);
+                }
+            }
+        }
+        self.cursor.1 = self.cursor.1.saturating_sub(4);
+        self.clamp_cursor();
     }
 }
