@@ -738,6 +738,8 @@ impl ThemeConfig {
 pub struct EditorTheme {
     pub config: ThemeConfig,
     pub opacity: f32,
+    pub file_tree_opacity: f32,
+    pub title_bar_opacity: f32,
     pub dimming: f32,
     pub bg_image_path: Option<String>,
 }
@@ -747,6 +749,8 @@ impl Default for EditorTheme {
         Self {
             config: ThemeConfig::for_id(ThemeId::TokyoNight),
             opacity: 0.95,
+            file_tree_opacity: 0.95,
+            title_bar_opacity: 0.95,
             dimming: 0.25,
             bg_image_path: None,
         }
@@ -758,6 +762,8 @@ impl EditorTheme {
         Self {
             config: ThemeConfig::for_id(id),
             opacity: 0.95,
+            file_tree_opacity: 0.95,
+            title_bar_opacity: 0.95,
             dimming: 0.25,
             bg_image_path: None,
         }
@@ -775,7 +781,13 @@ impl EditorTheme {
 
     pub fn sidebar_with_alpha(&self) -> Color {
         let mut c = self.config.sidebar_bg;
-        c.a = self.opacity;
+        c.a = self.file_tree_opacity;
+        c
+    }
+
+    pub fn title_bar_with_alpha(&self) -> Color {
+        let mut c = self.config.gutter_bg;
+        c.a = self.title_bar_opacity;
         c
     }
 }

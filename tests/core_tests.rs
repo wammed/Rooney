@@ -903,4 +903,55 @@ fn test_rooney_icon_integration() {
     }
 }
 
+#[test]
+fn test_independent_opacity_settings() {
+    let mut theme = EditorTheme::default();
+    assert_eq!(theme.file_tree_opacity, 0.95);
+    assert_eq!(theme.title_bar_opacity, 0.95);
+
+    theme.file_tree_opacity = 0.5;
+    theme.title_bar_opacity = 0.8;
+
+    let sidebar_color = theme.sidebar_with_alpha();
+    assert!((sidebar_color.a - 0.5).abs() < 0.001);
+
+    let title_bar_color = theme.title_bar_with_alpha();
+    assert!((title_bar_color.a - 0.8).abs() < 0.001);
+
+    // Test Config serialization & deserialization with default and custom values
+    let toml_str = r#"
+        theme = "TokyoNight"
+        font = "JetBrainsMono Nerd Font"
+        font_size = 14.0
+        opacity = 0.9
+        file_tree_opacity = 0.6
+        title_bar_opacity = 0.7
+        dimming = 0.2
+        split_layout = "Split"
+        file_tree_visible = true
+        ai_enabled = true
+        ai_model = "qwen2.5-coder:7b"
+    "#;
+    let config: rooney::config::AppConfig = toml::from_str(toml_str).expect("Valid config TOML");
+    assert_eq!(config.file_tree_opacity, 0.6);
+    assert_eq!(config.title_bar_opacity, 0.7);
+
+    // Test backward compatibility when file_tree_opacity & title_bar_opacity are omitted
+    let toml_str_legacy = r#"
+        theme = "TokyoNight"
+        font = "JetBrainsMono Nerd Font"
+        font_size = 14.0
+        opacity = 0.9
+        dimming = 0.2
+        split_layout = "Split"
+        file_tree_visible = true
+        ai_enabled = true
+        ai_model = "qwen2.5-coder:7b"
+    "#;
+    let legacy_config: rooney::config::AppConfig =
+        toml::from_str(toml_str_legacy).expect("Valid legacy config TOML");
+    assert_eq!(legacy_config.file_tree_opacity, 1.0);
+    assert_eq!(legacy_config.title_bar_opacity, 1.0);
+}
+
 

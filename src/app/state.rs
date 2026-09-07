@@ -47,6 +47,8 @@ impl App {
         self.config.font = self.font_manager.current_font.clone();
         self.config.font_size = self.font_manager.font_size;
         self.config.opacity = self.theme.opacity;
+        self.config.file_tree_opacity = self.theme.file_tree_opacity;
+        self.config.title_bar_opacity = self.theme.title_bar_opacity;
         self.config.dimming = self.theme.dimming;
         self.config.split_layout = match self.split_layout {
             SplitLayout::Single => "Single",

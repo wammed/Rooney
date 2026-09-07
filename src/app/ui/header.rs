@@ -57,6 +57,37 @@ impl App {
         ]
     }
 
+    pub(crate) fn render_title_bar(&self) -> Element<'_, Message> {
+        let mut hb = cosmic::widget::header_bar()
+            .title(&self.core.window.header_title)
+            .focused(true)
+            .maximized(self.core.window.is_maximized)
+            .on_drag(Message::DragWindow)
+            .on_double_click(Message::MaximizeWindow)
+            .on_close(Message::CloseWindow)
+            .on_maximize(Message::MaximizeWindow)
+            .on_minimize(Message::MinimizeWindow);
+
+        for elem in self.render_header_start() {
+            hb = hb.start(elem);
+        }
+
+        for elem in self.render_header_end() {
+            hb = hb.end(elem);
+        }
+
+        let bg_color = self.theme.title_bar_with_alpha();
+        container(hb)
+            .class(cosmic::theme::Container::Custom(Box::new(move |_| {
+                container::Style {
+                    background: Some(bg_color.into()),
+                    ..Default::default()
+                }
+            })))
+            .width(Length::Fill)
+            .into()
+    }
+
     pub(crate) fn render_header_end(&self) -> Vec<Element<'_, Message>> {
         vec![]
     }
@@ -71,7 +102,7 @@ impl App {
 
         let theme = &self.theme;
         let menu_w = 240.0;
-        let menu_y = 4.0;
+        let menu_y = 46.0;
         let menu_x = match menu {
             ActiveHeaderMenu::File => 44.0,
             ActiveHeaderMenu::Edit => 128.0,

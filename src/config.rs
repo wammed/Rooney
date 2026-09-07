@@ -24,12 +24,20 @@ pub struct SessionConfig {
     pub right_pane: Option<PaneSessionInfo>,
 }
 
+fn default_opacity_val() -> f32 {
+    1.0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub theme: ThemeId,
     pub font: String,
     pub font_size: f32,
     pub opacity: f32,
+    #[serde(default = "default_opacity_val")]
+    pub file_tree_opacity: f32,
+    #[serde(default = "default_opacity_val")]
+    pub title_bar_opacity: f32,
     pub dimming: f32,
     pub split_layout: String,
     pub file_tree_visible: bool,
@@ -48,6 +56,8 @@ impl Default for AppConfig {
             font: "JetBrainsMono Nerd Font".to_string(),
             font_size: 14.0,
             opacity: 1.0,
+            file_tree_opacity: 1.0,
+            title_bar_opacity: 1.0,
             dimming: 0.0,
             split_layout: "Split".to_string(),
             file_tree_visible: true,

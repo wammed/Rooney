@@ -203,9 +203,12 @@ impl App {
 
         let status_container = container(status_bar).width(Length::Fill);
 
+        let title_bar = self.render_title_bar();
+
         // Check if modal dialog should be displayed
         if let Some(modal_overlay) = self.render_active_modal() {
-            return column::with_capacity(2)
+            return column::with_capacity(3)
+                .push(title_bar)
                 .push(modal_overlay)
                 .push(status_container)
                 .width(Length::Fill)
@@ -213,7 +216,8 @@ impl App {
                 .into();
         }
 
-        let base_view: Element<'_, Message> = column::with_capacity(2)
+        let base_view: Element<'_, Message> = column::with_capacity(3)
+            .push(title_bar)
             .push(main_row)
             .push(status_container)
             .width(Length::Fill)

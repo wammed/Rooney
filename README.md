@@ -35,7 +35,7 @@
 - 🪟 **Dual-Pane Split Editing & Live Markdown Preview**: Side-by-side editing (`Ctrl + \`), independent multi-tabs, synchronized editing, and live GFM Markdown preview (`Ctrl + M`).
 - 🇯🇵 **Pixel-Perfect Japanese IME Support**: Full Wayland text-input protocol support (Fcitx5 / Mozc / IBus), live pre-edit underline preview, and sub-pixel advance calculations preventing cursor drift.
 - 📂 **Rich File Tree Explorer**: Real-time workspace navigation, Nerd Font file icons, right-click context menu (New File, New Folder, Rename, Safe Delete), and XDG Desktop Portal integration.
-- 🎨 **20 Premium Classic & Neon Themes**: Tokyo Night, Catppuccin, Gruvbox, Synthwave '84, Cyberpunk Neon, and more, with window transparency and background dimming unified in the `󰒓 Aesthetics` modal.
+- 🎨 **20 Premium Classic & Neon Themes**: Tokyo Night, Catppuccin, Gruvbox, Synthwave '84, Cyberpunk Neon, and more, with independent opacity controls for editor window, file tree, and title bar, plus background dimming unified in the `󰒓 Aesthetics` modal.
 - 🔒 **Ironclad Local Security**: Atomic file replacement (`.{file}.tmp.{pid}`), 50MB file size limits, path traversal sanitization, and automatic AI shielding for sensitive files (`.env*`, `id_rsa`, `*.pem`).
 
 ---
@@ -110,7 +110,7 @@ chmod +x ~/.local/bin/rooney
 | `Ctrl + /` | Toggle **Line Comment** (language-aware) |
 | `Ctrl + Shift + K` | **Delete Current Line** |
 | `Ctrl + D` | **Duplicate Current Line** |
-| `Ctrl + ,` | Open **Aesthetics Preferences** (Theme, Font, Size, AI) |
+| `Ctrl + ,` | Open **Aesthetics Preferences** (Theme, Font, Size, Opacities, AI) |
 | `Esc` | Close active modal, search bar, dropdown, or cancel completion |
 
 ---

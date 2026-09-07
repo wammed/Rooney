@@ -166,7 +166,14 @@ pub fn view_file_tree<'a, Message: 'static + Clone>(
         .width(Length::Fixed(sidebar_w))
         .height(Length::Fill);
 
+    let sidebar_bg = theme.sidebar_with_alpha();
     container(scroll)
+        .class(cosmic::theme::Container::Custom(Box::new(move |_| {
+            container::Style {
+                background: Some(sidebar_bg.into()),
+                ..Default::default()
+            }
+        })))
         .width(Length::Fixed(sidebar_w))
         .height(Length::Fill)
         .into()

@@ -122,7 +122,8 @@ impl cosmic::Application for App {
         &mut self.core
     }
 
-    fn init(core: Core, _flags: Self::Flags) -> (Self, Task<Self::Message>) {
+    fn init(mut core: Core, _flags: Self::Flags) -> (Self, Task<Self::Message>) {
+        core.window.show_headerbar = false;
         ensure_system_icons();
         let config = AppConfig::load();
         let current_dir = if let Some(ref root) = config.session.root_dir {
@@ -140,6 +141,8 @@ impl cosmic::Application for App {
         let mut theme = EditorTheme::default();
         theme.set_theme(config.theme);
         theme.opacity = config.opacity;
+        theme.file_tree_opacity = config.file_tree_opacity;
+        theme.title_bar_opacity = config.title_bar_opacity;
         theme.dimming = config.dimming;
 
         let mut font_manager = FontManager::new();
@@ -317,11 +320,11 @@ A lightweight, fast, in-process code and markdown editor.
     }
 
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
-        self.render_header_start()
+        vec![]
     }
 
     fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
-        self.render_header_end()
+        vec![]
     }
 
     fn view(&self) -> Element<'_, Self::Message> {

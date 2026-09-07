@@ -265,6 +265,31 @@
      - **🤖 About This Project (AI Vibe Coding)**: Antigravity (Gemini) とのバイブコーディング実績コールアウト。
      - **📄 License**: MIT License。
 
+### セッション 18: ファイルツリーとタイトルバーの独立透過度設定（Independent Opacity Controls）
+- **ユーザー要求**:
+  - ファイルツリー（サイドバー）とタイトルバー（ヘッダーバー）の透過度を独立して設定できるようにする。
+- **実装内容とアーキテクチャ設計**:
+  1. **透過度モデルとカラー算出の拡張 (`src/theme/themes.rs`)**:
+     - `EditorTheme` に `file_tree_opacity: f32` および `title_bar_opacity: f32` フィールドを追加。
+     - `sidebar_with_alpha(&self) -> Color` を更新し、`self.file_tree_opacity` をアルファ値として適用。
+     - `title_bar_with_alpha(&self) -> Color` を新設し、`self.config.gutter_bg` を基底色に `self.title_bar_opacity` をアルファ値として適用。
+  2. **設定ファイルへの永続化と後方互換性 (`src/config.rs`, `src/app/state.rs`)**:
+     - `AppConfig` に `file_tree_opacity` と `title_bar_opacity` を追加。
+     - `#[serde(default = "default_opacity_val")]`（1.0 を返却）を指定し、旧バージョンの設定ファイル読み込み時にも互換性を完全維持。
+     - `save_config()` で各透過度値を自動保存。
+  3. **COSMIC ネイティブタイトルバーのカスタム透過コンテナ化 (`src/app/mod.rs`, `src/app/ui/header.rs`, `src/app/ui/mod.rs`)**:
+     - `libcosmic` 標準のヘッダーバーラッパー（`core.window.show_headerbar = true` 時）は透過しない不透明背景で囲まれる仕様のため、`App::init` で `core.window.show_headerbar = false;` に設定。
+     - 代わりに `src/app/ui/header.rs` にて `render_title_bar(&self) -> Element<'_, Message>` を実装し、`cosmic::widget::header_bar()` を直接生成してウィンドウ制御（ドラッグ、最大化、最小化、閉じる）とアクションボタン群をマウント。
+     - ヘッダーバーを `cosmic::theme::Container::Custom` でラップし、`self.theme.title_bar_with_alpha()` を背景色として適用することで 0%〜100% の独立透過を実現。
+     - ヘッダーバーが `render_view` 最上部に配置されたことに伴い、ドロップダウンメニュー（`File ▾`, `Edit ▾`, `View ▾`, `AI ▾`）の縦位置 `menu_y` を `46.0` に調整し、ボタン直下にピタリと揃えて展開。
+  4. **ファイルツリーコンテナの独立透過背景化 (`src/ui/file_tree_view.rs`)**:
+     - ファイルツリーのスクロールコンテナを `cosmic::theme::Container::Custom` でラップし、`self.theme.sidebar_with_alpha()` を背景色として適用。
+  5. **外観設定モーダル（Aesthetics Preferences）へのスライダー追加 (`src/app/ui/modal.rs`)**:
+     - `Editor Window Opacity`（エディタ全体）、`File Tree Opacity`（ファイルツリー）、`Title Bar Opacity`（タイトルバー）、`Background Dimming Overlay`（背景ディミング）の独立調整スライダーを配置。
+  6. **テストとドキュメント同期**:
+     - `tests/core_tests.rs` に `test_independent_opacity_settings` を追加し、アルファ計算・新旧TOMLシリアライズ互換性を検証（35/35 テスト全件通過）。
+     - `README.md` および `README.ja.md` のハイライトとキーバインド説明を更新。
+
 ---
 
 ## 3. ファイル構成と役割
@@ -375,8 +400,9 @@ Rooney/
 ## 5. 現在のビルドおよびテスト状態
 
 - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings** (完全クリーン)
-- `cargo test`: **34/34 passed (0 failed)**
-  - `test_rooney_icon_integration` ... ok (新規追加)
+- `cargo test`: **35/35 passed (0 failed)**
+  - `test_independent_opacity_settings` ... ok (新規追加: 独立透過度と設定永続化互換性)
+  - `test_rooney_icon_integration` ... ok
   - `test_filename_sanitization_and_path_traversal_guards` ... ok
   - `test_sensitive_file_ai_protection` ... ok
   - `test_atomic_save_and_file_size_limits` ... ok

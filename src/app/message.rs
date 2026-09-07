@@ -62,8 +62,14 @@ pub enum Message {
     CloseEditMenu,
     ToggleSettings,
     ChangeOpacity(f32),
+    ChangeFileTreeOpacity(f32),
+    ChangeTitleBarOpacity(f32),
     ChangeDimming(f32),
     CloseSettings,
+    DragWindow,
+    MaximizeWindow,
+    MinimizeWindow,
+    CloseWindow,
 
     // Search & Replace
     ToggleSearch,

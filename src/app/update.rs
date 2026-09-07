@@ -5,6 +5,7 @@ use crate::editor::SplitLayout;
 use crate::ui::file_tree_view::FileTreeMessage;
 use crate::theme::themes::ThemeId;
 use cosmic::app::Task;
+use cosmic::ApplicationExt;
 use std::path::Path;
 use std::time::Duration;
 
@@ -609,10 +610,29 @@ impl App {
                 Task::none()
             }
 
+            Message::ChangeFileTreeOpacity(val) => {
+                self.theme.file_tree_opacity = val;
+                self.save_config();
+                Task::none()
+            }
+
+            Message::ChangeTitleBarOpacity(val) => {
+                self.theme.title_bar_opacity = val;
+                self.save_config();
+                Task::none()
+            }
+
             Message::ChangeDimming(val) => {
                 self.theme.dimming = val;
                 self.save_config();
                 Task::none()
+            }
+
+            Message::DragWindow => self.drag(),
+            Message::MaximizeWindow => self.maximize(),
+            Message::MinimizeWindow => self.minimize(),
+            Message::CloseWindow => {
+                cosmic::iced::Task::done(cosmic::app::Action::Close).map(cosmic::Action::Cosmic)
             }
 
             Message::CloseSettings => {

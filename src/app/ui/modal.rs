@@ -383,11 +383,27 @@ impl App {
                         ),
                 )
                 .push(text(format!(
-                    "Wayland Window Alpha Opacity: {:.0}%",
+                    "Editor Window Opacity: {:.0}%",
                     self.theme.opacity * 100.0
                 )).size(12.5))
                 .push(
                     slider(0.1..=1.0_f32, self.theme.opacity, Message::ChangeOpacity)
+                        .step(0.05_f32),
+                )
+                .push(text(format!(
+                    "File Tree Opacity: {:.0}%",
+                    self.theme.file_tree_opacity * 100.0
+                )).size(12.5))
+                .push(
+                    slider(0.0..=1.0_f32, self.theme.file_tree_opacity, Message::ChangeFileTreeOpacity)
+                        .step(0.05_f32),
+                )
+                .push(text(format!(
+                    "Title Bar Opacity: {:.0}%",
+                    self.theme.title_bar_opacity * 100.0
+                )).size(12.5))
+                .push(
+                    slider(0.0..=1.0_f32, self.theme.title_bar_opacity, Message::ChangeTitleBarOpacity)
                         .step(0.05_f32),
                 )
                 .push(text(format!(
