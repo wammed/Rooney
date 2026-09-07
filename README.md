@@ -1,424 +1,144 @@
-# Rooney 🚀
-**Cosmic-Native Lightweight Code & Markdown Editor**
+<div align="center">
+
+# 🚀 Rooney
+### AI-Integrated Next-Generation Linux Code & Markdown Editor for COSMIC / Wayland
 
 ![Banner](./images/Rooney-banner.svg)
 
-> [!NOTE]
-> **🤖 AI Vibe Coding Project**  
-> このプロジェクトは、ユーザーとAIアシスタントの協調（バイブコーディング / Vibe Coding）によってゼロから設計・実装されました。  
-> *This project was iteratively designed, prototyped, and implemented from scratch through AI Vibe Coding in pair-programming collaboration with Antigravity / Gemini.*
+[![Built with libcosmic](https://img.shields.io/badge/libcosmic-Pop!_OS_COSMIC-24C8D8?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/pop-os/libcosmic)
+[![Rust](https://img.shields.io/badge/Rust-1.80+-orange?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Wayland](https://img.shields.io/badge/Wayland-Native-5277C3?style=for-the-badge&logo=wayland&logoColor=white)](https://wayland.freedesktop.org/)
+[![Ollama](https://img.shields.io/badge/Ollama-Local_AI-white?style=for-the-badge&logo=ollama&logoColor=black)](https://ollama.com/)
+[![Platform](https://img.shields.io/badge/Platform-Linux_(COSMIC_/_Wayland)-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://www.kernel.org/)
+[![Vibe Coding](https://img.shields.io/badge/Built_with-AI_Vibe_Coding-8A2BE2?style=for-the-badge&logo=sparkles&logoColor=white)](#-about-this-project-ai-vibe-coding)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 
-[日本語](#日本語) | [English](#english)
+<p align="center">
+  <strong>High-Performance Piece-Tree Rope × Tree-sitter In-Process Highlighting × 100% Local AI (Ollama) × Wayland IME Native</strong><br>
+  A blazing-fast, private, and aesthetic lightweight code & markdown editor built natively for Pop!_OS COSMIC Desktop and Linux Wayland.
+</p>
 
----
+<p align="center">
+  <a href="README.md">English</a> | <a href="README.ja.md">日本語</a>
+</p>
 
-<a name="日本語"></a>
-## 日本語 🇯🇵
-
-> **🤖 バイブコーディングによる開発 (About Vibe Coding)**  
-> 本プロジェクト「Rooney (CosmicCode)」は、ユーザーの要求とフィードバックを基に、AIとの対話的なバイブコーディング（Vibe Coding）によって構築されました。Rust、libcosmic、Wayland ネイティブの低レイヤープロトコル（IME text-input、Tree-sitter構文解析、Ropeyバッファ、XDG Portalファイル操作等）の高度な組み合わせを、AIとの高速な反復試行を通じて実現しています。
-
-Pop!_OS COSMIC DE（libcosmic / Wayland）ネイティブの超高速・軽量・多機能コード＆Markdownエディタです。
-外部LSPや重厚な子プロセスのオーバーヘッドを一切排除し、インプロセス構文ハイライト（Tree-sitter）、Ropeyバッファ、日本語IME（Fcitx5 / IBus）完全対応、左右2分割レイアウト、Nerd Font対応リッチファイルツリー、XDG Portalネイティブファイル操作、そしてローカルOllamaによるFill-in-the-Middle（FIM）インラインAI補完を統合しています。
-
-### 主な特徴 ✨
-
-1. **左右2分割レイアウト（Dual-Pane Split View）**
-   - ツールバーまたは `Ctrl + \` / `Ctrl + E` で、シングルペインと左右2分割ペインを瞬時に切り替え。
-   - 左右ペインで別々のファイルを開いて独立してスクロール・編集可能。
-   - アクティブペインの視覚的強調（アクセントカラー枠・タブ強調）、独立したカーソル表示。
-   - 画面端でのソフト折り返し（Soft-wrap）およびペイン境界での厳密なクリッピングにより、文字のはみ出しを防止。
-
-2. **日本語入力（IME）ネイティブ対応 & サブピクセル正確なカーソル位置**
-   - Wayland text-input プロトコル（libcosmic InputMethod）による Fcitx5 / IBus 完全対応。
-   - インライン変換（Preedit）のプレビュー表示および確定コミット処理。
-   - `Ctrl + Space` は IME のオン/オフ切り替え専用に解放（AI補完ショートカットと競合しません）。
-   - **サブピクセル高精度カーソル位置計算**: 等幅フォントの半角文字アドバンス（`font_size * 0.60`）と全角/CJK文字アドバンス（`font_size * 1.0`）の厳密な実寸幅を個別合算。日本語を何文字入力してもカーソル位置が前方にずれることなく、文字直下に寸分の狂いなく吸い付きます。
-
-3. **柔軟なファイル管理 & ネイティブファイルダイアログ**
-   - **新規ファイル作成（`Ctrl + N` / ` New`）**:
-     - 画面中央のモーダルダイアログでファイル名（例: `main.rs`, `src/utils.rs`, `notes.md`）を即座に指定。
-     - 作成先ディレクトリの変更（Change...）や、Enterで即座に作成＆オープン、Escでキャンセル。
-     - ファイル作成と同時に拡張子に応じた構文ハイライトを自動適用。
-   - **ファイルを開く（`Ctrl + O` / `󰈔 Open`）**:
-     - XDG Desktop Portal（Wayland ネイティブ）非同期ダイアログで、ファイルシステム上の任意のファイルを開くことが可能。
-   - **フォルダを開く（`Ctrl + Shift + O` / ``）**:
-     - サイドバーのファイルツリールートを任意のフォルダに変更。
-   - **親フォルダ移動（``）**:
-     - ワンクリックで親ディレクトリ（`..`）に遡るナビゲーション。
-   - **ファイルの安全なアトミック保存（`Ctrl + S` / `Ctrl + Shift + S` / `󰆓 Save`）**:
-     - 一時ファイル書き出しと原子的置換（Atomic Write）により、クラッシュや電源断による0バイト破損を根絶。
-     - 50MBを超える巨大ファイルの誤オープンを自動遮断し、メモリ枯渇 (OOM) やUIフリーズを未然に防止。
-     - ファイル・フォルダ作成やリネーム時のパストラバーサル（`..` や `/`）を自動検知してブロック。
-     - ルート `/` やホームディレクトリの誤った再帰削除を防止するセーフガードを完備。
-     - 未命名バッファの場合は自動で「名前を付けて保存（Save As）」ダイアログを表示。
-
-4. **Nerd Font の全面採用 & 外観（Aesthetics）設定**
-   - システム内のフォント（`JetBrainsMono Nerd Font` 等）を自動検出。
-   - ファイル種別ごとの鮮やかな Nerd Font アイコン（Rust ``, Markdown ``, TOML ``, Python ``, JS ``, TS ``, C/C++ ``, Shell ``, Git `` 等）。
-   - **`󰒓 Aesthetics` モーダル**: ヘッダーの Aesthetics ボタンから、20種類のテーマ切り替え、システムフォント選択、フォントサイズ調整（`A-` / `A+`）、Wayland透明度、背景ディミング、ローカルAIモデル選択をすべて1つの洗練されたモーダルで一元管理。
-
-5. **20種類の Classic & Neon テーマ**
-   - **Classic (10)**: Tokyo Night, Catppuccin Mocha, Catppuccin Latte, Nord, Gruvbox Dark, Gruvbox Light, Solarized Dark, Solarized Light, One Dark, Monokai Pro
-   - **Neon / Cyberpunk (10)**: Synthwave '84, Cyberpunk Neon, Matrix Green, Vaporwave, Dracula Neon, Acid Rain, Sunset Glow, Deep Ocean, Neon Violet, Amber CRT
-
-6. **Wayland ネイティブ透過 & 背景ディミング**
-   - Wayland ウィンドウのアルファ透明度（0.1〜1.0）スライダー。
-   - 背景ディミングオーバーレイ（0%〜100%）。
-   - デフォルトウィンドウサイズ **1600x1600** の快適で広々とした作業領域。
-
-7. **Local AI FIM (Fill-in-the-Middle) 補完 & プライバシー保護**
-   - ローカルの Ollama（`http://localhost:11434`）と高速非同期連携。
-   - `deepseek-coder-v2`, `gemma4-coder`, `qwen2.5-coder` 等の利用可能なモデルを自動検出。
-   - **機密ファイル自動シールド**: `.env*`、秘密鍵（`id_rsa`、`*.pem`、`*.key`）、認証情報ファイルの編集中は、自動FIM送信を自動バイパスして情報漏洩を防止。
-   - 入力中の文脈に応じたゴーストテキストサジェスト。
-   - `Tab` キーで即座に確定挿入、`Esc` で破棄。
-   - `Ctrl + I` または `Alt + Enter` で手動生成トリガー。
-
-8. **設定の自動永続化 (`~/.config/rooney/config.toml`)**
-   - 選択したテーマ、フォント、フォントサイズ、Wayland透明度、背景ディミング、分割ペイン配置（Single/Split）、ファイルツリーの開閉状態、AI有効化/モデルを `~/.config/rooney/config.toml` に自動保存。
-   - アプリを再起動しても直前の作業環境が完全復元されます。
-
-9. **タイトルバー統合ドメインメニュー & マウス操作（右クリック・Wayland クリップボード）**
-   - **テキストラベル付きドメイン集約メニュー**: 単独アイコン化を行わず、テキストラベルを保った5つの集約メニューボタンを配置。
-     - **`󰈔 File ▾`**: 新規ファイル、開く、フォルダを開く、保存、名前を付けて保存、タブを閉じる
-     - **`󰧑 Edit ▾`**: 元に戻す、やり直し、切り取り、コピー、貼り付け、全選択、コメント切り替え、行削除、行複製
-     - **`󰈈 View ▾`**: 左右分割切り替え、ファイルツリー表示、Markdownプレビュー
-     - **`󰚩 AI ▾`**: AIチャットパネル、選択コード添付、ファイル全文添付、FIM補完トリガー
-     - **`󰒓 Aesthetics`**: テーマ、フォント、フォントサイズ、透過度、ディミング、AIモデル設定モーダル
-   - **右クリックコンテキストメニュー**: エディタ上で右クリックすると、カーソル位置にコンテキストメニュー（Copy, Cut, Paste, Select All, Undo, Redo）をポップアップ表示。不透明カード背景（`Container::Card`）、整列したショートカット表示、画面端クランプ、全画面バックドロップによるクリックキャンセルを完備。
-   - **マウスドラッグ選択**: マウスで直感的にテキスト範囲を選択（視覚的ハイライト表示）。
-   - **Wayland システムクリップボード連携**: `Ctrl + C`、`Ctrl + X`、`Ctrl + V`、右クリックメニュー、Editメニューすべてでシステムクリップボードとリアルタイム同期。
-
-10. **テンキー（Numpad）の完全サポート & Wayland NumLock 互換性**
-    - テンキーの数字（`0`〜`9`）、四則演算子（`+`, `-`, `*`, `/`, `.`, `,`, `=`）、および **Enter** を完全サポート。
-    - Wayland / Pop!_OS COSMIC 環境において、クライアントに NumLock の有効状態が同期されない場合でも、物理キーコードを自動識別して直接英字入力時・IME使用時の両方で数字・記号を確実に入力。
-    - 独立した専用カーソルキー（矢印、Delete、Home、End、PageUp、PageDown）との競合を完全に排除し、操作性を両立。
-
-11. **多言語 Tree-sitter & 設定ファイル構文ハイライト（12+言語対応）**
-    - 外部LSP不要で、インプロセスAST構文解析による高精度・高速ハイライトを実現。
-    - **対応言語**:
-      - **システム / プログラミング言語**: Rust (`.rs`), Python (`.py`/`.pyi`), JavaScript (`.js`/`.jsx`/`.mjs`/`.cjs`), TypeScript (`.ts`/`.tsx`/`.mts`/`.cts`), C (`.c`/`.h`), C++ (`.cpp`/`.hpp`/`.cc`/`.cxx`)
-      - **シェルスクリプト**: Bash / POSIX Shell (`.sh`/`.bash`/`.zsh`), Fish (`.fish`, `config.fish`)
-      - **設定ファイル & データ形式**: TOML (`.toml`, `Cargo.lock`), YAML (`.yaml`/`.yml`), JSON (`.json`/`.jsonc`), INI / Conf (`.ini`/`.conf`/`.cfg`/`.gitconfig`)
-      - **マークダウン**: Markdown (`.md`/`.markdown`)
-    - ファイルツリーにも各言語ごとのカラー Nerd Font アイコン（Fish `󰈺`, YAML ``, INI ``, TSX `` 等）を自動表示。
-
-12. **インクリメンタルファイル内検索 (`Ctrl + F`) & 画面ハイライト**
-    - `Ctrl + F` でエディタ上部にミニマルで洗練された検索バーを展開。
-    - 入力と同時にファイル内の一致箇所をリアルタイム走査し、エディタ内で黄色ハイライト表示。
-    - `Enter` / `▼` で次の一致へ、`Shift + Enter` / `▲` で前の一致へスムーズにカーソルジャンプ。
-13. **高度なカーソル移動 & 行編集ショートカット**
-    - **単語移動**: `Ctrl + Left` / `Ctrl + Right` で単語区切り単位ジャンプ（`Shift`併用で単語単位選択）。
-    - **行コメントのトグル**: `Ctrl + /` で選択行または現在行を言語に応じたコメント記号（`//` または `#`）で一括トグル。
-    - **行削除**: `Ctrl + Shift + K` でカーソル行を丸ごと削除。
-    - **行複製**: `Ctrl + D` でカーソル行を下行に複製。
-    - **一括インデント**: 複数行選択時の `Tab` で一括インデント（4スペース）、`Shift + Tab` で一括アンインデント。
-
-14. **タブ形式のマルチバッファ管理（Multi-Tab Buffer Management）**
-    - 左右ペインそれぞれで独立した複数タブの切り替え・管理に対応。
-    - 未保存バッファの視覚的インジケータ（`●`）、アクティブタブのハイライト表示。
-    - `Ctrl + T` で新規タブ作成、`Ctrl + W` でアクティブタブを閉じる、`Ctrl + Tab` / `Ctrl + Shift + Tab` でスムーズに巡回。
-    - 全タブを閉じても自動的にクリーンな Untitled タブへフォールバックし、クラッシュを完全防止。
-
-15. **ファイルツリーの右クリックコンテキストメニュー & ディレクトリ管理**
-    - **右クリックコンテキストメニュー**: ファイル、ディレクトリ、またはツリーの余白/ルートを右クリックすると、カーソル位置に専用のコンテキストメニューがポップアップ（New File, New Folder, Rename, Delete, Refresh）。
-    - **スクロールバー干渉を根絶したガターマージン設計**: アクションボタン（``, ``, ``）とスクロールバー・左右ペイン境界の間に十分な余白（16px）を確保。アイコンが重なって隠れる問題を解消し、スムーズで快適なクリック操作を実現。
-    - **新規作成（`` / ``）**: 選択ディレクトリ直下にファイルまたはフォルダをモーダルダイアログから作成。
-    - **リネーム（``）**: ファイルやディレクトリの名前を変更。開いているタブのパス・タブ名もリアルタイムに自動同期。
-    - **安全な削除（``）**: 誤操作を防ぐ確認モーダルを表示し、確認後にファイルまたはディレクトリ（再帰的）を完全削除。開いていた該当タブも安全に自動クローズ。
-
-16. **AI チャット / 複数行コード生成パネル（`Ctrl + Shift + A` / `󰭹 Chat`）**
-    - ヘッダーの `󰭹 Chat` ボタンまたは `Ctrl + Shift + A` で展開・格納できる専用の右側AIアシスタントパネル。
-    - **リアルタイム・トークンストリーミング & タイピングアニメーション**:
-      - Ollama の `stream: true`（ndjson / SSE）を非同期ストリーミング受信し、1トークンずつリアルタイムに流れるように描画。
-      - 生成中は文末にアニメーションタイピングカーソル（`▋`）および思考状態（`󰚩 Thinking...`）を表示。
-      - いつでも生成を瞬時に中断できる `󰓛 Stop` ボタン（または生成中の Enter 打鍵）を搭載。
-    - **ワンクリック文脈添付**:
-      - `󰈔 Attach Selection`: エディタ上で選択しているコード行をMarkdownコードブロック形式でチャット入力欄に即座に添付。
-      - `󰈙 Attach File`: 現在アクティブなファイル全体のコードを自動添付。
-    - **AIレスポンスのワンクリック挿入 & コピー**:
-      - `󰈔 Insert`: 生成されたコードブロックをエディタのアクティブカーソル位置へ直接挿入。
-      - `󰆏 Copy`: 生成されたコードをクリップボードにコピー。
-
-17. **ワークスペースセッションの自動永続化**
-    - 前回開いていた左右ペインの全タブ一覧、アクティブタブ番号、カーソル行・列位置、ルートフォルダ、およびAIチャットパネルの開閉状態を `~/.config/rooney/config.toml` に自動記録。
-    - 次回エディタ起動時に、前回の作業状態が寸分違わずそのまま自動復元されます。
+</div>
 
 ---
 
-### キーボードショートカット & マウス操作 ⌨️
+## 💡 Highlights
 
-| 操作 / ショートカット | 動作 |
-|---|---|
-| `Ctrl + N` | 新規ファイル作成（ファイル名入力ダイアログ） |
-| `Ctrl + O` | ファイルを開く（システムファイルダイアログ） |
-| `Ctrl + Shift + O` | フォルダを開く（ツリールート変更） |
-| `Ctrl + S` | ファイル保存（未命名バッファは名前を付けて保存） |
-| `Ctrl + Shift + S` | 名前を付けて保存（Save As） |
-| `Ctrl + T` | 新規タブ作成 |
-| `Ctrl + W` | アクティブタブを閉じる |
-| `Ctrl + Tab` / `Ctrl + PageDown` | 次のタブへ切り替え |
-| `Ctrl + Shift + Tab` / `Ctrl + PageUp` | 前のタブへ切り替え |
-| `Ctrl + F` | ファイル内検索バーの表示 / 非表示 |
-| `Enter` / `Shift + Enter`（検索時） | 次の一致 / 前の一致へジャンプ |
-| `Ctrl + /` | 行コメントのトグル（言語別自動判定） |
-| `Ctrl + Shift + K` | 現在行の丸ごと削除 |
-| `Ctrl + D` | 現在行の複製 |
-| `Ctrl + Left` / `Ctrl + Right` | 単語単位のカーソル移動（+Shiftで単語選択） |
-| `Tab` / `Shift + Tab`（選択時） | 選択範囲の一括インデント / アンインデント |
-| `Ctrl + C` | 選択テキストのコピー（システムクリップボード） |
-| `Ctrl + X` | 選択テキストの切り取り（システムクリップボード） |
-| `Ctrl + V` | 貼り付け（システムクリップボードから挿入） |
-| `Ctrl + A` | バッファ全選択 |
-| `Ctrl + Shift + A` | AI チャットパネルの開閉トグル |
-| `Ctrl + Z` | 元に戻す (Undo) |
-| `Ctrl + Y` または `Ctrl + Shift + Z` | やり直す (Redo) |
-| マウス左ドラッグ | テキスト範囲選択（ビジュアルハイライト） |
-| エディタ上マウス右クリック | エディタコンテキストメニュー表示（Copy, Cut, Paste, Select All, Undo, Redo） |
-| ヘッダー `󰈔 File ▾` | ファイルメニュー展開（新規、開く、フォルダ、保存、閉じる） |
-| ヘッダー `󰧑 Edit ▾` | 編集メニュー展開（Undo, Redo, Cut, Copy, Paste, Select All, コメント, 削除, 複製） |
-| ヘッダー `󰈈 View ▾` | 表示メニュー展開（Split/Single、ファイルツリー、Markdownプレビュー） |
-| ヘッダー `󰚩 AI ▾` | AIメニュー展開（チャットパネル、選択添付、ファイル添付、FIM補完） |
-| ヘッダー `󰒓 Aesthetics` | 外観設定モーダル表示（テーマ、フォント、フォントサイズ、透過度、AIモデル） |
-| チャット `󰓛 Stop` | AIコード生成の即時中断・ストリーミング停止 |
-| テンキー `0`〜`9` / 記号 (`+`, `-`, `*`, `/`, `.`, `,`, `=`) | 数字および演算子記号の直接入力（英字/IME両モード完全対応） |
-| テンキー `Enter` | 改行の挿入 / 新規ファイル作成モーダルの確定 |
-| `Tab`（未選択時） | AI補完の確定挿入 / 4スペース挿入 |
-| `Esc` | 検索バー終了 / AI補完破棄 / モーダル終了 / メニュー閉じる / 選択解除 |
-| `Ctrl + B` | ファイルツリーサイドバーの表示/非表示 |
-| `Ctrl + \` または `Ctrl + E` | 左右2分割（Split / Single）レイアウト切り替え |
-| `Ctrl + M` | Markdownプレビューの切り替え |
-| `Ctrl + I` または `Alt + Enter` | Local AI FIM 補完の手動トリガー（`Ctrl + Space` は IME 専用に解放） |
+- ⚡ **COSMIC & Wayland-Native Core**: Pure Rust `libcosmic` desktop integration with client-side decorations, seamless dark/light theme integration, and 0ms instant startup without heavy child processes or LSP daemon overhead.
+- 🤖 **100% Local AI Intelligence**: Real-time Fill-in-the-Middle (FIM) ghost suggestions (`Ctrl + I` / `Alt + Enter`), streaming token-by-token interactive chat panel (`Ctrl + Shift + A`) with cancellation and model switching powered completely offline by Ollama.
+- 📜 **High-Performance Piece-Tree Rope**: Powered by `ropey`, handling large files with zero copy lag and instantaneous buffer operations.
+- 🌳 **In-Process Tree-sitter Highlighting**: AST-based syntax highlighting for 12+ languages (Rust, Python, JS, TS, C, C++, Bash, Fish, JSON, TOML, YAML, Markdown) with zero external daemon overhead.
+- 🪟 **Dual-Pane Split Editing & Live Markdown Preview**: Side-by-side editing (`Ctrl + \`), independent multi-tabs, synchronized editing, and live GFM Markdown preview (`Ctrl + M`).
+- 🇯🇵 **Pixel-Perfect Japanese IME Support**: Full Wayland text-input protocol support (Fcitx5 / Mozc / IBus), live pre-edit underline preview, and sub-pixel advance calculations preventing cursor drift.
+- 📂 **Rich File Tree Explorer**: Real-time workspace navigation, Nerd Font file icons, right-click context menu (New File, New Folder, Rename, Safe Delete), and XDG Desktop Portal integration.
+- 🎨 **20 Premium Classic & Neon Themes**: Tokyo Night, Catppuccin, Gruvbox, Synthwave '84, Cyberpunk Neon, and more, with window transparency and background dimming unified in the `󰒓 Aesthetics` modal.
+- 🔒 **Ironclad Local Security**: Atomic file replacement (`.{file}.tmp.{pid}`), 50MB file size limits, path traversal sanitization, and automatic AI shielding for sensitive files (`.env*`, `id_rsa`, `*.pem`).
 
 ---
 
-### ビルド＆起動方法 🛠️
+## 🚀 Quick Start
+
+### 1. Prerequisites
+
+- [Rust (Cargo)](https://rustup.rs/) (1.80+)
+- Linux with Wayland / Pop!_OS COSMIC Desktop
+- System build dependencies (Debian / Pop!_OS / Ubuntu):
+  ```bash
+  sudo apt install build-essential libxkbcommon-dev libfontconfig1-dev
+  ```
+- [Ollama](https://ollama.com/) (for offline AI capabilities)
+
+### 2. Set Up Ollama
 
 ```bash
-# 依存パッケージの確認 (Pop!_OS / Ubuntu)
-sudo apt install build-essential libxkbcommon-dev libfontconfig1-dev
+# Start Ollama daemon
+ollama serve
 
-# ビルド
-cargo build --release
-
-# 実行
-cargo run
-
-# テスト実行 (33テスト)
-cargo test
+# Pull your preferred local coding model(s)
+ollama pull qwen2.5-coder
+# Or general assistant model
+ollama pull llama3.2
 ```
 
----
-
-<a name="english"></a>
-## English 🇬🇧 🇺🇸
-
-> **🤖 Built via AI Vibe Coding**  
-> "Rooney (CosmicCode)" was designed, architected, and continuously iterated through AI Vibe Coding. Complex low-level systems programming in Rust—including libcosmic/Wayland desktop protocols, custom IME text-input methods, Tree-sitter in-process syntax parsing, Ropey buffers, and XDG Portal async dialogs—were built in rapid pair-programming collaboration with AI.
-
-A blazing-fast, lightweight, feature-rich code & markdown editor built natively for Pop!_OS COSMIC DE (libcosmic / Wayland).
-Zero LSP overhead and zero heavy child processes: features in-process Tree-sitter syntax highlighting, a high-performance Ropey text buffer, native Japanese IME (Fcitx5 / IBus) integration, side-by-side dual-pane split editing, Nerd Font file tree, native XDG Desktop Portal file dialogs, and local Ollama-powered Fill-in-the-Middle (FIM) inline AI completions.
-
-### Key Features ✨
-
-1. **Dual-Pane Split View**
-   - Toggle instantly between Single Pane and Side-by-Side Split View via the toolbar or `Ctrl + \` / `Ctrl + E`.
-   - Edit different files simultaneously in left and right panes with independent scrolling, cursors, and syntax highlighters.
-   - Clear visual focus indication with accent borders and active tab highlights.
-   - Clean soft-wrapping and bounded layer clipping to prevent text from overflowing across panes.
-
-2. **Native Japanese IME Support & Sub-Pixel Precise Cursor Alignment**
-   - Full support for Wayland text-input protocol (libcosmic InputMethod) supporting Fcitx5 and IBus.
-   - Live pre-edit underline preview and commit event handling.
-   - `Ctrl + Space` is unmapped from editor shortcuts and dedicated strictly to system IME toggle.
-   - **Sub-Pixel Exact Cursor Calculations**: Calculates advance dynamically per character: half-width monospace glyphs (`font_size * 0.60`) vs. full-width CJK glyphs (`font_size * 1.0`). Eliminates the common caret drift bug where the cursor shifted 1–2 characters ahead during CJK typing.
-
-3. **Arbitrary File Operations & Native Dialogs**
-   - **Create New File (`Ctrl + N` / ` New`)**:
-     - Instant modal dialog in the center of the window to specify the filename immediately (e.g., `main.rs`, `src/utils.rs`, `notes.md`).
-     - Supports custom folder selection ("Change..."), Enter to confirm, and Esc to cancel.
-     - Automatically creates parent directories and applies syntax highlighting based on file extension.
-   - **Open File (`Ctrl + O` / `󰈔 Open`)**:
-     - Uses asynchronous native file chooser dialogs (XDG Desktop Portal) to open any file across the filesystem.
-   - **Open Folder (`Ctrl + Shift + O` / ``)**:
-     - Switch the active root of the sidebar file tree to any workspace or folder.
-   - **Navigate Up (``)**:
-     - One-click parent directory (`..`) navigation.
-   - **Safe Atomic File Saving (`Ctrl + S` / `Ctrl + Shift + S` / `󰆓 Save`)**:
-     - Atomic write via sibling temporary file replacement (`.{file}.tmp.{pid}`) prevents 0-byte truncation on crash or power loss.
-     - 50MB file size safety threshold blocks opening massive or device files to prevent out-of-memory (OOM) UI freezes.
-     - Filename sanitization in modal dialogs actively blocks path traversal (`..`, `/`, `\`, NUL bytes).
-     - Deletion guardrails protect root `/` and user home directories, with safe symlink removal.
-     - Prompts "Save As" automatically if buffer is untitled or unnamed.
-
-4. **Nerd Font Integration & Aesthetics Preferences**
-   - Auto-detects installed monospace and Nerd Fonts (e.g., `JetBrainsMono Nerd Font`, `FiraCode Nerd Font`).
-   - Colored Nerd Font icons for each file extension (Rust ``, Markdown ``, TOML ``, Python ``, JS ``, TS ``, C/C++ ``, Shell ``, Git ``, etc.).
-   - **`󰒓 Aesthetics` Modal**: Cleanly consolidates all visual and model preferences into a single modal dialog: select from 20 themes, choose system monospace fonts, adjust font size (`A-` / `A+`), control Wayland transparency & background dimming, and choose local Ollama AI models.
-
-5. **20 Classic & Neon Themes**
-   - **Classic (10)**: Tokyo Night, Catppuccin Mocha, Catppuccin Latte, Nord, Gruvbox Dark, Gruvbox Light, Solarized Dark, Solarized Light, One Dark, Monokai Pro
-   - **Neon / Cyberpunk (10)**: Synthwave '84, Cyberpunk Neon, Matrix Green, Vaporwave, Dracula Neon, Acid Rain, Sunset Glow, Deep Ocean, Neon Violet, Amber CRT
-
-6. **Wayland Native Transparency & Background Dimming**
-   - Adjustable window alpha transparency (0.1 to 1.0) and background dimming (0% to 100%).
-   - Comfortable default window size of **1600x1600** for uncluttered productivity.
-
-7. **Local AI FIM (Fill-in-the-Middle) Code Completion & Privacy Shield**
-   - Direct asynchronous communication with local Ollama (`http://localhost:11434`).
-   - Automatically detects installed coding models (e.g., `deepseek-coder-v2`, `gemma4-coder`, `qwen2.5-coder`).
-   - **Sensitive File Shield**: Automatically suppresses outbound AI requests when editing sensitive files (`.env*`, `id_rsa`, `*.pem`, `*.key`, `credentials`) to protect private credentials.
-   - Context-aware inline ghost text suggestions.
-   - Press `Tab` to accept, `Esc` to dismiss.
-   - Trigger suggestions manually with `Ctrl + I` or `Alt + Enter`.
-
-8. **Automatic Configuration Persistence (`~/.config/rooney/config.toml`)**
-   - Theme, font family, font size, Wayland opacity, dimming overlay, dual-pane layout, sidebar visibility, and local AI model settings are automatically persisted to `~/.config/rooney/config.toml`.
-   - Your entire workspace environment is seamlessly restored when relaunching the editor.
-
-9. **Consolidated Header Domain Menus & Mouse Operations**
-   - **Text-Labeled Consolidated Menus**: Eliminates header clutter without reducing buttons to cryptic lone icons:
-     - **`󰈔 File ▾`**: New File, Open File, Open Folder, Save File, Save File As, Close Tab
-     - **`󰧑 Edit ▾`**: Undo, Redo, Cut, Copy, Paste, Select All, Toggle Comment, Delete Line, Duplicate Line
-     - **`󰈈 View ▾`**: Toggle Split/Single, Toggle File Tree, Toggle Markdown Preview
-     - **`󰚩 AI ▾`**: Toggle AI Chat, Attach Selection, Attach File, Trigger FIM Completion
-     - **`󰒓 Aesthetics`**: Preferences Modal (Themes, Fonts, Size, Transparency, AI Model)
-   - **Right-Click Context Menu**: Right-click anywhere in the editor to bring up a floating context menu at the mouse cursor. Features opaque card styling (`Container::Card`), aligned icons, labels, and shortcuts, edge-of-screen clamping, and full-screen dismissal on backdrop click.
-   - **Mouse Drag Selection**: Intuitive click-and-drag visual text selection with theme-matched highlighting.
-   - **Wayland System Clipboard**: Full bi-directional integration with the system clipboard via `Ctrl + C`, `Ctrl + X`, `Ctrl + V`, right-click menu, and the header Edit menu.
-
-10. **Full Numeric Keypad (Numpad) Support & Wayland NumLock Compatibility**
-    - Complete support for numpad digits (`0`–`9`), operators (`+`, `-`, `*`, `/`, `.`, `,`, `=`), and **Numpad Enter**.
-    - Solves Wayland/XKB NumLock state desynchronization: intelligently maps physical keycodes so numeric keypad input works seamlessly across both direct English input and IME modes.
-    - Dedicated navigation keys (arrows, Delete, Home, End, PageUp, PageDown) remain 100% functional and unhindered.
-
-11. **Multi-Language Tree-sitter & Configuration Syntax Highlighting (12+ Languages)**
-    - Zero-LSP in-process AST syntax parsing for high speed and pinpoint highlighting accuracy.
-    - **Supported Languages**:
-      - **Systems & Programming**: Rust (`.rs`), Python (`.py`/`.pyi`), JavaScript (`.js`/`.jsx`/`.mjs`/`.cjs`), TypeScript (`.ts`/`.tsx`/`.mts`/`.cts`), C (`.c`/`.h`), C++ (`.cpp`/`.hpp`/`.cc`/`.cxx`)
-      - **Shell Scripts**: Bash / POSIX Shell (`.sh`/`.bash`/`.zsh`), Fish (`.fish`, `config.fish`)
-      - **Configs & Formats**: TOML (`.toml`, `Cargo.lock`), YAML (`.yaml`/`.yml`), JSON (`.json`/`.jsonc`), INI / Conf (`.ini`/`.conf`/`.cfg`/`.gitconfig`)
-      - **Markdown**: Markdown (`.md`/`.markdown`)
-    - Rich colored Nerd Font file icons in the file tree for each file type (Fish `󰈺`, YAML ``, INI ``, TSX ``, etc.).
-
-12. **Incremental In-File Search (`Ctrl + F`) & Canvas Highlights**
-    - Press `Ctrl + F` to reveal a floating, minimalist in-pane search bar.
-    - Real-time full-buffer search with instant canvas match highlights.
-    - Jump between matches with `Enter` / `▼` (Next) and `Shift + Enter` / `▲` (Previous).
-    - Match count indicator (e.g. `3/12`), close with `Esc` / `✕` to return to editing.
-
-13. **Advanced Cursor Navigation & Line Editing Shortcuts**
-    - **Word Navigation**: `Ctrl + Left` / `Ctrl + Right` jump word-by-word (`Shift` modifier for word selection).
-    - **Comment Toggle**: `Ctrl + /` toggles line comments using the appropriate syntax (`//` or `#`).
-    - **Line Deletion**: `Ctrl + Shift + K` deletes the current line entirely.
-    - **Line Duplication**: `Ctrl + D` duplicates the current line below.
-    - **Block Indent**: Select multiple lines and press `Tab` to indent (4 spaces) or `Shift + Tab` to unindent.
-
-14. **Tabbed Multi-Buffer Management & Tab Bar**
-    - Open multiple files per pane (both Single and Dual-Pane Split modes) with fluid tab switching.
-    - Features colored file icons, filename, unsaved dirty indicator (`●`), individual close buttons (`✕`), and add tab button (`＋`).
-    - Smart tab switching: opening an already-opened file from the file tree or chooser focuses its existing tab without duplication.
-    - Full keyboard navigation: `Ctrl + T` (New Tab), `Ctrl + W` (Close Tab), `Ctrl + Tab` / `Ctrl + PageDown` (Next Tab), `Ctrl + Shift + Tab` / `Ctrl + PageUp` (Previous Tab).
-
-15. **File Tree Right-Click Context Menu & Directory Management**
-    - **Right-Click Context Menu**: Right-click any file, folder, or empty background in the file tree to open a native floating context menu (New File, New Folder, Rename, Delete, Refresh).
-    - **Scrollbar Gutter Margin Design**: Dedicated 16px right gutter space between row action buttons (``, ``, ``) and the vertical scrollbar / pane boundary, ensuring zero overlap and smooth clicking.
-    - **Create New (`` / ``)**: Create files or folders directly in the selected directory via centered modal dialog.
-    - **Rename (``)**: Rename files or directories on disk; all open tabs referencing the file or children within the directory automatically synchronize their file paths and tab titles in real time.
-    - **Safe Deletion (``)**: Confirm removal with a modal dialog to prevent accidental deletion, then remove files or directories recursively. Automatically and safely closes any active tabs referencing deleted files.
-
-16. **AI Chat & Code Generation Panel (`Ctrl + Shift + A` / `󰭹 Chat`)**
-    - Collapsible dedicated AI assistant panel on the right side of the editor.
-    - **Real-Time Token Streaming & Typing Animation**:
-      - Asynchronous token streaming via Ollama's `stream: true` (ndjson / SSE), rendering generated responses line-by-line in real time.
-      - Features an animated typing cursor (`▋`) and thinking status indicator (`󰚩 Thinking...`).
-      - Instant generation cancellation via the dynamic `󰓛 Stop` button or by hitting `Enter` during streaming.
-    - **Context Attachment**:
-      - `󰈔 Attach Selection`: Attaches the currently selected code in the editor into the chat input as a markdown code block.
-      - `󰈙 Attach File`: Attaches the full text of the active file into the chat prompt.
-    - **Code Insertion & Clipboard Copy**:
-      - `󰈔 Insert`: Inserts the generated code block directly at the current cursor position in the active editor buffer.
-      - `󰆏 Copy`: Copies the generated code to the system clipboard.
-
-17. **Automatic Workspace Session Persistence**
-    - Automatically serializes and saves open tabs in both left and right panes, active tab indices, cursor positions (line and column), workspace root folder, and AI chat panel visibility to `~/.config/rooney/config.toml`.
-    - Seamlessly restores your entire editing session on application relaunch.
-
----
-
-### Keyboard Shortcuts & Mouse Operations ⌨️
-
-| Action / Shortcut | Description |
-|---|---|
-| `Ctrl + T` | Open new blank tab |
-| `Ctrl + W` | Close active tab |
-| `Ctrl + Tab` / `Ctrl + PageDown` | Switch to next tab |
-| `Ctrl + Shift + Tab` / `Ctrl + PageUp` | Switch to previous tab |
-| `Ctrl + N` | Create New File (opens filename prompt dialog) |
-| `Ctrl + O` | Open File (native system file chooser) |
-| `Ctrl + Shift + O` | Open Folder (switch file tree root) |
-| `Ctrl + S` | Save File (prompts Save As if buffer is untitled) |
-| `Ctrl + Shift + S` | Save File As |
-| `Ctrl + F` | Toggle Find in File search bar |
-| `Enter` / `Shift + Enter` (in search) | Jump to next / previous search match |
-| `Ctrl + /` | Toggle line comment (auto-detected syntax) |
-| `Ctrl + Shift + K` | Delete current line |
-| `Ctrl + D` | Duplicate current line |
-| `Ctrl + Left` / `Ctrl + Right` | Word-by-word cursor jump (+Shift to select) |
-| `Tab` / `Shift + Tab` (with selection) | Multi-line block indent / unindent (4 spaces) |
-| `Ctrl + C` | Copy selected text to system clipboard |
-| `Ctrl + X` | Cut selected text to system clipboard |
-| `Ctrl + V` | Paste from system clipboard |
-| `Ctrl + A` | Select All in active buffer |
-| `Ctrl + Shift + A` | Toggle AI Chat Panel |
-| `Ctrl + Z` | Undo |
-| `Ctrl + Y` or `Ctrl + Shift + Z` | Redo |
-| Mouse Left Drag | Drag-select text with visual highlight |
-| Editor Right Click | Open editor context menu (Copy, Cut, Paste, Select All, Undo, Redo) |
-| File Tree Right Click | Open file tree context menu (New File, New Folder, Rename, Delete, Refresh) |
-| Header `󰈔 File ▾` | Open File menu (New, Open, Open Folder, Save, Save As, Close Tab) |
-| Header `󰧑 Edit ▾` | Open Edit menu (Undo, Redo, Cut, Copy, Paste, Select All, Comment, Delete, Duplicate) |
-| Header `󰈈 View ▾` | Open View menu (Toggle Split, File Tree, Markdown Preview) |
-| Header `󰚩 AI ▾` | Open AI menu (Toggle Chat, Attach Selection, Attach File, FIM Completion) |
-| Header `󰒓 Aesthetics` | Open Aesthetics Preferences modal (Themes, Fonts, Size, Transparency, AI Models) |
-| Chat `󰓛 Stop` | Stop/cancel active AI generation |
-| Numpad `0`–`9` / Operators (`+`, `-`, `*`, `/`, `.`, `,`, `=`) | Direct numeric and operator entry (both English and IME modes) |
-| Numpad `Enter` | Insert newline / Confirm modal dialog |
-| `Tab` (no selection) | Accept AI suggestion / Insert 4 spaces |
-| `Esc` | Close search / Dismiss AI suggestion / Close modals / Close menus / Clear selection |
-| `Ctrl + B` | Toggle File Tree sidebar visibility |
-| `Ctrl + \` or `Ctrl + E` | Toggle Dual-Pane Split / Single layout |
-| `Ctrl + M` | Toggle Markdown Live Preview |
-| `Ctrl + I` or `Alt + Enter` | Manually trigger Local AI FIM (`Ctrl + Space` reserved for IME) |
-
----
-
-### Build & Run Instructions 🛠️
+### 3. Run in Development Mode
 
 ```bash
-# Install system dependencies (Pop!_OS / Ubuntu)
-sudo apt install build-essential libxkbcommon-dev libfontconfig1-dev
+# Clone the repository
+git clone https://github.com/wammed/Rooney.git
+cd Rooney
 
-# Build release binary
+# Run development build
+cargo run
+```
+
+### 4. Production Build & Installation
+
+```bash
+# Build optimized release binary
 cargo build --release
 
-# Run locally
-cargo run
-
-# Run unit tests (33 tests)
-cargo test
+# Install binary to user path
+cp target/release/rooney ~/.local/bin/rooney
+chmod +x ~/.local/bin/rooney
 ```
+*Standalone binary output: `~/.local/bin/rooney`.*
 
 ---
 
-### Architecture & Tech Stack 🏗️
+## ⌨️ Keybindings
 
-- **GUI & Windowing**: [libcosmic](https://github.com/pop-os/libcosmic), `cosmic-text`, `iced`
-- **Configuration & Persistence**: `serde`, `toml`, `directories` (XDG Base Directory standard)
-- **File Dialogs**: `rfd` (XDG Desktop Portal, Wayland native)
-- **Text Buffer**: [Ropey](https://github.com/cessen/ropey) (Piece-tree rope buffer for handling large files)
-- **Syntax Highlighting**: [tree-sitter](https://tree-sitter.github.io/tree-sitter/) (in-process tree parsing)
-- **Markdown**: `pulldown-cmark`
-- **AI Integration**: `reqwest`, `tokio` (local Ollama FIM endpoint)
-- **Character Metrics**: `unicode-width` (CJK full-width display handling)
+| Shortcut | Action |
+| :--- | :--- |
+| `Ctrl + N` | **New File** (modal filename dialog) |
+| `Ctrl + O` | **Open File** (XDG Desktop Portal native dialog) |
+| `Ctrl + Shift + O` | **Open Folder** (switch file tree workspace) |
+| `Ctrl + S` | **Save File** (atomic safe save) |
+| `Ctrl + Shift + S` | **Save File As...** |
+| `Ctrl + T` | **New Tab** |
+| `Ctrl + W` | **Close Active Tab** |
+| `Ctrl + Tab` / `Ctrl + Shift + Tab` | Next / Previous Tab |
+| `Ctrl + \` or `Ctrl + E` | Toggle **Dual-Pane Split View** |
+| `Ctrl + M` | Toggle **Markdown Live Preview** |
+| `Ctrl + B` | Toggle **File Tree Sidebar** |
+| `Ctrl + F` | Toggle **In-File Incremental Search** |
+| `Ctrl + Shift + A` | Toggle **AI Copilot Chat Panel** |
+| `Ctrl + I` or `Alt + Enter` | Trigger **Local AI FIM Inline Completion** |
+| `Ctrl + /` | Toggle **Line Comment** (language-aware) |
+| `Ctrl + Shift + K` | **Delete Current Line** |
+| `Ctrl + D` | **Duplicate Current Line** |
+| `Ctrl + ,` | Open **Aesthetics Preferences** (Theme, Font, Size, AI) |
+| `Esc` | Close active modal, search bar, dropdown, or cancel completion |
+
+---
+
+## 🔒 Security & Architecture (Overview)
+
+Rooney operates under a strict **100% offline, local-first** model:
+- **Zero Cloud Leakage**: No telemetry, external telemetry APIs, or cloud models; all AI prompts and code streams remain strictly local via Ollama.
+- **Sensitive File AI Shield**: Automatically detects and blocks AI completion requests on sensitive files (`.env*`, `id_rsa`, `id_ed25519`, `credentials`, `*.pem`, `*.key`).
+- **Atomic File Writing**: Saves files via sibling temporary files (`.{filename}.tmp.{pid}`) with `sync_all` and atomic rename, eliminating zero-byte corruption on unexpected shutdowns.
+- **Path Traversal & Boundary Protection**: Sanitizes file/directory creation and renaming to prevent directory escape (`..`, `/`), while safeguarding root (`/`) and home directories against accidental recursive deletion.
+- **Resource Protection**: 50MB file size ceiling to prevent OOM freezes, 1MB streaming buffer cap, and recursive directory scan depth limits.
+
+---
+
+## 🤖 About This Project (AI Vibe Coding)
+
+> [!IMPORTANT]
+> ### 💡 AI Vibe Coding Project
+> **Rooney** is an **AI Vibe Coding** project created through real-time interactive pair programming with **Google DeepMind's Antigravity (Gemini)**.
+> Combining human architectural vision with agentic AI pair programming, the entire system—from low-level Rust `libcosmic` Wayland text-input protocols, in-process Tree-sitter AST parsing, Piece-Tree Ropey buffers, sub-pixel CJK font metrics, local Ollama SSE token streaming, to the dual-pane desktop editor interface—was designed, tested, and implemented in full creative flow.
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
+
+<p align="center">
+  Crafted via <strong>AI Vibe Coding</strong> 🚀 · Built with ❤️ for Pop!_OS COSMIC & Linux Developers
+</p>

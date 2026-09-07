@@ -249,7 +249,21 @@
   - `test_rooney_icon_integration` を更新（25,259 bytes のマット版 SVG の検証）。
   - `cargo test`: 31 core tests + 3 ollama tests = **34/34 passed (0 failed)**。
   - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings**。
-  - `cargo build --release`: 最適化リリースバイナリのビルド・`~/.local/bin/rooney` への配置完了。
+### セッション 17: ドキュメント（README）の冗長性解消と Waddle 準拠の構造刷新
+- **Waddle（`/home/susie/GitHUB/wammed/Waddle/README.md`）の設計・レイアウトに準拠した構成再編**:
+  1. **日英分離によるスリム化**:
+     - 従来の単一ファイル内に日本語と英語の長文を同居させ、同一内容を冗長に繰り返していた 35KB の構成を廃止。
+     - GitHub 標準のバイリンガル構成（`README.md`: 英語 約7.4KB、`README.ja.md`: 日本語 約9.4KB）へ分離。
+  2. **モダンなビジュアル＆バッジヘッダー**:
+     - `libcosmic`、Rust 1.80+、Wayland Native、Ollama Local AI、Linux (COSMIC/Wayland)、AI Vibe Coding、MIT License バッジをセンタリング配置。
+     - バナー画像 (`images/Rooney-banner.svg`) およびキャッチーなタグラインを配置。
+  3. **High-Impact なセクション構成**:
+     - **💡 Highlights**: コア機能（COSMICネイティブ、ローカルAI FIM/Chat、Ropey、Tree-sitter 12+言語、2分割＆Markdown、日本語IME、ファイルツリー、20テーマ、セキュリティ）を絵文字付き箇条書きで凝縮。
+     - **🚀 Quick Start**: 前提環境、Ollamaセットアップ、開発起動（`cargo run`）、リリースインストール（`~/.local/bin/rooney`）の簡潔な手順。
+     - **⌨️ Keybindings**: 最重要ショートカットを整理した明瞭な Markdown テーブル。
+     - **🔒 Security & Architecture**: オフライン性、アトミック保存、機密ファイルシールド、パストラバーサル保護の要約。
+     - **🤖 About This Project (AI Vibe Coding)**: Antigravity (Gemini) とのバイブコーディング実績コールアウト。
+     - **📄 License**: MIT License。
 
 ---
 
@@ -258,7 +272,8 @@
 ```
 Rooney/
 ├── Cargo.toml               # 依存関係定義 (libcosmic, ropey, tree-sitter多言語, futures-channel, rfd, ollama, etc.)
-├── README.md                # 日本語・英語バイリンガル公式ドキュメント (Vibe Coding明記)
+├── README.md                # 英語公式ドキュメント (Waddle準拠スリム構成)
+├── README.ja.md             # 日本語公式ドキュメント (Waddle準拠スリム構成)
 ├── SESSION_HANDOVER.md      # 本ファイル (次回再開用完全ハンドオーバー)
 ├── src/
 │   ├── main.rs              # アプリ起動エントリーポイント (デフォルトウィンドウサイズ 1600x1600 設定)
