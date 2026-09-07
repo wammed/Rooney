@@ -319,7 +319,7 @@ Rooney/
 │       ├── mod.rs           # ChatMessage, ChatRole, ChatStreamEvent 再エクスポート
 │       └── ollama.rs        # OllamaClient (FIM補完、chat_generate_stream ストリーミング、モデル自動検出)
 └── tests/
-    ├── core_tests.rs        # 24件のユニットテスト (セッション復元、タブ同期、AIストリーミング蓄積、構文、検索等)
+    ├── core_tests.rs        # 31件のユニットテスト (セッション復元、タブ同期、AIストリーミング蓄積、構文、検索、アイコン等)
     └── ollama_tests.rs      # 3件の統合テスト (Ollama 接続性、FIM生成、チャットストリーミング実走テスト)
 ```
 
@@ -423,5 +423,15 @@ Rooney/
 3. **Git 変更行ガターハイライト（Diff Gutter）**:
    - 変更・追加・削除行を行番号脇にカラーバー表示。
 
+---
 
+## 7. ドキュメント保守運用ルール（Documentation Maintenance Policy）
 
+今後の開発において、以下の運用ルールを厳格に適用・維持する：
+
+1. **日英バイリンガルの完全同期**:
+   - 機能追加（New Features）、バグ修正（Bug Fixes）、セキュリティ修正（Security Fixes）、キーバインド変更等を実施した際は、**必ず `README.md`（英語）と `README.ja.md`（日本語）の両方を同様の構成で更新する**。
+2. **Waddle 準拠スリム構成の維持**:
+   - 単一ファイルへの長文同居や冗長化を避け、`💡 Highlights`, `🚀 Quick Start`, `⌨️ Keybindings`, `🔒 Security & Architecture`, `🤖 About This Project`, `📄 License` の明確なセクション構成と高密度なスリムレイアウトを維持する。
+3. **開発履歴・技術メモの分離**:
+   - 各セッションの実装履歴、テスト検証結果、低レイヤの設計経緯は本ファイル（`SESSION_HANDOVER.md`）に集約記録し、`README.md` / `README.ja.md` はエンドユーザーおよびコントリビューター向けのスッキリした見通しの良い状態を保つ。
