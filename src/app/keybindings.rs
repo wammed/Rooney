@@ -527,6 +527,20 @@ impl App {
             }
             iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
                 self.mouse_pos = (position.x, position.y);
+                if position.x > self.window_size.0 {
+                    self.window_size.0 = position.x + 20.0;
+                }
+                if position.y > self.window_size.1 {
+                    self.window_size.1 = position.y + 20.0;
+                }
+                Task::none()
+            }
+            iced::Event::Window(iced::window::Event::Resized(size)) => {
+                self.window_size = (size.width, size.height);
+                Task::none()
+            }
+            iced::Event::Window(iced::window::Event::Opened { size, .. }) => {
+                self.window_size = (size.width, size.height);
                 Task::none()
             }
             _ => Task::none(),

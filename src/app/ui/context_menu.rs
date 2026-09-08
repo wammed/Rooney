@@ -7,27 +7,28 @@ use cosmic::prelude::*;
 use cosmic::widget::{button, container, text, Space};
 
 impl App {
-    pub(crate) fn render_context_menu_overlay<'a>(
+    pub(crate) fn render_context_menu<'a>(
         &'a self,
-        base_view: Element<'a, Message>,
-    ) -> Element<'a, Message> {
-        let Some((_pane_id, cx, cy)) = self.context_menu else {
-            return base_view;
-        };
+    ) -> Option<(Element<'a, Message>, Element<'a, Message>)> {
+        let (_pane_id, cx, cy) = self.context_menu?;
 
         let theme = &self.theme;
         let menu_w = 230.0;
         let menu_h = 280.0;
-        let menu_x = if cx + menu_w > 1550.0 {
-            (cx - menu_w).max(10.0)
-        } else {
-            cx.max(10.0)
-        };
-        let menu_y = if cy + menu_h > 1500.0 {
-            (cy - menu_h).max(10.0)
-        } else {
-            cy.max(10.0)
-        };
+        let max_w = self.window_size.0.max(600.0);
+        let max_h = self.window_size.1.max(400.0);
+
+        let mut menu_x = cx;
+        if menu_x + menu_w > max_w - 20.0 {
+            menu_x = cx - menu_w;
+        }
+        let menu_x = menu_x.clamp(10.0, (max_w - menu_w - 10.0).max(10.0));
+
+        let mut menu_y = cy;
+        if menu_y + menu_h > max_h - 36.0 {
+            menu_y = cy - menu_h;
+        }
+        let menu_y = menu_y.clamp(40.0, (max_h - menu_h - 30.0).max(40.0));
 
         let make_item =
             |icon: &'static str, label: &'static str, shortcut: &'static str, msg: Message| {
@@ -83,30 +84,31 @@ impl App {
             .on_press(Message::CloseContextMenu)
             .class(cosmic::theme::Button::Transparent);
 
-        cosmic::iced::widget::stack(vec![base_view, backdrop.into(), positioned_menu.into()]).into()
+        Some((backdrop.into(), positioned_menu.into()))
     }
 
-    pub(crate) fn render_file_tree_context_menu_overlay<'a>(
+    pub(crate) fn render_file_tree_context_menu<'a>(
         &'a self,
-        base_view: Element<'a, Message>,
-    ) -> Element<'a, Message> {
-        let Some(ref cm) = self.file_tree_context_menu else {
-            return base_view;
-        };
+    ) -> Option<(Element<'a, Message>, Element<'a, Message>)> {
+        let cm = self.file_tree_context_menu.as_ref()?;
 
         let theme = &self.theme;
         let menu_w = 220.0;
         let menu_h = 240.0;
-        let menu_x = if cm.x + menu_w > 1550.0 {
-            (cm.x - menu_w).max(10.0)
-        } else {
-            cm.x.max(10.0)
-        };
-        let menu_y = if cm.y + menu_h > 1500.0 {
-            (cm.y - menu_h).max(10.0)
-        } else {
-            cm.y.max(10.0)
-        };
+        let max_w = self.window_size.0.max(600.0);
+        let max_h = self.window_size.1.max(400.0);
+
+        let mut menu_x = cm.x;
+        if menu_x + menu_w > max_w - 20.0 {
+            menu_x = cm.x - menu_w;
+        }
+        let menu_x = menu_x.clamp(10.0, (max_w - menu_w - 10.0).max(10.0));
+
+        let mut menu_y = cm.y;
+        if menu_y + menu_h > max_h - 36.0 {
+            menu_y = cm.y - menu_h;
+        }
+        let menu_y = menu_y.clamp(40.0, (max_h - menu_h - 30.0).max(40.0));
 
         let make_item = |icon: &'static str, label: &'static str, msg: Message| {
             let content = row::with_capacity(2)
@@ -244,6 +246,6 @@ impl App {
             .on_press(Message::CloseFileTreeContextMenu)
             .class(cosmic::theme::Button::Transparent);
 
-        cosmic::iced::widget::stack(vec![base_view, backdrop.into(), positioned_menu.into()]).into()
+        Some((backdrop.into(), positioned_menu.into()))
     }
 }

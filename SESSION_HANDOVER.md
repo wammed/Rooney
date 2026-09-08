@@ -281,7 +281,7 @@
      - `libcosmic` 標準のヘッダーバーラッパー（`core.window.show_headerbar = true` 時）は透過しない不透明背景で囲まれる仕様のため、`App::init` で `core.window.show_headerbar = false;` に設定。
      - 代わりに `src/app/ui/header.rs` にて `render_title_bar(&self) -> Element<'_, Message>` を実装し、`cosmic::widget::header_bar()` を直接生成してウィンドウ制御（ドラッグ、最大化、最小化、閉じる）とアクションボタン群をマウント。
      - ヘッダーバーを `cosmic::theme::Container::Custom` でラップし、`self.theme.title_bar_with_alpha()` を背景色として適用することで 0%〜100% の独立透過を実現。
-     - ヘッダーバーが `render_view` 最上部に配置されたことに伴い、ドロップダウンメニュー（`File ▾`, `Edit ▾`, `View ▾`, `AI ▾`）の縦位置 `menu_y` を `46.0` に調整し、ボタン直下にピタリと揃えて展開。
+    - ヘッダーバーが `render_view` 最上部に配置されたことに伴い、ドロップダウンメニュー（`File ▾`, `Edit ▾`, `View ▾`, `AI ▾`）の縦位置 `menu_y` を `46.0` に調整し、ボタン直下にピタリと揃えて展開。
   4. **ファイルツリーコンテナの独立透過背景化 (`src/ui/file_tree_view.rs`)**:
      - ファイルツリーのスクロールコンテナを `cosmic::theme::Container::Custom` でラップし、`self.theme.sidebar_with_alpha()` を背景色として適用。
   5. **外観設定モーダル（Aesthetics Preferences）へのスライダー追加 (`src/app/ui/modal.rs`)**:
@@ -289,6 +289,47 @@
   6. **テストとドキュメント同期**:
      - `tests/core_tests.rs` に `test_independent_opacity_settings` を追加し、アルファ計算・新旧TOMLシリアライズ互換性を検証（35/35 テスト全件通過）。
      - `README.md` および `README.ja.md` のハイライトとキーバインド説明を更新。
+
+### セッション 19: ファイルツリークリック・右クリック時のスクロールリセット不具合の解消
+- **ユーザー報告課題**:
+  - ファイルツリークリック時の挙動が安定しない。
+  - スクロールした状態でアイテムをクリックすると、表示がデフォルト（ホームディレクトリのトップ）に戻ってしまう。
+  - 右クリック時も同様にトップに戻る。
+- **根本原因の特定**:
+  1. **Scrollable に一意の Id が未付与**:
+     - `file_tree_view.rs` 内の `scrollable` に静的 `Id` が付与されておらず、メニュー開閉やアイテム選択時にウィジェット再生成に伴いスクロールオフセット (0, 0) にリセットされていた。
+  2. **Sidebar Header のスクロール巻き込み**:
+     - ファイルツリー上部のワークスペースヘッダー（` ROOT` や新規・親フォルダ移動ボタン）が `items_col` と同一の `scrollable` 内に含まれていたため、スクロールするとヘッダーが画面外に消え、スクロールリセット時に「ホームディレクトリのトップが現れる」現象をより顕著にしていた。
+  3. **Scrollable 内部の `Space(Fill, Fill)` によるレイアウト破綻**:
+     - アイテム末尾に `Space::new().height(Length::Fill)` を配置していたため、スクロール可能な無限高さの中で不定なレイアウト計算が発生し、レイアウト再評価のたびにスクロールオフセットが 0 にクランプされていた。
+
+### セッション 20: 右クリック時スクロールリセット＆ウィンドウ下限メニュー隠れ不具合の完全解消
+- **ユーザー報告課題**:
+  1. 「右クリック時にはまたトップに戻る」（右クリックメニュー開閉時にファイルツリーのスクロール位置がトップに戻ってしまう）。
+  2. 「ファイルツリー下部で右クリックした時、メニューがウィンドウ下限に隠れる」（下限付近で右クリックするとメニュー下部が見切れてクリックできない）。
+- **根本原因の特定**:
+  1. **ルートウィジェットの動的型変更（`Column` ⇄ `Stack`）による全State破棄**:
+     - `render_view()` において、メニュー非表示時は `base_view`（`Column`）を直接返却し、メニュー表示時は `cosmic::iced::widget::stack(...)` でラップして返却していた。
+     - iced の内部 diff アルゴリズム（`tree.diff`）はルート要素の Tag が `Column` ⇄ `Stack` で切り替わるたびにツリー全体を不一致と判定し、`*self = Tree::new(...)` を実行して全ウィジェットの内部状態（State）を破棄・再生成していた。
+     - これにより、右クリックした瞬間およびメニューを閉じた瞬間に `Scrollable` の State が新規作成され、スクロールオフセットが (0, 0) にリセットされていた。
+  2. **ハードコードされた 1500px 画面境界チェックによる下部見切れ**:
+     - `context_menu.rs` のメニュー配置ロジックで `if cm.y + menu_h > 1500.0` と 1500px がハードコードされていた。
+     - 一般的な 800〜1080px 高さのディスプレイではこの判定が常に false となり、ウィンドウ下部（例: y=700px）で右クリックしても下方向へ展開され、メニューの半分以上がウィンドウ下限外に隠れてしまっていた。
+- **解決策**:
+  1. **恒久的ルート `Stack` アーキテクチャの確立 (`src/app/ui/mod.rs`)**:
+     - `render_view()` の返却値を常に `cosmic::iced::widget::stack(layers).width(Length::Fill).height(Length::Fill)` に固定。
+     - `layers[0]` は常に不変の `base_view`（`Column`）とし、メニュー表示時は直接 `layers[1]` に `backdrop`、`layers[2]` に `positioned_menu` を重層配置。
+     - メニュー開閉時にルートの Tag（`Stack`）および `layers[0]` の Tag（`Column`）が完全に一致し続けるため、iced の差分更新がツリーを破棄せず、`Scrollable` のスクロール位置が 100% 保持される。
+  2. **ウィンドウサイズ動的追跡 (`src/app/mod.rs`, `src/app/keybindings.rs`)**:
+     - `App` に `window_size: (f32, f32)` を追加し、`iced::Event::Window(Resized/Opened)` および `CursorMoved` イベントを通じてリアルタイムのクライアント領域サイズを追跡。
+  3. **スマート境界クランプ・上方向フリップ展開 (`src/app/ui/context_menu.rs`)**:
+     - メニューがウィンドウ下限（ステータスバー手前 `max_h - 36.0`）をはみ出る場合、自動的にカーソル上方向（`menu_y = cm.y - menu_h`）へ反転展開。
+     - 上部タイトルバー（40px）から下部ステータスバー（`max_h - 30.0`）の間に収まるようクランプし、全メニュー項目が常に画面内に完全に表示されるように修正。エディタ右クリックメニューにも同一ロジックを適用。
+- **検証結果**:
+  - `tests/core_tests.rs`: `test_context_menu_boundary_clamping` を追加し、上下左右の反転・クランプ動作を単体テストで検証。
+  - `cargo clippy --all-targets -- -D warnings`: 警告 0 件。
+  - `cargo test`: 36 件全テスト成功（33 core tests + 3 ollama tests）。
+  - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
 
 ---
 

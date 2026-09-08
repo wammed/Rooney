@@ -92,13 +92,10 @@ impl App {
         vec![]
     }
 
-    pub(crate) fn render_header_menu_overlay<'a>(
+    pub(crate) fn render_header_menu<'a>(
         &'a self,
-        base_view: Element<'a, Message>,
-    ) -> Element<'a, Message> {
-        let Some(menu) = self.active_header_menu else {
-            return base_view;
-        };
+    ) -> Option<(Element<'a, Message>, Element<'a, Message>)> {
+        let menu = self.active_header_menu?;
 
         let theme = &self.theme;
         let menu_w = 240.0;
@@ -218,6 +215,6 @@ impl App {
             .on_press(Message::CloseHeaderMenu)
             .class(cosmic::theme::Button::Transparent);
 
-        cosmic::iced::widget::stack(vec![base_view, backdrop.into(), positioned.into()]).into()
+        Some((backdrop.into(), positioned.into()))
     }
 }

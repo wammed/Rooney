@@ -205,17 +205,6 @@ impl App {
 
         let title_bar = self.render_title_bar();
 
-        // Check if modal dialog should be displayed
-        if let Some(modal_overlay) = self.render_active_modal() {
-            return column::with_capacity(3)
-                .push(title_bar)
-                .push(modal_overlay)
-                .push(status_container)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into();
-        }
-
         let base_view: Element<'_, Message> = column::with_capacity(3)
             .push(title_bar)
             .push(main_row)
@@ -224,9 +213,27 @@ impl App {
             .height(Length::Fill)
             .into();
 
-        // Overlays: Editor context menu, File tree context menu, and Header menu
-        let view = self.render_context_menu_overlay(base_view);
-        let view = self.render_file_tree_context_menu_overlay(view);
-        self.render_header_menu_overlay(view)
+        let mut layers: Vec<Element<'_, Message>> = Vec::with_capacity(4);
+        layers.push(base_view);
+
+        if let Some((backdrop, menu)) = self.render_context_menu() {
+            layers.push(backdrop);
+            layers.push(menu);
+        } else if let Some((backdrop, menu)) = self.render_file_tree_context_menu() {
+            layers.push(backdrop);
+            layers.push(menu);
+        } else if let Some((backdrop, menu)) = self.render_header_menu() {
+            layers.push(backdrop);
+            layers.push(menu);
+        }
+
+        if let Some(modal_overlay) = self.render_active_modal() {
+            layers.push(modal_overlay);
+        }
+
+        cosmic::iced::widget::stack(layers)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 }

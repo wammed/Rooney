@@ -27,8 +27,6 @@ pub fn view_file_tree<'a, Message: 'static + Clone>(
     _font_name: &'a str,
     on_msg: impl Fn(FileTreeMessage) -> Message + Copy + 'static,
 ) -> Element<'a, Message> {
-    let mut col = column::with_capacity(tree.items.len() + 3).spacing(1);
-
     let root_name = tree
         .root
         .file_name()
@@ -75,7 +73,7 @@ pub fn view_file_tree<'a, Message: 'static + Clone>(
     let header_area = mouse_area(header_row)
         .on_right_press(on_msg(FileTreeMessage::RightClickRoot));
 
-    col = col.push(header_area);
+    let mut items_col = column::with_capacity(tree.items.len()).spacing(1);
 
     for item in &tree.items {
         let is_selected = tree.selected_path.as_ref() == Some(&item.path);
@@ -153,21 +151,29 @@ pub fn view_file_tree<'a, Message: 'static + Clone>(
         let row_area = mouse_area(row_container)
             .on_right_press(on_msg(FileTreeMessage::RightClick(path.clone(), is_dir)));
 
-        col = col.push(row_area);
+        items_col = items_col.push(row_area);
     }
 
-    let empty_bottom = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+    let empty_bottom = mouse_area(Space::new().width(Length::Fill).height(Length::Fixed(600.0)))
         .on_right_press(on_msg(FileTreeMessage::RightClickRoot));
-    col = col.push(empty_bottom);
+    items_col = items_col.push(empty_bottom);
 
     let sidebar_w = tree.width.max(280.0);
 
-    let scroll = scrollable(col)
+    let scroll_id = cosmic::iced::core::widget::Id::new("file_tree_scroll");
+    let scroll = scrollable(items_col)
+        .id(scroll_id)
+        .width(Length::Fixed(sidebar_w))
+        .height(Length::Fill);
+
+    let full_tree = column::with_capacity(2)
+        .push(header_area)
+        .push(scroll)
         .width(Length::Fixed(sidebar_w))
         .height(Length::Fill);
 
     let sidebar_bg = theme.sidebar_with_alpha();
-    container(scroll)
+    container(full_tree)
         .class(cosmic::theme::Container::Custom(Box::new(move |_| {
             container::Style {
                 background: Some(sidebar_bg.into()),

@@ -954,4 +954,51 @@ fn test_independent_opacity_settings() {
     assert_eq!(legacy_config.title_bar_opacity, 1.0);
 }
 
+#[test]
+fn test_context_menu_boundary_clamping() {
+    let window_w: f32 = 800.0;
+    let window_h: f32 = 600.0;
+    let menu_w: f32 = 220.0;
+    let menu_h: f32 = 240.0;
 
+    let clamp_menu = |cx: f32, cy: f32| -> (f32, f32) {
+        let max_w = window_w.max(600.0);
+        let max_h = window_h.max(400.0);
+
+        let mut menu_x = cx;
+        if menu_x + menu_w > max_w - 20.0 {
+            menu_x = cx - menu_w;
+        }
+        let menu_x = menu_x.clamp(10.0, (max_w - menu_w - 10.0).max(10.0));
+
+        let mut menu_y = cy;
+        if menu_y + menu_h > max_h - 36.0 {
+            menu_y = cy - menu_h;
+        }
+        let menu_y = menu_y.clamp(40.0, (max_h - menu_h - 30.0).max(40.0));
+
+        (menu_x, menu_y)
+    };
+
+    // Right-click in upper-left area: opens normally downwards and rightwards
+    let (x, y) = clamp_menu(50.0, 100.0);
+    assert_eq!(x, 50.0);
+    assert_eq!(y, 100.0);
+    assert!(x + menu_w <= window_w);
+    assert!(y + menu_h <= window_h);
+
+    // Right-click at the bottom of the window (e.g. file tree bottom at y=550):
+    // must flip upwards and never hide below window bottom
+    let (x, y) = clamp_menu(50.0, 550.0);
+    assert_eq!(x, 50.0);
+    assert_eq!(y, 550.0 - menu_h); // 310.0
+    assert!(y + menu_h <= window_h - 30.0);
+    assert!(y >= 40.0);
+
+    // Right-click at the far right edge of the window:
+    // must flip leftwards
+    let (x, _y) = clamp_menu(750.0, 100.0);
+    assert_eq!(x, 750.0 - menu_w); // 530.0
+    assert!(x + menu_w <= window_w);
+    assert!(x >= 10.0);
+}
