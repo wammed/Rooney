@@ -1,4 +1,5 @@
 use ropey::Rope;
+use std::collections::VecDeque;
 
 #[derive(Debug, Clone)]
 pub struct TextBuffer {
@@ -6,8 +7,8 @@ pub struct TextBuffer {
     pub cursor: (usize, usize), // (line_idx, col_idx)
     pub selection_anchor: Option<(usize, usize)>,
     pub is_modified: bool,
-    undo_stack: Vec<Rope>,
-    redo_stack: Vec<Rope>,
+    undo_stack: VecDeque<Rope>,
+    redo_stack: VecDeque<Rope>,
 }
 
 impl Default for TextBuffer {
@@ -24,8 +25,8 @@ impl TextBuffer {
             cursor: (0, 0),
             selection_anchor: None,
             is_modified: false,
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
+            undo_stack: VecDeque::new(),
+            redo_stack: VecDeque::new(),
         }
     }
 
@@ -61,18 +62,26 @@ impl TextBuffer {
         line_char_start + col
     }
 
+    pub fn undo_stack_len(&self) -> usize {
+        self.undo_stack.len()
+    }
+
+    pub fn redo_stack_len(&self) -> usize {
+        self.redo_stack.len()
+    }
+
     fn push_undo(&mut self) {
         if self.undo_stack.len() >= 100 {
-            self.undo_stack.remove(0);
+            self.undo_stack.pop_front();
         }
-        self.undo_stack.push(self.rope.clone());
+        self.undo_stack.push_back(self.rope.clone());
         self.redo_stack.clear();
         self.is_modified = true;
     }
 
     pub fn undo(&mut self) {
-        if let Some(prev) = self.undo_stack.pop() {
-            self.redo_stack.push(self.rope.clone());
+        if let Some(prev) = self.undo_stack.pop_back() {
+            self.redo_stack.push_back(self.rope.clone());
             self.rope = prev;
             self.clamp_cursor();
             self.selection_anchor = None;
@@ -80,8 +89,8 @@ impl TextBuffer {
     }
 
     pub fn redo(&mut self) {
-        if let Some(next) = self.redo_stack.pop() {
-            self.undo_stack.push(self.rope.clone());
+        if let Some(next) = self.redo_stack.pop_back() {
+            self.undo_stack.push_back(self.rope.clone());
             self.rope = next;
             self.clamp_cursor();
             self.selection_anchor = None;

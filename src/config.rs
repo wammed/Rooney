@@ -122,7 +122,7 @@ impl AppConfig {
         }
         let content = toml::to_string_pretty(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        fs::write(path, content)?;
+        crate::editor::EditorTab::atomic_write_file(&path, &content)?;
         Ok(())
     }
 }

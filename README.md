@@ -119,11 +119,11 @@ Rooney automatically preserves all settings—theme, font, font size, independen
 ## 🔒 Security & Architecture (Overview)
 
 Rooney operates under a strict **100% offline, local-first** model:
-- **Zero Cloud Leakage**: No telemetry, external telemetry APIs, or cloud models; all AI prompts and code streams remain strictly local via Ollama.
-- **Sensitive File AI Shield**: Automatically detects and blocks AI completion requests on sensitive files (`.env*`, `id_rsa`, `id_ed25519`, `credentials`, `*.pem`, `*.key`).
-- **Atomic File Writing**: Saves files via sibling temporary files (`.{filename}.tmp.{pid}`) with `sync_all` and atomic rename, eliminating zero-byte corruption on unexpected shutdowns.
-- **Path Traversal & Boundary Protection**: Sanitizes file/directory creation and renaming to prevent directory escape (`..`, `/`), while safeguarding root (`/`) and home directories against accidental recursive deletion.
-- **Resource Protection**: 50MB file size ceiling to prevent OOM freezes, 1MB streaming buffer cap, and recursive directory scan depth limits.
+- **Zero Cloud Leakage**: No telemetry, external cloud APIs, or tracking; all AI prompts and code streams remain strictly local via Ollama.
+- **Sensitive File AI Shield**: Automatically detects and blocks AI completion requests on sensitive files (`.env*`, `id_rsa`, `id_ed25519`, `credentials`, `*.pem`, `*.key`, `*.keystore`, `*.jks`, `.npmrc`, `.pypirc`, `kubeconfig`, `*.token`, `*secret*`, `.aws/credentials`, `.kube/config`).
+- **Atomic Crash-Safe Writing**: Saves editor files and `config.toml` via sibling temporary files (`.{filename}.tmp.{pid}`) with `sync_all` and atomic rename, eliminating zero-byte corruption on unexpected shutdowns or power loss.
+- **Path Traversal & Boundary Protection**: Sanitizes file/directory creation and renaming to prevent directory escape (`..`, `/`), while safeguarding root (`/`) and home directories against accidental recursive deletion. Safe home directory resolution via `directories::BaseDirs`.
+- **Resource Protection & High Performance**: 50MB file size ceiling to prevent OOM freezes, 1MB streaming buffer cap, bounded $O(1)$ ring-buffer Undo/Redo stack (`VecDeque`), and incremental Tree-sitter parsing.
 
 ---
 

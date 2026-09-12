@@ -98,6 +98,31 @@ impl Default for OllamaClient {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OllamaError {
+    Disabled,
+    HttpError(String),
+    StatusError(u16, String),
+    ParseError(String),
+    StreamError(String),
+    BufferExceeded,
+}
+
+impl std::fmt::Display for OllamaError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OllamaError::Disabled => write!(f, "Ollama integration is disabled"),
+            OllamaError::HttpError(e) => write!(f, "Ollama HTTP error: {}", e),
+            OllamaError::StatusError(code, msg) => write!(f, "Ollama returned status {}: {}", code, msg),
+            OllamaError::ParseError(e) => write!(f, "Ollama parse error: {}", e),
+            OllamaError::StreamError(e) => write!(f, "Ollama stream error: {}", e),
+            OllamaError::BufferExceeded => write!(f, "Stream line buffer exceeded safety threshold"),
+        }
+    }
+}
+
+impl std::error::Error for OllamaError {}
+
 impl OllamaClient {
     pub fn new(endpoint: &str) -> Self {
         let client = reqwest::Client::builder()
@@ -114,19 +139,26 @@ impl OllamaClient {
         }
     }
 
-    pub async fn fetch_models(&mut self) -> Result<Vec<String>, String> {
+    pub async fn fetch_models(&mut self) -> Result<Vec<String>, OllamaError> {
         let url = format!("{}/api/tags", self.endpoint);
         let resp = self
             .client
             .get(&url)
             .send()
             .await
-            .map_err(|e| format!("Failed to reach Ollama: {e}"))?;
+            .map_err(|e| OllamaError::HttpError(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            return Err(OllamaError::StatusError(
+                resp.status().as_u16(),
+                resp.status().to_string(),
+            ));
+        }
 
         let tags: TagsResponse = resp
             .json()
             .await
-            .map_err(|e| format!("Failed to parse tags JSON: {e}"))?;
+            .map_err(|e| OllamaError::ParseError(e.to_string()))?;
 
         let mut models: Vec<String> = tags.models.into_iter().map(|m| m.name).collect();
 
@@ -155,9 +187,9 @@ impl OllamaClient {
         &self,
         prefix: &str,
         suffix: &str,
-    ) -> Result<String, String> {
+    ) -> Result<String, OllamaError> {
         if !self.is_enabled {
-            return Ok(String::new());
+            return Err(OllamaError::Disabled);
         }
 
         let url = format!("{}/api/generate", self.endpoint);
@@ -201,16 +233,19 @@ impl OllamaClient {
             .json(&payload)
             .send()
             .await
-            .map_err(|e| format!("Ollama request error: {e}"))?;
+            .map_err(|e| OllamaError::HttpError(e.to_string()))?;
 
         if !resp.status().is_success() {
-            return Err(format!("Ollama returned status {}", resp.status()));
+            return Err(OllamaError::StatusError(
+                resp.status().as_u16(),
+                resp.status().to_string(),
+            ));
         }
 
         let result: GenerateResponse = resp
             .json()
             .await
-            .map_err(|e| format!("Invalid JSON response: {e}"))?;
+            .map_err(|e| OllamaError::ParseError(e.to_string()))?;
 
         let mut clean = result.response;
         if let Some(pos) = clean.find("<｜fim") {
@@ -233,7 +268,7 @@ impl OllamaClient {
         &self,
         system_prompt: Option<&str>,
         prompt: &str,
-    ) -> Result<String, String> {
+    ) -> Result<String, OllamaError> {
         let url = format!("{}/api/generate", self.endpoint);
         let default_system = "You are an expert AI software engineering assistant integrated directly inside Rooney (CosmicCode) editor. Provide clean, concise code, answers, and refactorings. Wrap code snippets in markdown codeblocks.";
         let sys = system_prompt.unwrap_or(default_system).to_string();
@@ -256,16 +291,19 @@ impl OllamaClient {
             .json(&payload)
             .send()
             .await
-            .map_err(|e| format!("Ollama request error: {e}"))?;
+            .map_err(|e| OllamaError::HttpError(e.to_string()))?;
 
         if !resp.status().is_success() {
-            return Err(format!("Ollama returned status {}", resp.status()));
+            return Err(OllamaError::StatusError(
+                resp.status().as_u16(),
+                resp.status().to_string(),
+            ));
         }
 
         let result: GenerateResponse = resp
             .json()
             .await
-            .map_err(|e| format!("Invalid JSON response: {e}"))?;
+            .map_err(|e| OllamaError::ParseError(e.to_string()))?;
 
         Ok(result.response)
     }

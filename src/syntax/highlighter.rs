@@ -188,7 +188,7 @@ impl Highlighter {
 
     pub fn update_source(&mut self, source: &str) {
         if let Some(ref mut parser) = self.parser {
-            self.tree = parser.parse(source, None);
+            self.tree = parser.parse(source, self.tree.as_ref());
         }
     }
 

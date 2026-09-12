@@ -18,11 +18,18 @@ impl FontManager {
     pub fn new() -> Self {
         let mut families = BTreeSet::new();
 
-        if let Ok(output) = std::process::Command::new("fc-list")
+        let output_res = std::process::Command::new("fc-list")
             .arg(":")
             .arg("family")
             .output()
-        {
+            .or_else(|_| {
+                std::process::Command::new("/usr/bin/fc-list")
+                    .arg(":")
+                    .arg("family")
+                    .output()
+            });
+
+        if let Ok(output) = output_res {
             if let Ok(text) = String::from_utf8(output.stdout) {
                 for line in text.lines() {
                     for family in line.split(',') {

@@ -1,3 +1,4 @@
+use crate::ai::OllamaError;
 use crate::editor::PaneId;
 use crate::ui::file_tree_view::FileTreeMessage;
 use cosmic::iced;
@@ -31,8 +32,8 @@ pub enum Message {
     DecreaseFontSize,
     ToggleAi,
     TriggerAiFim,
-    AiFimResult(PaneId, Result<String, String>),
-    AiModelsFetched(Result<Vec<String>, String>),
+    AiFimResult(PaneId, Result<String, OllamaError>),
+    AiModelsFetched(Result<Vec<String>, OllamaError>),
     SelectAiModel(usize),
     OpenFilePrompt,
     FileOpened(Option<PathBuf>),

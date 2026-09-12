@@ -86,8 +86,9 @@ pub struct App {
 const ROONEY_ICON_BYTES: &[u8] = include_bytes!("../../images/Rooney-matte-icon.svg");
 
 fn ensure_system_icons() {
-    if let Some(home) = std::env::var_os("HOME") {
-        let icon_dir = PathBuf::from(home).join(".local/share/icons/hicolor/scalable/apps");
+    let home = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf());
+    if let Some(home) = home {
+        let icon_dir = home.join(".local/share/icons/hicolor/scalable/apps");
         let _ = std::fs::create_dir_all(&icon_dir);
 
         for icon_name in &[

@@ -385,7 +385,37 @@
 - **検証結果**:
   - `cargo clippy --all-targets -- -D warnings`: 警告 0 件。
   - `cargo test`: 38/38 全テスト通過（35 core + 3 ollama）。
-  - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
+### セッション 23: OPUS レビューに基づく全面改善・セキュリティ強化・パフォーマンス最適化
+- **レビュー指摘への全面対応 (`Rooney_project_review_by_OPUS.md`)**:
+  1. **設定ファイル（`config.toml`）のアトミック保存**:
+     - `src/config.rs` の `AppConfig::save()` を従来の直接 `fs::write()` から、`EditorTab::atomic_write_file(&path, &content)` による原子的置換に変更。
+     - 一時ファイル書き込み (`.{file_name}.tmp.{pid}`)、`sync_all()` によるディスク同期、`rename()` によるアトミック置換を徹底し、OSクラッシュや強制終了による設定ファイル破損リスクを根絶。
+  2. **機密ファイル AI シールドの拡充 (`src/app/update.rs`)**:
+     - `is_sensitive_file()` を大幅拡張。
+     - `.keystore`, `.jks` (Java KeyStore)、`.npmrc` (npm 認証トークン)、`.pypirc` (PyPI 認証)、`kubeconfig`, `.kubeconfig` (Kubernetes 設定)、`token`, `.token`、ファイル名に `secret` を含む全ファイル、および `.aws` (`.aws/credentials`), `.kube` ディレクトリ配下の全ファイルを自動検出し、AI への機密漏洩を未然に遮断。
+  3. **安全なホームディレクトリ解決 (`src/app/mod.rs`)**:
+     - `ensure_system_icons()` において、環境変数 `std::env::var_os("HOME")` を直接信用せず、`directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf())` で安全にホームディレクトリを解決。
+  4. **外部コマンド（`fc-list`）のフォールバック強化 (`src/font/manager.rs`)**:
+     - `FontManager::new()` において、`fc-list` の実行失敗時にシステムの絶対パス `/usr/bin/fc-list` へのフォールバック試行を追加。
+  5. **Undo/Redo スタックの $O(1)$ 化 (`src/editor/buffer.rs`)**:
+     - `undo_stack` および `redo_stack` の内部実装を `Vec<Rope>` から `std::collections::VecDeque<Rope>` に変更。
+     - 100 件上限超過時の先頭削除を `Vec::remove(0)`（$O(n)$ 要素シフト）から `VecDeque::pop_front()`（$O(1)$ リングバッファ操作）に改善し、タイピング時の Undo 記録レイテンシを最小化。
+  6. **型安全な AI 構造化エラー型 `OllamaError` の導入 (`src/ai/ollama.rs`)**:
+     - 従来の非構造化 `String` エラーから、専用の構造化 enum `OllamaError` (`Disabled`, `HttpError`, `StatusError(u16, String)`, `ParseError`, `StreamError`, `BufferExceeded`) を導入。`std::fmt::Display` および `std::error::Error` を実装し、`Result<_, OllamaError>` による堅牢なエラーハンドリングを実現。
+  7. **Tree-sitter 増分構文解析（Incremental Parsing）の有効化 (`src/syntax/highlighter.rs`)**:
+     - `update_source` で `parser.parse(source, self.tree.as_ref())` とし、既存の構文木参照を渡すことで、タイピング時に変更されていない構文ノードを再利用する増分パースを有効化。
+  8. **依存関係の健全性向上 (`Cargo.toml`)**:
+     - `tokio`: 不要な依存を含む `features = ["full"]` から、必要な機能のみ (`features = ["rt-multi-thread", "time", "net", "macros"]`) に絞り込みビルドフットプリントを最適化。
+     - `libcosmic`: `git HEAD` 参照から `rev = "d4d71fd53e5ed6bd3a430089114dffa2da3cd498"` でコミットハッシュを明示固定し、ビルド再現性を保証。
+  9. **テストスイート拡充 (`tests/core_tests.rs`)**:
+     - `test_sensitive_file_ai_protection` を拡充（`.npmrc`, `.pypirc`, `kubeconfig`, `.jks`, `.keystore`, `.token`, `secret`, `.aws`, `.kube` の検出検証）。
+     - `test_undo_redo_stack_depth_and_performance` を追加（120回の連続編集による 100 件 FIFO 上限と LIFO アンドゥの完全検証）。
+     - `test_buffer_edge_cases` を追加（空バッファでの全編集・カーソル動作、10万文字以上の超長行の編集・クランプ検証）。
+     - `test_atomic_config_save` を追加（`config.toml` の原子的保存と一時ファイル自動清掃の検証）。
+- **検証結果**:
+  - `cargo clippy --all-targets -- -D warnings`: 警告 0 件。
+  - `cargo test`: **41/41 全テスト通過 (38 core + 3 ollama, 0 failed)**。
+  - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: クリーンビルド & インストール完了。
 
 ---
 
@@ -497,14 +527,17 @@ Rooney/
 ## 5. 現在のビルドおよびテスト状態
 
 - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings** (完全クリーン)
-- `cargo test`: **38/38 全テスト通過 (0 failed)**
-  - `test_markdown_spec_commonmark_vs_gfm` ... ok (新規追加: GFM vs CommonMarkの仕様完全比較)
-  - `test_markdown_spec_config_persistence` ... ok (新規追加: MarkdownSpec TOML往復永続化・エイリアス検証)
+- `cargo test`: **41/41 全テスト通過 (38 core + 3 ollama, 0 failed)**
+  - `test_undo_redo_stack_depth_and_performance` ... ok (新規追加: VecDeque 100件FIFO上限 & LIFOアンドゥ検証)
+  - `test_buffer_edge_cases` ... ok (新規追加: 空バッファおよび10万文字超長行編集・クランプ検証)
+  - `test_atomic_config_save` ... ok (新規追加: config.toml アトミック保存・一時ファイル検証)
+  - `test_sensitive_file_ai_protection` ... ok (拡充: .npmrc, .pypirc, kubeconfig, .jks, .keystore, token, secret, .aws, .kube)
+  - `test_markdown_spec_commonmark_vs_gfm` ... ok
+  - `test_markdown_spec_config_persistence` ... ok
   - `test_context_menu_boundary_clamping` ... ok
   - `test_independent_opacity_settings` ... ok
   - `test_rooney_icon_integration` ... ok
   - `test_filename_sanitization_and_path_traversal_guards` ... ok
-  - `test_sensitive_file_ai_protection` ... ok
   - `test_atomic_save_and_file_size_limits` ... ok
   - `test_active_header_menu_and_actions` ... ok
   - `test_char_advance_ascii_and_cjk` ... ok

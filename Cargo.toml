@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 # GUI & Wayland Windowing
-libcosmic = { git = "https://github.com/pop-os/libcosmic" }
+libcosmic = { git = "https://github.com/pop-os/libcosmic", rev = "d4d71fd53e5ed6bd3a430089114dffa2da3cd498" }
 cosmic-text = "0.12"
 
 # Text Buffer & Core
@@ -30,7 +30,7 @@ pulldown-cmark = "0.12"
 image = "0.25"
 
 # Local AI Integration (Ollama FIM)
-tokio = { version = "1.40", features = ["full"] }
+tokio = { version = "1.40", features = ["rt-multi-thread", "time", "net", "macros"] }
 reqwest = { version = "0.12", features = ["stream", "json"] }
 futures-util = "0.3"
 futures-channel = "0.3"

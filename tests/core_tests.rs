@@ -943,13 +943,27 @@ fn test_sensitive_file_ai_protection() {
     assert!(is_sensitive_file(Path::new(".git-credentials")));
     assert!(is_sensitive_file(Path::new(".netrc")));
     assert!(is_sensitive_file(Path::new("credentials")));
+    assert!(is_sensitive_file(Path::new(".npmrc")));
+    assert!(is_sensitive_file(Path::new(".pypirc")));
+    assert!(is_sensitive_file(Path::new("kubeconfig")));
+    assert!(is_sensitive_file(Path::new("cluster.kubeconfig")));
+    assert!(is_sensitive_file(Path::new("app.keystore")));
+    assert!(is_sensitive_file(Path::new("release.jks")));
+    assert!(is_sensitive_file(Path::new("token")));
+    assert!(is_sensitive_file(Path::new("api.token")));
+    assert!(is_sensitive_file(Path::new("client_secret.json")));
+    assert!(is_sensitive_file(Path::new("/home/user/.aws/credentials")));
+    assert!(is_sensitive_file(Path::new("/home/user/.aws/config")));
+    assert!(is_sensitive_file(Path::new("/home/user/.kube/config")));
 
     // Normal files that are allowed for AI
     assert!(!is_sensitive_file(Path::new("main.rs")));
     assert!(!is_sensitive_file(Path::new("index.ts")));
     assert!(!is_sensitive_file(Path::new("README.md")));
     assert!(!is_sensitive_file(Path::new("Cargo.toml")));
+    assert!(!is_sensitive_file(Path::new("styles.css")));
 }
+
 
 #[test]
 fn test_atomic_save_and_file_size_limits() {
@@ -1110,3 +1124,111 @@ fn test_context_menu_boundary_clamping() {
     assert!(x + menu_w <= window_w);
     assert!(x >= 10.0);
 }
+
+#[test]
+fn test_undo_redo_stack_depth_and_performance() {
+    use rooney::editor::TextBuffer;
+
+    let mut buffer = TextBuffer::new("start");
+    assert_eq!(buffer.undo_stack_len(), 0);
+    assert_eq!(buffer.redo_stack_len(), 0);
+
+    // Perform 120 modifications
+    for i in 0..120 {
+        buffer.insert_str(&format!(" {i}"));
+    }
+
+    // Stack should be bounded to 100 items by VecDeque pop_front
+    assert_eq!(buffer.undo_stack_len(), 100);
+
+    // Undo all 100 available steps
+    for _ in 0..100 {
+        buffer.undo();
+    }
+    assert_eq!(buffer.undo_stack_len(), 0);
+    assert_eq!(buffer.redo_stack_len(), 100);
+
+    // Further undo is a no-op
+    buffer.undo();
+    assert_eq!(buffer.undo_stack_len(), 0);
+
+    // Redo all 100 steps
+    for _ in 0..100 {
+        buffer.redo();
+    }
+    assert_eq!(buffer.undo_stack_len(), 100);
+    assert_eq!(buffer.redo_stack_len(), 0);
+}
+
+#[test]
+fn test_buffer_edge_cases() {
+    use rooney::editor::TextBuffer;
+
+    // 1. Empty buffer operations
+    let mut empty_buf = TextBuffer::new("");
+    assert_eq!(empty_buf.line_count(), 1);
+    assert_eq!(empty_buf.full_text(), "");
+    empty_buf.delete_backspace();
+    empty_buf.delete_forward();
+    empty_buf.undo();
+    empty_buf.redo();
+    assert_eq!(empty_buf.cursor, (0, 0));
+
+    empty_buf.insert_char('A');
+    assert_eq!(empty_buf.full_text(), "A");
+    assert_eq!(empty_buf.cursor, (0, 1));
+    empty_buf.undo();
+    assert_eq!(empty_buf.full_text(), "");
+
+    // 2. Extremely long line (100,000 characters)
+    let long_line: String = "x".repeat(100_000);
+    let mut long_buf = TextBuffer::new(&long_line);
+    assert_eq!(long_buf.line_count(), 1);
+    assert_eq!(long_buf.line_char_count(0), 100_000);
+
+    // Cursor positioning and modification in long line
+    long_buf.cursor = (0, 50_000);
+    long_buf.insert_str("INSERTED");
+    assert_eq!(long_buf.line_char_count(0), 100_008);
+    assert_eq!(long_buf.cursor, (0, 50_008));
+
+    long_buf.undo();
+    assert_eq!(long_buf.line_char_count(0), 100_000);
+    assert!(long_buf.cursor.1 <= 100_000);
+}
+
+#[test]
+fn test_atomic_config_save() {
+    use rooney::config::AppConfig;
+    use rooney::editor::EditorTab;
+    use rooney::theme::themes::ThemeId;
+    use std::fs;
+
+    let temp_dir = std::env::temp_dir().join(format!("rooney_config_test_{}", std::process::id()));
+    let _ = fs::create_dir_all(&temp_dir);
+    let target_file = temp_dir.join("config.toml");
+
+    let config = AppConfig {
+        theme: ThemeId::CyberpunkNeon,
+        font_size: 18.0,
+        ..Default::default()
+    };
+
+    let content = toml::to_string_pretty(&config).unwrap();
+    let res = EditorTab::atomic_write_file(&target_file, &content);
+    assert!(res.is_ok());
+
+    let loaded_str = fs::read_to_string(&target_file).unwrap();
+    let loaded_config: AppConfig = toml::from_str(&loaded_str).unwrap();
+    assert_eq!(loaded_config.theme, ThemeId::CyberpunkNeon);
+    assert_eq!(loaded_config.font_size, 18.0);
+
+    // Verify temp files are cleaned up
+    let entries = fs::read_dir(&temp_dir).unwrap();
+    for entry in entries {
+        let name = entry.unwrap().file_name().to_string_lossy().to_string();
+        assert!(!name.starts_with(".config.toml.tmp"), "Temp file was left behind: {}", name);
+    }
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+

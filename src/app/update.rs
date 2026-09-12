@@ -35,17 +35,36 @@ pub fn is_sensitive_file(path: &Path) -> bool {
     if file_name.starts_with(".env")
         || file_name == ".git-credentials"
         || file_name == ".netrc"
+        || file_name == ".npmrc"
+        || file_name == ".pypirc"
         || file_name == "id_rsa"
         || file_name == "id_ed25519"
         || file_name == "id_ecdsa"
         || file_name == "id_dsa"
         || file_name == "credentials"
+        || file_name == "kubeconfig"
+        || file_name.ends_with(".kubeconfig")
         || file_name.ends_with(".pem")
         || file_name.ends_with(".key")
         || file_name.ends_with(".pfx")
         || file_name.ends_with(".p12")
+        || file_name.ends_with(".keystore")
+        || file_name.ends_with(".jks")
+        || file_name.ends_with(".token")
+        || file_name == "token"
+        || file_name.contains("secret")
     {
         return true;
+    }
+
+    // Check directory components (e.g. .aws/credentials, .kube/config)
+    for comp in path.components() {
+        if let std::path::Component::Normal(c) = comp {
+            let s = c.to_string_lossy().to_lowercase();
+            if s == ".aws" || s == ".kube" {
+                return true;
+            }
+        }
     }
 
     false
@@ -416,7 +435,7 @@ impl App {
                         }
                     }
                     Err(e) => {
-                        self.ai_status = AiStatus::Error(e.clone());
+                        self.ai_status = AiStatus::Error(e.to_string());
                         self.status_msg = Some(format!("AI Error: {e}"));
                     }
                 }
