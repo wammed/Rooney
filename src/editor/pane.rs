@@ -1,3 +1,4 @@
+use crate::config::MarkdownSpec;
 use crate::editor::buffer::TextBuffer;
 use crate::markdown::MarkdownDocument;
 use crate::syntax::{Highlighter, SupportedLanguage};
@@ -29,6 +30,7 @@ pub struct EditorTab {
     pub preedit: Option<(String, Option<std::ops::Range<usize>>)>,
     pub is_markdown_preview: bool,
     pub markdown_doc: Option<MarkdownDocument>,
+    pub markdown_spec: MarkdownSpec,
     pub search_query: Option<String>,
     pub search_matches: Vec<(usize, usize, usize)>, // (line_idx, col_start, col_end)
     pub current_match_idx: usize,
@@ -51,6 +53,7 @@ impl EditorTab {
             preedit: None,
             is_markdown_preview: false,
             markdown_doc: None,
+            markdown_spec: MarkdownSpec::default(),
             search_query: None,
             search_matches: Vec::new(),
             current_match_idx: 0,
@@ -95,7 +98,7 @@ impl EditorTab {
         self.preedit = None;
 
         if lang == SupportedLanguage::Markdown && self.is_markdown_preview {
-            self.markdown_doc = Some(MarkdownDocument::parse(&content));
+            self.markdown_doc = Some(MarkdownDocument::parse(&content, self.markdown_spec));
         } else {
             self.markdown_doc = None;
         }
@@ -133,7 +136,7 @@ impl EditorTab {
         self.highlighter.update_source(&self.buffer.full_text());
 
         if lang == SupportedLanguage::Markdown && self.is_markdown_preview {
-            self.markdown_doc = Some(MarkdownDocument::parse(&self.buffer.full_text()));
+            self.markdown_doc = Some(MarkdownDocument::parse(&self.buffer.full_text(), self.markdown_spec));
         } else {
             self.markdown_doc = None;
         }
@@ -189,11 +192,18 @@ impl EditorTab {
         self.highlighter.update_source(&text);
 
         if self.highlighter.lang == SupportedLanguage::Markdown && self.is_markdown_preview {
-            self.markdown_doc = Some(MarkdownDocument::parse(&text));
+            self.markdown_doc = Some(MarkdownDocument::parse(&text, self.markdown_spec));
         }
 
         if let Some(ref q) = self.search_query.clone() {
             self.update_search(q);
+        }
+    }
+
+    pub fn refresh_markdown(&mut self) {
+        if self.is_markdown_preview {
+            let text = self.buffer.full_text();
+            self.markdown_doc = Some(MarkdownDocument::parse(&text, self.markdown_spec));
         }
     }
 
@@ -321,9 +331,11 @@ impl EditorPane {
         }
 
         // 3. Otherwise, open a new tab
+        let spec = self.active_tab().markdown_spec;
         let id = self.next_tab_id;
         self.next_tab_id += 1;
         let mut tab = EditorTab::new(id, "Untitled");
+        tab.markdown_spec = spec;
         tab.load_file(path)?;
         self.tabs.push(tab);
         self.active_tab_idx = self.tabs.len() - 1;
@@ -331,12 +343,21 @@ impl EditorPane {
     }
 
     pub fn new_tab(&mut self, title: &str) -> usize {
+        let spec = self.active_tab().markdown_spec;
         let id = self.next_tab_id;
         self.next_tab_id += 1;
-        let tab = EditorTab::new(id, title);
+        let mut tab = EditorTab::new(id, title);
+        tab.markdown_spec = spec;
         self.tabs.push(tab);
         self.active_tab_idx = self.tabs.len() - 1;
         self.active_tab_idx
+    }
+
+    pub fn set_markdown_spec(&mut self, spec: MarkdownSpec) {
+        for tab in &mut self.tabs {
+            tab.markdown_spec = spec;
+            tab.refresh_markdown();
+        }
     }
 
     pub fn close_tab(&mut self, idx: usize) {

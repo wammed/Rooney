@@ -236,8 +236,11 @@ A lightweight, fast, in-process code and markdown editor.
                 crate::syntax::Highlighter::new(crate::syntax::SupportedLanguage::Markdown);
             right_pane.highlighter.update_source(sample_md);
             right_pane.is_markdown_preview = false;
-            right_pane.markdown_doc = Some(crate::markdown::MarkdownDocument::parse(sample_md));
+            right_pane.markdown_doc = Some(crate::markdown::MarkdownDocument::parse(sample_md, config.markdown_spec));
         }
+
+        left_pane.set_markdown_spec(config.markdown_spec);
+        right_pane.set_markdown_spec(config.markdown_spec);
 
         let theme_names: Vec<String> = ThemeId::ALL
             .iter()

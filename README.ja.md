@@ -28,14 +28,14 @@
 
 ## 💡 主な特徴
 
-- ⚡ **COSMIC & Wayland ネイティブコア**: 外部 LSP や重厚な子プロセスを完全排除。純粋な Rust `libcosmic` デスクトップ統合、クライアント装飾、0ms 瞬時起動、ダーク/ライトテーマ自動同期を実現。
+- ⚡ **COSMIC & Wayland ネイティブコア**: 外部 LSP や重厚な子プロセスを完全排除。純粋な Rust `libcosmic` デスクトップ統合、専用マットアプリアイコン、クライアント装飾、0ms 瞬時起動、ダーク/ライトテーマ自動同期を実現。
 - 🤖 **100% 完全ローカル AI**: Ollama を用いた完全オフライン動作。リアルタイムの Fill-in-the-Middle（FIM）インラインゴースト補完（`Ctrl + I` / `Alt + Enter`）と、トークン単位のストリーミング対話 AI チャットパネル（`Ctrl + Shift + A`）を搭載。
 - 📜 **超高速ピースツリー Rope バッファ**: `ropey` を採用し、巨大ファイルでもゼロコピーで軽快に処理。インプロセスでの安全かつ瞬時なバッファ編集を提供。
 - 🌳 **インプロセス Tree-sitter 構文ハイライト**: 12以上の言語（Rust, Python, JS, TS, C, C++, Bash, Fish, JSON, TOML, YAML, Markdown）を高精度かつ低負荷でリアルタイムハイライト。
-- 🪟 **2分割ペイン編集 & リアルタイム Markdown プレビュー**: ツールバーやショートカット（`Ctrl + \`）で即座に左右分割。独立マルチタブ、同期編集、GFM テーブルやコードブロックに対応したライブ Markdown プレビュー（`Ctrl + M`）。
+- 🪟 **2分割ペイン編集 & リアルタイム Markdown プレビュー**: ツールバーやショートカット（`Ctrl + \`）で即座に左右分割。独立マルチタブ、同期編集、設定画面から **GFM**（GitHub Flavored Markdown: テーブル、タスクリスト、アラート、打ち消し線、自動リンク、`breaks: false`）と標準 **CommonMark** を動的に切り替え可能なライブ Markdown プレビュー（`Ctrl + M`）。
 - 🇯🇵 **サブピクセル高精度な日本語 IME 完全対応**: Wayland text-input プロトコル（Fcitx5 / Mozc / IBus）をネイティブサポート。インライン変換下線プレビューと、半角・全角実寸幅の厳密計算により、文字入力時のカーソル位置ズレを完全解消。
-- 📂 **リッチなファイルツリーエクスプローラー**: ワークスペースのリアルタイム走査、Nerd Font ファイルアイコン、右クリックコンテキストメニュー（新規ファイル、新規フォルダ、リネーム、安全削除）、XDG Desktop Portal ネイティブファイルダイアログ連携。
-- 🎨 **全20種の洗練された Classic & Neon テーマ**: Tokyo Night、Catppuccin、Gruvbox、Synthwave '84、Cyberpunk Neon などを網羅。エディタウィンドウ、ファイルツリー、タイトルバーの各透明度を独立調整でき、背景ディミングとともに `󰒓 Aesthetics` モーダルで一元設定可能。
+- 📂 **リッチなファイルツリーエクスプローラー**: ワークスペースのリアルタイム走査、Nerd Font ファイルアイコン、右クリックコンテキストメニュー（新規ファイル、新規フォルダ、リネーム、安全削除）でのスクロール位置保持・ウィンドウ下限はみ出し防止クランプ、XDG Desktop Portal ネイティブファイルダイアログ連携。
+- 🎨 **全20種の洗練された Classic & Neon テーマ**: Tokyo Night、Catppuccin、Gruvbox、Synthwave '84、Cyberpunk Neon などを網羅。エディタウィンドウ、ファイルツリー、タイトルバーの各透明度を独立調整でき、背景ディミングとともに `󰒓 Aesthetics & Preferences` モーダルで一元設定可能。
 - 🔒 **鉄壁のローカルセキュリティ保護**: 一時ファイル置換によるアトミック安全保存（0バイト破損防止）、50MB ファイルサイズ上限ガード、パストラバーサル防止、機密ファイル（`.env*`, 秘密鍵等）の AI 自動シールド。
 
 ---
@@ -78,14 +78,15 @@ cargo run
 ### 4. プロダクションビルド & インストール
 
 ```bash
-# 最適化リリースバイナリをビルド
+# 最適化リリースバイナリをビルドしてユーザーパスへ配置
 cargo build --release
-
-# ユーザーの実行パスにインストール
-cp target/release/rooney ~/.local/bin/rooney
-chmod +x ~/.local/bin/rooney
+install -m 755 target/release/rooney ~/.local/bin/rooney
 ```
 *スタンドアロン実行ファイル出力先: `~/.local/bin/rooney`。*
+
+### 5. 設定の永続化
+
+Rooney は、選択したテーマ、フォント、フォントサイズ、各部独立透明度、ディミング、ローカル AI モデル、Markdown 仕様（GFM / CommonMark）、分割レイアウト、開いているタブのセッション状態を `~/.config/rooney/config.toml` に自動保存します。再起動時にも直前の作業状態がそのまま復元されます。
 
 ---
 
@@ -110,7 +111,7 @@ chmod +x ~/.local/bin/rooney
 | `Ctrl + /` | **行コメントのトグル**（言語別自動判定） |
 | `Ctrl + Shift + K` | **現在行の丸ごと削除** |
 | `Ctrl + D` | **現在行の複製** |
-| `Ctrl + ,` | **Aesthetics 設定**を開く（テーマ、フォント、各部透明度、AIモデル） |
+| `Ctrl + ,` | **Aesthetics 設定**を開く（テーマ、フォント、各部透明度、AIモデル、Markdown仕様: GFM/CommonMark） |
 | `Esc` | 開いているモーダル・検索バー・メニューを閉じる / 補完キャンセル |
 
 ---

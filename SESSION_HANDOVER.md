@@ -331,6 +331,62 @@
   - `cargo test`: 36 件全テスト成功（33 core tests + 3 ollama tests）。
   - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
 
+### セッション 21: Markdown プレビューの GFM 対応および設定画面への仕様切替トグル追加
+- **ユーザー要求**:
+  - Markdownプレビューの既存CommonMark動作を維持しつつ、GFM（GitHub Flavored Markdown）拡張機能（テーブル、タスクリスト、アラート、打ち消し線、自動リンク）を追加。
+  - 設定画面（Aesthetics & Preferences モーダル）から「CommonMark」と「GFM」（推奨デフォルト値）を切り替え可能にし、TOML設定ファイルに永続化。
+  - プレビュー画面上にはトグルボタンを配置せず、設定変更時にプレビューペインを即座に再描画する。
+  - GFM / CommonMark の両仕様において `breaks: false`（単一改行で `<br>` を作らず半角スペースで連結）を厳密に遵守。
+- **実装内容とアーキテクチャ設計**:
+  1. **設定モデルと永続化の拡張 (`src/config.rs`)**:
+     - `MarkdownSpec` enum（`Gfm`, `CommonMark`）を新設。
+     - `AppConfig.markdown_spec`（デフォルト `Gfm`）を追加し、serdeシリアライズ（`"GFM"`, `"CommonMark"` および小文字エイリアス）を実装。
+     - 設定モーダルで選択変更された際に即座に `config.toml` に永続化。
+  2. **ASTブロック拡張とパーサー仕様分岐 (`src/markdown/renderer.rs`, `src/markdown/mod.rs`)**:
+     - `ColumnAlignment`、`TableBlock`、`AlertKind` を新設。
+     - `MarkdownBlock` に `Table(TableBlock)`、`Alert { kind, text }`、`ListItem { depth, text, task_status: Option<bool> }` を追加。
+     - `MarkdownDocument::parse(source: &str, spec: MarkdownSpec)` を実装。
+     - GFMモード: `ENABLE_TABLES | ENABLE_TASKLISTS | ENABLE_STRIKETHROUGH | ENABLE_GFM | ENABLE_FOOTNOTES` を適用。
+     - CommonMarkモード: `Options::empty()` を適用（テーブルやタスクリスト、アラートは標準テキスト・標準引用として処理）。
+     - 打ち消し線（`~~text~~`）はUnicode結合文字（`\u{0336}`）を付与してレンダリング。
+     - GitHubアラート（`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`）を専用Calloutブロックへ解析。
+     - `Event::SoftBreak` は `' '` を挿入し、GFM/CommonMark双方で `breaks: false` を一貫して維持。
+  3. **ペイン・タブへの仕様伝播と即時再描画 (`src/editor/pane.rs`, `src/app/update.rs`, `src/app/mod.rs`)**:
+     - `EditorTab` および `EditorPane` に `markdown_spec` を持たせ、全タブへのカスケード更新および `refresh_markdown()` による即時ゼロ遅延プレビュー再描画を実現。
+  4. **リッチなプレビューUIスタイリング (`src/ui/markdown_view.rs`)**:
+     - テーブル: カラム最大文字幅に応じた動的幅計算、アクセントカラーヘッダー、区切り線、水平スクロールラッパー。
+     - タスクリスト: チェック済み（`󰱒 ` / コメント色）、未完了（`󰄱 ` / 前景色）、通常リスト（`• ` / アクセント色）。
+     - GitHubアラート: 各種別の固有アイコン（`󰋽 Note`, `󰌵 Tip`, `󰅒 Important`, `󰀦 Warning`, `󰳦 Caution`）と左アクセントバー付きコールアウトボックス。
+  5. **設定モーダルへのUI追加 (`src/app/ui/modal.rs`)**:
+     - 外観・設定モーダル（Aesthetics & Preferences）に「Markdown Specification」ドロップダウンを追加。
+  6. **テストと検証**:
+     - `tests/core_tests.rs`: `test_markdown_spec_commonmark_vs_gfm`（テーブル、タスクリスト、アラート、打ち消し線、breaks: false の差異検証）、`test_markdown_spec_config_persistence`（TOML往復シリアライズ・エイリアス検証）を追加。
+     - `cargo test`: 38/38 全テスト通過（35 core tests + 3 ollama tests）。
+     - `cargo clippy --all-targets -- -D warnings`: 警告 0 件。
+     - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
+
+### セッション 22: タイトルバーメニュー・モーダルの背景不透明化とテーマ色同期
+- **ユーザー要求**:
+  - タイトルバーをクリックした際に表示されるメニュー（たとえば Aesthetic をクリックした際の設定メニューや、タイトルバードロップダウン）の背景を透過処理無し（alpha = 1.0）でテーマに沿ったカラーにする。
+- **背景と課題**:
+  - 従来、`render_settings_modal`（Aesthetics & Preferences）および各モーダル（New File, New Folder, Rename, Delete）の `modal_box` はデフォルトの `container(column)` でラップされており背景指定が存在しなかったため、100% 透明（透過）になっていた。そのため、エディタのソースコードや行番号の上に設定文字が直接重なって表示され、視認性が著しく悪化していた。
+  - タイトルバーのドロップダウンメニュー（`File ▾`, `Edit ▾`, `View ▾`, `AI ▾`）およびコンテキストメニューは `Container::Card` を使用しており、Wayland / COSMIC のシステムテーマに依存した透過や色ズレが生じていた。
+- **実装内容とアーキテクチャ設計**:
+  1. **モーダルの不透明化とバックドロップ調和 (`src/app/ui/modal.rs`)**:
+     - `wrap_modal` ヘルパー関数を新設。
+     - モーダルダイアログの `modal_box` 背景を `Color { a: 1.0, ..theme.config.gutter_bg }` に設定し、テーマ境界線 `theme.config.border`（角丸 8px、線幅 1px）を付与して 100% 不透明（透過処理無し）なソリッドサーフェス化。
+     - ダイアログ背面には 60% のダークディミングバックドロップ（`rgba(0, 0, 0, 0.60)`）を配置し、背後のエディタコードを程よく減光してモーダルの視認性と立体感を飛躍的に向上。
+     - 全モーダル（Aesthetics & Preferences, New File, New Folder, Rename, Delete）に適用。
+     - `render_settings_modal` 内の全ラベルテキストに `theme.config.fg` カラーを適用し、不透明背景上でのコントラストと視認性を最大化。
+  2. **タイトルバードロップダウンメニューの不透明化 (`src/app/ui/header.rs`)**:
+     - `render_header_menu` の `menu_box` を `Container::Custom` に切り替え、`Color { a: 1.0, ..theme.config.gutter_bg }` および `theme.config.border`（角丸 6px）を適用。
+  3. **コンテキストメニューの不透明化 (`src/app/ui/context_menu.rs`)**:
+     - エディタおよびファイルツリーの右クリックコンテキストメニューも同様に `Container::Custom` + `gutter_bg`（alpha = 1.0）へ切り替え、全メニュー・ポップオーバーの不透明度とテーマ色を一貫統一。
+- **検証結果**:
+  - `cargo clippy --all-targets -- -D warnings`: 警告 0 件。
+  - `cargo test`: 38/38 全テスト通過（35 core + 3 ollama）。
+  - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
+
 ---
 
 ## 3. ファイル構成と役割
@@ -367,25 +423,25 @@ Rooney/
 │   │   └── highlighter.rs   # Highlighter & classify_node (12+言語のTree-sitter/字句解析エンジン)
 │   ├── markdown/
 │   │   ├── mod.rs
-│   │   └── renderer.rs      # MarkdownDocument (pulldown-cmark によるAST構築)
+│   │   └── renderer.rs      # MarkdownDocument (pulldown-cmark によるAST構築、GFM & CommonMark動的仕様切替、テーブル、タスクリスト、アラート、打ち消し線)
 │   ├── fs/
 │   │   ├── mod.rs
 │   │   └── tree.rs          # FileTree (除外パターン、Nerd Font アイコン、ディレクトリ走査)
 │   ├── ui/
 │   │   ├── mod.rs
 │   │   ├── canvas_editor.rs # EditorCanvas (intern_font_name、検索ハイライト、サブピクセル文字幅、IME)
-│   │   ├── file_tree_view.rs# view_file_tree (サイドバーUI、/// アクションボタン)
-│   │   └── markdown_view.rs # view_markdown (リッチMarkdownプレビューコンテナ)
+│   │   ├── file_tree_view.rs# view_file_tree (サイドバーUI、/// アクションボタン、スクロール位置保持)
+│   │   └── markdown_view.rs # view_markdown (リッチMarkdownプレビュー、水平スクロールテーブル、タスクリスト、GitHubアラート)
 │   ├── theme/
 │   │   ├── mod.rs
-│   │   └── themes.rs        # 20種類の Classic & Neon テーマ定義、アルファ透過・ディミング
+│   │   └── themes.rs        # 20種類の Classic & Neon テーマ定義、ウィンドウ・ツリー・ヘッダー独立アルファ透過・ディミング
 │   ├── font/
 │   │   └── mod.rs           # FontManager (fontconfig によるシステムNerd Font検出とサイズ管理)
 │   └── ai/
 │       ├── mod.rs           # ChatMessage, ChatRole, ChatStreamEvent 再エクスポート
 │       └── ollama.rs        # OllamaClient (FIM補完、chat_generate_stream ストリーミング、モデル自動検出)
 └── tests/
-    ├── core_tests.rs        # 31件のユニットテスト (セッション復元、タブ同期、AIストリーミング蓄積、構文、検索、アイコン等)
+    ├── core_tests.rs        # 35件のユニットテスト (Markdown仕様比較、設定永続化、セッション復元、タブ同期、構文、検索等)
     └── ollama_tests.rs      # 3件の統合テスト (Ollama 接続性、FIM生成、チャットストリーミング実走テスト)
 ```
 
@@ -420,12 +476,12 @@ Rooney/
 | `Ctrl + Y` または `Ctrl + Shift + Z` | やり直す (Redo) |
 | マウス左ドラッグ | テキスト範囲選択（ビジュアルハイライト） |
 | エディタ上マウス右クリック | エディタコンテキストメニュー表示（Copy, Cut, Paste, Select All, Undo, Redo） |
-| ファイルツリー上マウス右クリック | ファイル/ディレクトリ/ルートのコンテキストメニュー表示（New File, New Folder, Rename, Delete, Refresh） |
+| ファイルツリー上マウス右クリック | ファイル/ディレクトリ/ルートのコンテキストメニュー表示（New File, New Folder, Rename, Delete, Refresh / 画面外見切れ防止クランプ） |
 | ヘッダー `󰈔 File ▾` | ファイルメニュー展開（新規、開く、フォルダ、保存、閉じる） |
 | ヘッダー `󰧑 Edit ▾` | 編集メニュー展開（Undo, Redo, Cut, Copy, Paste, Select All, コメント, 削除, 複製） |
 | ヘッダー `󰈈 View ▾` | 表示メニュー展開（Split/Single、ファイルツリー、Markdownプレビュー） |
 | ヘッダー `󰚩 AI ▾` | AIメニュー展開（チャットパネル、選択添付、ファイル添付、FIM補完） |
-| ヘッダー `󰒓 Aesthetics` | 外観設定モーダル表示（テーマ、フォント、フォントサイズ、透過度、AIモデル） |
+| ヘッダー `󰒓 Aesthetics` | 外観・仕様設定モーダル表示（テーマ、フォント、フォントサイズ、各部独立透過度、AIモデル、Markdown仕様: GFM/CommonMark） |
 | チャット `󰓛 Stop` | AIコード生成の即時中断・ストリーミング停止 |
 | テンキー `0`〜`9` / 記号 (`+`, `-`, `*`, `/`, `.`, `,`, `=`) | 数字および四則演算子記号の直接入力（英字/IME両モード完全対応） |
 | テンキー `Enter` | 改行の挿入 / 新規ファイル作成モーダルの確定 |
@@ -433,7 +489,7 @@ Rooney/
 | `Esc` | 検索バー終了 / AI補完破棄 / モーダル終了 / コンテキストメニュー終了 / メニュー閉じる / 選択解除 |
 | `Ctrl + B` | ファイルツリーサイドバーの表示/非表示トグル |
 | `Ctrl + \` または `Ctrl + E` | 左右2分割（Split / Single）レイアウト切り替え |
-| `Ctrl + M` | Markdownプレビューの切り替え |
+| `Ctrl + M` | Markdownプレビューの切り替え（GFM / CommonMark動的仕様切替対応） |
 | `Ctrl + I` または `Alt + Enter` | Local AI FIM 補完の手動トリガー（`Ctrl + Space` は IME 専用に解放） |
 
 ---
@@ -441,8 +497,11 @@ Rooney/
 ## 5. 現在のビルドおよびテスト状態
 
 - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings** (完全クリーン)
-- `cargo test`: **35/35 passed (0 failed)**
-  - `test_independent_opacity_settings` ... ok (新規追加: 独立透過度と設定永続化互換性)
+- `cargo test`: **38/38 全テスト通過 (0 failed)**
+  - `test_markdown_spec_commonmark_vs_gfm` ... ok (新規追加: GFM vs CommonMarkの仕様完全比較)
+  - `test_markdown_spec_config_persistence` ... ok (新規追加: MarkdownSpec TOML往復永続化・エイリアス検証)
+  - `test_context_menu_boundary_clamping` ... ok
+  - `test_independent_opacity_settings` ... ok
   - `test_rooney_icon_integration` ... ok
   - `test_filename_sanitization_and_path_traversal_guards` ... ok
   - `test_sensitive_file_ai_protection` ... ok

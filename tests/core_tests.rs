@@ -71,7 +71,7 @@ fn test_theme_system_20_themes() {
 #[test]
 fn test_markdown_parsing() {
     let md = "# Title 1\n\nThis is a paragraph.\n\n- Item 1\n- Item 2\n\n```rust\nfn test() {}\n```";
-    let doc = MarkdownDocument::parse(md);
+    let doc = MarkdownDocument::parse(md, rooney::config::MarkdownSpec::Gfm);
 
     assert!(!doc.blocks.is_empty());
     let has_heading = doc.blocks.iter().any(|b| match b {
@@ -79,6 +79,114 @@ fn test_markdown_parsing() {
         _ => false,
     });
     assert!(has_heading, "Heading 1 parsed properly");
+}
+
+#[test]
+fn test_markdown_spec_commonmark_vs_gfm() {
+    use rooney::config::MarkdownSpec;
+    use rooney::markdown::renderer::{AlertKind, MarkdownBlock};
+
+    // 1. Tables
+    let table_md = "| Col 1 | Col 2 |\n| :--- | ---: |\n| Val A | Val B |";
+    let doc_gfm = MarkdownDocument::parse(table_md, MarkdownSpec::Gfm);
+    let doc_cm = MarkdownDocument::parse(table_md, MarkdownSpec::CommonMark);
+
+    let gfm_has_table = doc_gfm.blocks.iter().any(|b| matches!(b, MarkdownBlock::Table(_)));
+    assert!(gfm_has_table, "GFM must parse table into Table block");
+
+    let cm_has_table = doc_cm.blocks.iter().any(|b| matches!(b, MarkdownBlock::Table(_)));
+    assert!(!cm_has_table, "CommonMark must NOT parse table into Table block");
+
+    // 2. Task Lists
+    let task_md = "- [ ] Todo item\n- [x] Done item";
+    let doc_gfm_tasks = MarkdownDocument::parse(task_md, MarkdownSpec::Gfm);
+    let doc_cm_tasks = MarkdownDocument::parse(task_md, MarkdownSpec::CommonMark);
+
+    let gfm_task_statuses: Vec<Option<bool>> = doc_gfm_tasks
+        .blocks
+        .iter()
+        .filter_map(|b| match b {
+            MarkdownBlock::ListItem { task_status, .. } => Some(*task_status),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(gfm_task_statuses, vec![Some(false), Some(true)]);
+
+    let cm_task_statuses: Vec<Option<bool>> = doc_cm_tasks
+        .blocks
+        .iter()
+        .filter_map(|b| match b {
+            MarkdownBlock::ListItem { task_status, .. } => Some(*task_status),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(cm_task_statuses, vec![None, None]);
+
+    // 3. GitHub Alerts
+    let alert_md = "> [!NOTE]\n> This is an alert callout.";
+    let doc_gfm_alert = MarkdownDocument::parse(alert_md, MarkdownSpec::Gfm);
+    let doc_cm_alert = MarkdownDocument::parse(alert_md, MarkdownSpec::CommonMark);
+
+    let gfm_has_alert = doc_gfm_alert.blocks.iter().any(|b| matches!(b, MarkdownBlock::Alert { kind: AlertKind::Note, .. }));
+    assert!(gfm_has_alert, "GFM should parse [!NOTE] as Alert");
+
+    let cm_has_alert = doc_cm_alert.blocks.iter().any(|b| matches!(b, MarkdownBlock::Alert { .. }));
+    assert!(!cm_has_alert, "CommonMark should treat [!NOTE] as standard BlockQuote");
+
+    // 4. Strikethrough
+    let strike_md = "This is ~~deleted~~ text.";
+    let doc_gfm_strike = MarkdownDocument::parse(strike_md, MarkdownSpec::Gfm);
+    let doc_cm_strike = MarkdownDocument::parse(strike_md, MarkdownSpec::CommonMark);
+
+    let gfm_strike_text = doc_gfm_strike.blocks.iter().find_map(|b| match b {
+        MarkdownBlock::Paragraph(t) => Some(t.clone()),
+        _ => None,
+    }).unwrap_or_default();
+    assert!(gfm_strike_text.contains('\u{0336}'), "GFM renders strikethrough with combining strike marks");
+    assert!(!gfm_strike_text.contains("~~"), "GFM strips ~~ delimiter");
+
+    let cm_strike_text = doc_cm_strike.blocks.iter().find_map(|b| match b {
+        MarkdownBlock::Paragraph(t) => Some(t.clone()),
+        _ => None,
+    }).unwrap_or_default();
+    assert_eq!(cm_strike_text, "This is ~~deleted~~ text.");
+
+    // 5. breaks: false (soft line breaks do not form <br>)
+    let break_md = "First line\nSecond line";
+    let doc_gfm_break = MarkdownDocument::parse(break_md, MarkdownSpec::Gfm);
+    let doc_cm_break = MarkdownDocument::parse(break_md, MarkdownSpec::CommonMark);
+
+    let gfm_break_text = doc_gfm_break.blocks.iter().find_map(|b| match b {
+        MarkdownBlock::Paragraph(t) => Some(t.clone()),
+        _ => None,
+    }).unwrap_or_default();
+    let cm_break_text = doc_cm_break.blocks.iter().find_map(|b| match b {
+        MarkdownBlock::Paragraph(t) => Some(t.clone()),
+        _ => None,
+    }).unwrap_or_default();
+
+    assert_eq!(gfm_break_text, "First line Second line");
+    assert_eq!(cm_break_text, "First line Second line");
+}
+
+#[test]
+fn test_markdown_spec_config_persistence() {
+    use rooney::config::{AppConfig, MarkdownSpec};
+
+    let default_config = AppConfig::default();
+    assert_eq!(default_config.markdown_spec, MarkdownSpec::Gfm);
+
+    let toml_str = toml::to_string(&default_config).expect("Must serialize AppConfig");
+    assert!(toml_str.contains("markdown_spec = \"GFM\""));
+
+    let cm_toml = toml_str.replace("markdown_spec = \"GFM\"", "markdown_spec = \"CommonMark\"");
+    let restored: AppConfig = toml::from_str(&cm_toml).expect("Must deserialize AppConfig");
+    assert_eq!(restored.markdown_spec, MarkdownSpec::CommonMark);
+
+    // Test lowercase alias deserialization
+    let alias_toml = toml_str.replace("markdown_spec = \"GFM\"", "markdown_spec = \"common_mark\"");
+    let restored_alias: AppConfig = toml::from_str(&alias_toml).expect("Must deserialize AppConfig alias");
+    assert_eq!(restored_alias.markdown_spec, MarkdownSpec::CommonMark);
 }
 
 #[test]

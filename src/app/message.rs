@@ -26,6 +26,7 @@ pub enum Message {
     ToggleMarkdownPreview,
     SelectTheme(usize),
     SelectFont(usize),
+    SelectMarkdownSpec(usize),
     IncreaseFontSize,
     DecreaseFontSize,
     ToggleAi,

@@ -28,14 +28,14 @@
 
 ## 💡 Highlights
 
-- ⚡ **COSMIC & Wayland-Native Core**: Pure Rust `libcosmic` desktop integration with client-side decorations, seamless dark/light theme integration, and 0ms instant startup without heavy child processes or LSP daemon overhead.
+- ⚡ **COSMIC & Wayland-Native Core**: Pure Rust `libcosmic` desktop integration with custom matte icon, Wayland client-side decorations, seamless dark/light theme integration, and 0ms instant startup without heavy child processes or LSP daemon overhead.
 - 🤖 **100% Local AI Intelligence**: Real-time Fill-in-the-Middle (FIM) ghost suggestions (`Ctrl + I` / `Alt + Enter`), streaming token-by-token interactive chat panel (`Ctrl + Shift + A`) with cancellation and model switching powered completely offline by Ollama.
 - 📜 **High-Performance Piece-Tree Rope**: Powered by `ropey`, handling large files with zero copy lag and instantaneous buffer operations.
 - 🌳 **In-Process Tree-sitter Highlighting**: AST-based syntax highlighting for 12+ languages (Rust, Python, JS, TS, C, C++, Bash, Fish, JSON, TOML, YAML, Markdown) with zero external daemon overhead.
-- 🪟 **Dual-Pane Split Editing & Live Markdown Preview**: Side-by-side editing (`Ctrl + \`), independent multi-tabs, synchronized editing, and live GFM Markdown preview (`Ctrl + M`).
+- 🪟 **Dual-Pane Split Editing & Live Markdown Preview**: Side-by-side editing (`Ctrl + \`), independent multi-tabs, synchronized editing, and live Markdown preview (`Ctrl + M`) with dynamic specification switching between **GFM** (GitHub Flavored Markdown: tables, task lists, alerts, strikethrough, autolinks, `breaks: false`) and standard **CommonMark**.
 - 🇯🇵 **Pixel-Perfect Japanese IME Support**: Full Wayland text-input protocol support (Fcitx5 / Mozc / IBus), live pre-edit underline preview, and sub-pixel advance calculations preventing cursor drift.
-- 📂 **Rich File Tree Explorer**: Real-time workspace navigation, Nerd Font file icons, right-click context menu (New File, New Folder, Rename, Safe Delete), and XDG Desktop Portal integration.
-- 🎨 **20 Premium Classic & Neon Themes**: Tokyo Night, Catppuccin, Gruvbox, Synthwave '84, Cyberpunk Neon, and more, with independent opacity controls for editor window, file tree, and title bar, plus background dimming unified in the `󰒓 Aesthetics` modal.
+- 📂 **Rich File Tree Explorer**: Real-time workspace navigation, Nerd Font file icons, right-click context menu (New File, New Folder, Rename, Safe Delete) with scroll position retention and smart screen-boundary clamping, and XDG Desktop Portal integration.
+- 🎨 **20 Premium Classic & Neon Themes**: Tokyo Night, Catppuccin, Gruvbox, Synthwave '84, Cyberpunk Neon, and more, with independent opacity controls for editor window, file tree, and title bar, plus background dimming unified in the `󰒓 Aesthetics & Preferences` modal.
 - 🔒 **Ironclad Local Security**: Atomic file replacement (`.{file}.tmp.{pid}`), 50MB file size limits, path traversal sanitization, and automatic AI shielding for sensitive files (`.env*`, `id_rsa`, `*.pem`).
 
 ---
@@ -78,14 +78,15 @@ cargo run
 ### 4. Production Build & Installation
 
 ```bash
-# Build optimized release binary
+# Build optimized release binary and install to user path
 cargo build --release
-
-# Install binary to user path
-cp target/release/rooney ~/.local/bin/rooney
-chmod +x ~/.local/bin/rooney
+install -m 755 target/release/rooney ~/.local/bin/rooney
 ```
-*Standalone binary output: `~/.local/bin/rooney`.*
+*Standalone binary installed to: `~/.local/bin/rooney`.*
+
+### 5. Persistent Configuration
+
+Rooney automatically preserves all settings—theme, font, font size, independent opacities, dimming, local AI model, Markdown specification, and multi-tab session state—in `~/.config/rooney/config.toml`. Your editing environment is instantly restored every time you launch.
 
 ---
 
@@ -110,7 +111,7 @@ chmod +x ~/.local/bin/rooney
 | `Ctrl + /` | Toggle **Line Comment** (language-aware) |
 | `Ctrl + Shift + K` | **Delete Current Line** |
 | `Ctrl + D` | **Duplicate Current Line** |
-| `Ctrl + ,` | Open **Aesthetics Preferences** (Theme, Font, Size, Opacities, AI) |
+| `Ctrl + ,` | Open **Aesthetics Preferences** (Theme, Font, Size, Opacities, Local AI, Markdown Spec: GFM/CommonMark) |
 | `Esc` | Close active modal, search bar, dropdown, or cancel completion |
 
 ---

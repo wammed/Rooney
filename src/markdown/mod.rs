@@ -1,3 +1,4 @@
 pub mod renderer;
 
-pub use renderer::MarkdownDocument;
+pub use crate::config::MarkdownSpec;
+pub use renderer::{MarkdownBlock, MarkdownDocument};

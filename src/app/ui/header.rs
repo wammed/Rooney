@@ -196,8 +196,22 @@ impl App {
             }
         }
 
+        let menu_bg = cosmic::iced::Color {
+            a: 1.0,
+            ..theme.config.gutter_bg
+        };
+        let menu_border = theme.config.border;
+
         let menu_box = container(menu_items)
-            .class(cosmic::theme::Container::Card)
+            .class(cosmic::theme::Container::Custom(Box::new(move |_| {
+                container::Style {
+                    background: Some(menu_bg.into()),
+                    border: cosmic::iced::border::rounded(6)
+                        .color(menu_border)
+                        .width(1.0),
+                    ..Default::default()
+                }
+            })))
             .padding(4)
             .width(Length::Fixed(menu_w));
 

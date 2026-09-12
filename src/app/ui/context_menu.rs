@@ -65,8 +65,22 @@ impl App {
             .push(make_item("󰑎", "Redo", "Ctrl+Y", Message::Redo))
             .push(make_item("✕", "Close", "Esc", Message::CloseContextMenu));
 
+        let menu_bg = cosmic::iced::Color {
+            a: 1.0,
+            ..theme.config.gutter_bg
+        };
+        let menu_border = theme.config.border;
+
         let context_menu_box = container(menu_items)
-            .class(cosmic::theme::Container::Card)
+            .class(cosmic::theme::Container::Custom(Box::new(move |_| {
+                container::Style {
+                    background: Some(menu_bg.into()),
+                    border: cosmic::iced::border::rounded(6)
+                        .color(menu_border)
+                        .width(1.0),
+                    ..Default::default()
+                }
+            })))
             .padding(4)
             .width(Length::Fixed(menu_w));
 
@@ -227,8 +241,22 @@ impl App {
             Message::CloseFileTreeContextMenu,
         ));
 
+        let menu_bg = cosmic::iced::Color {
+            a: 1.0,
+            ..theme.config.gutter_bg
+        };
+        let menu_border = theme.config.border;
+
         let context_menu_box = container(menu_items)
-            .class(cosmic::theme::Container::Card)
+            .class(cosmic::theme::Container::Custom(Box::new(move |_| {
+                container::Style {
+                    background: Some(menu_bg.into()),
+                    border: cosmic::iced::border::rounded(6)
+                        .color(menu_border)
+                        .width(1.0),
+                    ..Default::default()
+                }
+            })))
             .padding(4)
             .width(Length::Fixed(menu_w));
 

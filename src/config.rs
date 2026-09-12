@@ -24,6 +24,26 @@ pub struct SessionConfig {
     pub right_pane: Option<PaneSessionInfo>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum MarkdownSpec {
+    #[default]
+    #[serde(rename = "GFM", alias = "gfm")]
+    Gfm,
+    #[serde(rename = "CommonMark", alias = "common_mark", alias = "commonmark")]
+    CommonMark,
+}
+
+impl MarkdownSpec {
+    pub const ALL: &'static [MarkdownSpec] = &[MarkdownSpec::Gfm, MarkdownSpec::CommonMark];
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::Gfm => "GFM (GitHub Flavored)",
+            Self::CommonMark => "CommonMark (Standard)",
+        }
+    }
+}
+
 fn default_opacity_val() -> f32 {
     1.0
 }
@@ -46,6 +66,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub ai_chat_visible: bool,
     #[serde(default)]
+    pub markdown_spec: MarkdownSpec,
+    #[serde(default)]
     pub session: SessionConfig,
 }
 
@@ -64,6 +86,7 @@ impl Default for AppConfig {
             ai_enabled: true,
             ai_model: "deepseek-coder-v2:16b".to_string(),
             ai_chat_visible: false,
+            markdown_spec: MarkdownSpec::Gfm,
             session: SessionConfig::default(),
         }
     }

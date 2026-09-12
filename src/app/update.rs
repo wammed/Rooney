@@ -194,8 +194,9 @@ impl App {
                 target_pane.is_markdown_preview = !target_pane.is_markdown_preview;
                 if target_pane.is_markdown_preview && target_pane.markdown_doc.is_none() {
                     let text = target_pane.buffer.full_text();
+                    let spec = target_pane.markdown_spec;
                     target_pane.markdown_doc =
-                        Some(crate::markdown::MarkdownDocument::parse(&text));
+                        Some(crate::markdown::MarkdownDocument::parse(&text, spec));
                 }
                 Task::none()
             }
@@ -303,8 +304,22 @@ impl App {
                 pane.is_markdown_preview = !pane.is_markdown_preview;
                 if pane.is_markdown_preview && pane.markdown_doc.is_none() {
                     let text = pane.buffer.full_text();
-                    pane.markdown_doc = Some(crate::markdown::MarkdownDocument::parse(&text));
+                    let spec = pane.markdown_spec;
+                    pane.markdown_doc = Some(crate::markdown::MarkdownDocument::parse(&text, spec));
                 }
+                Task::none()
+            }
+
+            Message::SelectMarkdownSpec(index) => {
+                let spec = match index {
+                    0 => crate::config::MarkdownSpec::Gfm,
+                    _ => crate::config::MarkdownSpec::CommonMark,
+                };
+                self.config.markdown_spec = spec;
+                self.left_pane.set_markdown_spec(spec);
+                self.right_pane.set_markdown_spec(spec);
+                self.status_msg = Some(format!("Markdown Spec: {}", spec.display_name()));
+                self.save_config();
                 Task::none()
             }
 
