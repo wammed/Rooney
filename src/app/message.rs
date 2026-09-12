@@ -23,6 +23,7 @@ pub enum Message {
     ClickPane(PaneId, usize, usize),
     DragSelect(PaneId, usize, usize),
     ScrollPane(PaneId, f32),
+    SetScrollY(PaneId, f32),
     TogglePaneMode(PaneId),
     ToggleMarkdownPreview,
     SelectTheme(usize),

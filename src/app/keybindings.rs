@@ -405,6 +405,7 @@ impl App {
                     }
                     pane.clear_ghost_text();
                     pane.buffer.move_word_left(shift);
+                    pane.mark_cursor_moved();
                     return Task::none();
                 }
                 if modifiers.control()
@@ -416,6 +417,7 @@ impl App {
                     }
                     pane.clear_ghost_text();
                     pane.buffer.move_word_right(shift);
+                    pane.mark_cursor_moved();
                     return Task::none();
                 }
 
@@ -427,6 +429,7 @@ impl App {
                     }
                     pane.clear_ghost_text();
                     pane.buffer.move_left(shift);
+                    pane.mark_cursor_moved();
                     return Task::none();
                 }
                 if matches!(&key, Key::Named(keyboard::key::Named::ArrowRight)) {
@@ -436,6 +439,7 @@ impl App {
                     }
                     pane.clear_ghost_text();
                     pane.buffer.move_right(shift);
+                    pane.mark_cursor_moved();
                     return Task::none();
                 }
                 if matches!(&key, Key::Named(keyboard::key::Named::ArrowUp)) {
@@ -445,6 +449,7 @@ impl App {
                     }
                     pane.clear_ghost_text();
                     pane.buffer.move_up(shift);
+                    pane.mark_cursor_moved();
                     return Task::none();
                 }
                 if matches!(&key, Key::Named(keyboard::key::Named::ArrowDown)) {
@@ -454,6 +459,7 @@ impl App {
                     }
                     pane.clear_ghost_text();
                     pane.buffer.move_down(shift);
+                    pane.mark_cursor_moved();
                     return Task::none();
                 }
                 if matches!(&key, Key::Named(keyboard::key::Named::Home)) {
@@ -463,6 +469,7 @@ impl App {
                     }
                     pane.clear_ghost_text();
                     pane.buffer.move_line_start(shift);
+                    pane.mark_cursor_moved();
                     return Task::none();
                 }
                 if matches!(&key, Key::Named(keyboard::key::Named::End)) {
@@ -472,6 +479,7 @@ impl App {
                     }
                     pane.clear_ghost_text();
                     pane.buffer.move_line_end(shift);
+                    pane.mark_cursor_moved();
                     return Task::none();
                 }
                 if matches!(&key, Key::Named(keyboard::key::Named::PageUp)) {
@@ -483,6 +491,7 @@ impl App {
                     for _ in 0..20 {
                         pane.buffer.move_up(shift);
                     }
+                    pane.mark_cursor_moved();
                     return Task::none();
                 }
                 if matches!(&key, Key::Named(keyboard::key::Named::PageDown)) {
@@ -494,6 +503,7 @@ impl App {
                     for _ in 0..20 {
                         pane.buffer.move_down(shift);
                     }
+                    pane.mark_cursor_moved();
                     return Task::none();
                 }
 

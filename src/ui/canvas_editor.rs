@@ -33,6 +33,8 @@ fn intern_font_name(name: &str) -> &'static str {
 #[derive(Default)]
 pub struct CanvasState {
     pub is_dragging: bool,
+    pub is_dragging_scrollbar: bool,
+    pub scrollbar_drag_offset_y: f32,
 }
 
 pub struct EditorCanvas<'a> {
@@ -150,7 +152,7 @@ impl<'a> EditorCanvas<'a> {
 
         for (v_idx, row) in visual_rows.iter().enumerate() {
             if row.line_idx == cursor.0 && cursor.1 >= row.char_start && cursor.1 <= row.char_end {
-                let y = (v_idx as f32) * self.line_height - self.pane.scroll_y;
+                let y = (v_idx as f32) * self.line_height - self.pane.scroll_y.get();
                 let line_text = self.pane.buffer.line_text(cursor.0).unwrap_or_default();
                 let chars: Vec<char> = line_text.chars().collect();
 
@@ -159,7 +161,7 @@ impl<'a> EditorCanvas<'a> {
                     pixel_offset += Self::char_advance(ch, self.font_size);
                 }
 
-                let x = gutter + 10.0 + pixel_offset - self.pane.scroll_x;
+                let x = gutter + 10.0 + pixel_offset - self.pane.scroll_x.get();
                 return Some(Point::new(x, y));
             }
         }
@@ -170,13 +172,13 @@ impl<'a> EditorCanvas<'a> {
         let gutter = self.gutter_width();
         let visual_rows = self.build_visual_rows(bounds.width);
 
-        let clicked_v_idx = ((pos.y + self.pane.scroll_y) / self.line_height).floor() as isize;
+        let clicked_v_idx = ((pos.y + self.pane.scroll_y.get()) / self.line_height).floor() as isize;
         let clicked_v_idx = clicked_v_idx.max(0) as usize;
 
         if let Some(row) = visual_rows.get(clicked_v_idx) {
             let line_text = self.pane.buffer.line_text(row.line_idx).unwrap_or_default();
             let chars: Vec<char> = line_text.chars().collect();
-            let rel_x = (pos.x - gutter - 10.0 + self.pane.scroll_x).max(0.0);
+            let rel_x = (pos.x - gutter - 10.0 + self.pane.scroll_x.get()).max(0.0);
 
             let mut acc_width = 0.0;
             let mut chosen_col = row.char_start;
@@ -239,11 +241,38 @@ impl<'a> EditorCanvas<'a> {
 
         // 3. Build soft-wrapped visual rows
         let visual_rows = self.build_visual_rows(bounds.width);
+        let total_content_height = (visual_rows.len() as f32) * self.line_height;
+        let max_scroll = (total_content_height - bounds.height).max(0.0);
+
+        // 3.1 Auto-scrolling to keep cursor visible if requested
+        if self.pane.needs_scroll_to_cursor.get() {
+            let cursor = buffer.cursor;
+            if let Some((cursor_v_idx, _)) = visual_rows.iter().enumerate().find(|(_, r)| {
+                r.line_idx == cursor.0 && cursor.1 >= r.char_start && cursor.1 <= r.char_end
+            }) {
+                let cursor_top = (cursor_v_idx as f32) * self.line_height;
+                let cursor_bottom = cursor_top + self.line_height;
+                let margin = (2.0 * self.line_height).min(bounds.height * 0.25).max(0.0);
+
+                let mut scroll = self.pane.scroll_y.get();
+                if cursor_top < scroll + margin {
+                    scroll = (cursor_top - margin).max(0.0);
+                } else if cursor_bottom > scroll + bounds.height - margin {
+                    scroll = (cursor_bottom + margin - bounds.height).max(0.0);
+                }
+                self.pane.scroll_y.set(scroll.clamp(0.0, max_scroll));
+            }
+            self.pane.needs_scroll_to_cursor.set(false);
+        }
+
+        let cur_scroll_y = self.pane.scroll_y.get().clamp(0.0, max_scroll);
+        self.pane.scroll_y.set(cur_scroll_y);
+        let cur_scroll_x = self.pane.scroll_x.get();
 
         // 4. Current Line highlight
         for (v_idx, row) in visual_rows.iter().enumerate() {
             if row.line_idx == buffer.cursor.0 {
-                let y = (v_idx as f32) * self.line_height - self.pane.scroll_y;
+                let y = (v_idx as f32) * self.line_height - cur_scroll_y;
                 if y + self.line_height >= 0.0 && y <= bounds.height {
                     let cur_line_rect = Rectangle {
                         x: gutter,
@@ -270,7 +299,7 @@ impl<'a> EditorCanvas<'a> {
                 };
 
                 for (v_idx, row) in visual_rows.iter().enumerate() {
-                    let y = (v_idx as f32) * self.line_height - self.pane.scroll_y;
+                    let y = (v_idx as f32) * self.line_height - cur_scroll_y;
                     if y + self.line_height < 0.0 || y > bounds.height {
                         continue;
                     }
@@ -303,7 +332,7 @@ impl<'a> EditorCanvas<'a> {
                             }
 
                             let sel_rect = Rectangle {
-                                x: gutter + 10.0 + start_x_offset - self.pane.scroll_x,
+                                x: gutter + 10.0 + start_x_offset - cur_scroll_x,
                                 y,
                                 width: sel_w.max(4.0),
                                 height: self.line_height,
@@ -323,7 +352,7 @@ impl<'a> EditorCanvas<'a> {
         if !self.pane.search_matches.is_empty() {
             for (match_idx, &(m_line, m_start, m_end)) in self.pane.search_matches.iter().enumerate() {
                 for (v_idx, row) in visual_rows.iter().enumerate() {
-                    let y = (v_idx as f32) * self.line_height - self.pane.scroll_y;
+                    let y = (v_idx as f32) * self.line_height - cur_scroll_y;
                     if y + self.line_height < 0.0 || y > bounds.height {
                         continue;
                     }
@@ -348,7 +377,7 @@ impl<'a> EditorCanvas<'a> {
 
                             let is_current = match_idx == self.pane.current_match_idx;
                             let match_rect = Rectangle {
-                                x: gutter + 10.0 + x_offset - self.pane.scroll_x,
+                                x: gutter + 10.0 + x_offset - cur_scroll_x,
                                 y,
                                 width: match_w.max(4.0),
                                 height: self.line_height,
@@ -375,7 +404,7 @@ impl<'a> EditorCanvas<'a> {
 
         // 5. Draw lines (Gutter and soft-wrapped text)
         for (v_idx, row) in visual_rows.iter().enumerate() {
-            let y = (v_idx as f32) * self.line_height - self.pane.scroll_y;
+            let y = (v_idx as f32) * self.line_height - cur_scroll_y;
 
             // Vertical clipping: only render rows inside visible window
             if y + self.line_height < 0.0 {
@@ -412,7 +441,7 @@ impl<'a> EditorCanvas<'a> {
                     let spans = self.pane.highlighter.highlight_line(&line_text, row.line_idx);
 
                     let mut cur_col = row.char_start;
-                    let mut cur_pixel_x = gutter + 10.0 - self.pane.scroll_x;
+                    let mut cur_pixel_x = gutter + 10.0 - cur_scroll_x;
 
                     while cur_col < sub_end {
                         let span = spans.iter().find(|s| s.start_col <= cur_col && cur_col < s.end_col);
@@ -546,6 +575,61 @@ impl<'a> EditorCanvas<'a> {
             );
         }
 
+        // 10. Right-edge Scrollbar
+        if total_content_height > bounds.height {
+            let scrollbar_width = 12.0;
+            let track_rect = Rectangle {
+                x: bounds.width - scrollbar_width,
+                y: 0.0,
+                width: scrollbar_width,
+                height: bounds.height,
+            };
+            frame.fill_rectangle(
+                track_rect.position(),
+                track_rect.size(),
+                Color::from_rgba(0.0, 0.0, 0.0, 0.15),
+            );
+            frame.stroke(
+                &Path::line(
+                    Point::new(bounds.width - scrollbar_width, 0.0),
+                    Point::new(bounds.width - scrollbar_width, bounds.height),
+                ),
+                Stroke::default()
+                    .with_color(self.theme.config.border)
+                    .with_width(1.0),
+            );
+
+            let thumb_height = ((bounds.height / total_content_height) * bounds.height)
+                .max(28.0)
+                .min(bounds.height);
+            let max_thumb_y = (bounds.height - thumb_height).max(0.0);
+            let thumb_y = if max_scroll > 0.0 {
+                (cur_scroll_y / max_scroll) * max_thumb_y
+            } else {
+                0.0
+            };
+            let thumb_color = if self.is_focused {
+                let mut c = self.theme.config.accent;
+                c.a = 0.75;
+                c
+            } else {
+                let mut c = self.theme.config.border;
+                c.a = 0.6;
+                c
+            };
+            let thumb_rect = Rectangle {
+                x: bounds.width - scrollbar_width + 2.0,
+                y: thumb_y,
+                width: scrollbar_width - 4.0,
+                height: thumb_height,
+            };
+            frame.fill_rectangle(
+                thumb_rect.position(),
+                thumb_rect.size(),
+                thumb_color,
+            );
+        }
+
         vec![frame.into_geometry()]
     }
 }
@@ -578,14 +662,25 @@ impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
 
     fn mouse_interaction(
         &self,
-        _tree: &Tree,
+        tree: &Tree,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         _viewport: &Rectangle,
         _renderer: &cosmic::Renderer,
     ) -> mouse::Interaction {
-        if cursor.is_over(layout.bounds()) {
-            mouse::Interaction::Text
+        let state = tree.state.downcast_ref::<CanvasState>();
+        let bounds = layout.bounds();
+
+        if state.is_dragging_scrollbar {
+            return mouse::Interaction::Pointer;
+        }
+
+        if let Some(pos) = cursor.position_in(bounds) {
+            if pos.x >= bounds.width - 14.0 {
+                mouse::Interaction::Pointer
+            } else {
+                mouse::Interaction::Text
+            }
         } else {
             mouse::Interaction::None
         }
@@ -638,21 +733,80 @@ impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if let Some(pos) = cursor.position_in(bounds) {
-                    state.is_dragging = true;
-                    let (target_line, target_col) = self.pos_to_char_coords(pos, bounds);
-                    shell.publish(Message::ClickPane(
-                        self.pane.id,
-                        target_line,
-                        target_col,
-                    ));
-                    shell.capture_event();
+                    let visual_rows = self.build_visual_rows(bounds.width);
+                    let total_content_height = (visual_rows.len() as f32) * self.line_height;
+                    let max_scroll = (total_content_height - bounds.height).max(0.0);
+
+                    if total_content_height > bounds.height && pos.x >= bounds.width - 14.0 {
+                        let thumb_height = ((bounds.height / total_content_height) * bounds.height)
+                            .max(28.0)
+                            .min(bounds.height);
+                        let max_thumb_y = (bounds.height - thumb_height).max(0.0);
+                        let cur_scroll_y = self.pane.scroll_y.get().clamp(0.0, max_scroll);
+                        let thumb_y = if max_scroll > 0.0 {
+                            (cur_scroll_y / max_scroll) * max_thumb_y
+                        } else {
+                            0.0
+                        };
+
+                        state.is_dragging_scrollbar = true;
+                        if pos.y >= thumb_y && pos.y <= thumb_y + thumb_height {
+                            state.scrollbar_drag_offset_y = pos.y - thumb_y;
+                        } else {
+                            state.scrollbar_drag_offset_y = thumb_height / 2.0;
+                            let target_thumb_y = (pos.y - thumb_height / 2.0).clamp(0.0, max_thumb_y);
+                            let new_scroll_y = if max_thumb_y > 0.0 {
+                                (target_thumb_y / max_thumb_y) * max_scroll
+                            } else {
+                                0.0
+                            };
+                            shell.publish(Message::SetScrollY(self.pane.id, new_scroll_y));
+                        }
+                        shell.capture_event();
+                    } else {
+                        state.is_dragging = true;
+                        let (target_line, target_col) = self.pos_to_char_coords(pos, bounds);
+                        shell.publish(Message::ClickPane(
+                            self.pane.id,
+                            target_line,
+                            target_col,
+                        ));
+                        shell.capture_event();
+                    }
                 }
             }
 
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
-                if state.is_dragging {
+                if state.is_dragging_scrollbar {
+                    if let Some(global_pos) = cursor.position() {
+                        let rel_y = global_pos.y - bounds.y;
+                        let visual_rows = self.build_visual_rows(bounds.width);
+                        let total_content_height = (visual_rows.len() as f32) * self.line_height;
+                        let max_scroll = (total_content_height - bounds.height).max(0.0);
+                        if total_content_height > bounds.height && max_scroll > 0.0 {
+                            let thumb_height = ((bounds.height / total_content_height) * bounds.height)
+                                .max(28.0)
+                                .min(bounds.height);
+                            let max_thumb_y = (bounds.height - thumb_height).max(0.0);
+                            let target_thumb_y = (rel_y - state.scrollbar_drag_offset_y).clamp(0.0, max_thumb_y);
+                            let new_scroll_y = if max_thumb_y > 0.0 {
+                                (target_thumb_y / max_thumb_y) * max_scroll
+                            } else {
+                                0.0
+                            };
+                            shell.publish(Message::SetScrollY(self.pane.id, new_scroll_y));
+                            shell.capture_event();
+                        }
+                    }
+                } else if state.is_dragging {
                     if let Some(pos) = cursor.position_in(bounds) {
                         let (line, col) = self.pos_to_char_coords(pos, bounds);
+                        shell.publish(Message::DragSelect(self.pane.id, line, col));
+                        shell.capture_event();
+                    } else if let Some(global_pos) = cursor.position() {
+                        let clamped_x = (global_pos.x - bounds.x).clamp(0.0, bounds.width);
+                        let clamped_y = (global_pos.y - bounds.y).clamp(0.0, bounds.height);
+                        let (line, col) = self.pos_to_char_coords(Point::new(clamped_x, clamped_y), bounds);
                         shell.publish(Message::DragSelect(self.pane.id, line, col));
                         shell.capture_event();
                     }
@@ -661,24 +815,27 @@ impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
 
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                 state.is_dragging = false;
+                state.is_dragging_scrollbar = false;
             }
 
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
                 if let Some(pos) = cursor.position_in(bounds) {
-                    if self.pane.buffer.selected_text().is_none() {
-                        let (target_line, target_col) = self.pos_to_char_coords(pos, bounds);
-                        shell.publish(Message::ClickPane(
+                    if pos.x < bounds.width - 14.0 {
+                        if self.pane.buffer.selected_text().is_none() {
+                            let (target_line, target_col) = self.pos_to_char_coords(pos, bounds);
+                            shell.publish(Message::ClickPane(
+                                self.pane.id,
+                                target_line,
+                                target_col,
+                            ));
+                        }
+                        shell.publish(Message::OpenContextMenu(
                             self.pane.id,
-                            target_line,
-                            target_col,
+                            bounds.x + pos.x,
+                            bounds.y + pos.y,
                         ));
+                        shell.capture_event();
                     }
-                    shell.publish(Message::OpenContextMenu(
-                        self.pane.id,
-                        bounds.x + pos.x,
-                        bounds.y + pos.y,
-                    ));
-                    shell.capture_event();
                 }
             }
 

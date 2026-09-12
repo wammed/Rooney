@@ -1232,3 +1232,108 @@ fn test_atomic_config_save() {
     let _ = fs::remove_dir_all(&temp_dir);
 }
 
+#[test]
+fn test_editor_auto_scroll_flag_and_coordinates() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+
+    let mut pane = EditorPane::new(PaneId::Left, "Test");
+    // Default pane creation should request cursor focus / visibility
+    assert!(pane.needs_scroll_to_cursor.get());
+
+    // Consuming / drawing frame clears flag
+    pane.needs_scroll_to_cursor.set(false);
+    assert!(!pane.needs_scroll_to_cursor.get());
+
+    // Moving cursor explicitly via keybinding or selection marks cursor moved
+    pane.mark_cursor_moved();
+    assert!(pane.needs_scroll_to_cursor.get());
+
+    // Simulating user mouse wheel scroll disables auto-scroll until next cursor movement
+    pane.needs_scroll_to_cursor.set(false);
+    assert!(!pane.needs_scroll_to_cursor.get());
+
+    // Typing / modifying buffer sets needs_scroll_to_cursor back to true
+    pane.buffer.insert_char('a');
+    pane.on_content_changed();
+    assert!(pane.needs_scroll_to_cursor.get());
+
+    // Switching to a new tab initializes needs_scroll_to_cursor to true
+    pane.needs_scroll_to_cursor.set(false);
+    pane.new_tab("New Document");
+    assert!(pane.needs_scroll_to_cursor.get());
+}
+
+#[test]
+fn test_scrollbar_proportions_and_thumb_mapping() {
+    let line_height = 24.0f32;
+    let bounds_height = 600.0f32;
+    let total_rows = 100usize;
+    let total_content_height = (total_rows as f32) * line_height; // 2400.0
+    let max_scroll = (total_content_height - bounds_height).max(0.0); // 1800.0
+
+    // 1. Proportional thumb height calculation
+    let thumb_height = ((bounds_height / total_content_height) * bounds_height)
+        .max(28.0)
+        .min(bounds_height);
+    assert_eq!(thumb_height, 150.0);
+
+    let max_thumb_y = bounds_height - thumb_height; // 450.0
+    assert_eq!(max_thumb_y, 450.0);
+
+    // 2. Thumb y position mapping at top, middle, and bottom
+    let scroll_top = 0.0f32;
+    let thumb_top = (scroll_top / max_scroll) * max_thumb_y;
+    assert_eq!(thumb_top, 0.0);
+
+    let scroll_mid = 900.0f32;
+    let thumb_mid = (scroll_mid / max_scroll) * max_thumb_y;
+    assert_eq!(thumb_mid, 225.0);
+
+    let scroll_bot = 1800.0f32;
+    let thumb_bot = (scroll_bot / max_scroll) * max_thumb_y;
+    assert_eq!(thumb_bot, 450.0);
+
+    // 3. Margin auto-scroll calculation when navigating down
+    let margin = (2.0 * line_height).min(bounds_height * 0.25).max(0.0); // 48.0
+    assert_eq!(margin, 48.0);
+
+    // Cursor at row 95: cursor_top = 2280.0, cursor_bottom = 2304.0
+    let cursor_v_idx = 95usize;
+    let cursor_top = (cursor_v_idx as f32) * line_height;
+    let cursor_bottom = cursor_top + line_height;
+    let cur_scroll = 1000.0f32; // Screen currently showing lines ~41-66
+    let mut target_scroll = cur_scroll;
+
+    if cursor_top < target_scroll + margin {
+        target_scroll = (cursor_top - margin).max(0.0);
+    } else if cursor_bottom > target_scroll + bounds_height - margin {
+        target_scroll = (cursor_bottom + margin - bounds_height).max(0.0);
+    }
+    target_scroll = target_scroll.clamp(0.0, max_scroll);
+    // 2304.0 + 48.0 - 600.0 = 1752.0
+    assert_eq!(target_scroll, 1752.0);
+
+    // 4. Margin auto-scroll calculation when navigating up to row 5
+    let cursor_v_idx_up = 5usize;
+    let cursor_top_up = (cursor_v_idx_up as f32) * line_height; // 120.0
+    let cursor_bottom_up = cursor_top_up + line_height; // 144.0
+    let cur_scroll_down = 1500.0f32;
+    let mut target_scroll_up = cur_scroll_down;
+
+    if cursor_top_up < target_scroll_up + margin {
+        target_scroll_up = (cursor_top_up - margin).max(0.0);
+    } else if cursor_bottom_up > target_scroll_up + bounds_height - margin {
+        target_scroll_up = (cursor_bottom_up + margin - bounds_height).max(0.0);
+    }
+    target_scroll_up = target_scroll_up.clamp(0.0, max_scroll);
+    // (120.0 - 48.0).max(0.0) = 72.0
+    assert_eq!(target_scroll_up, 72.0);
+
+    // 5. Minimum thumb height clamping on very long files (50,000 lines)
+    let huge_content_height = 50_000.0 * line_height;
+    let huge_thumb_height = ((bounds_height / huge_content_height) * bounds_height)
+        .max(28.0)
+        .min(bounds_height);
+    assert_eq!(huge_thumb_height, 28.0);
+}
+

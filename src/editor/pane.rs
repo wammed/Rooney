@@ -2,6 +2,7 @@ use crate::config::MarkdownSpec;
 use crate::editor::buffer::TextBuffer;
 use crate::markdown::MarkdownDocument;
 use crate::syntax::{Highlighter, SupportedLanguage};
+use std::cell::Cell;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -24,8 +25,9 @@ pub struct EditorTab {
     pub file_name: String,
     pub buffer: TextBuffer,
     pub highlighter: Highlighter,
-    pub scroll_y: f32,
-    pub scroll_x: f32,
+    pub scroll_y: Cell<f32>,
+    pub scroll_x: Cell<f32>,
+    pub needs_scroll_to_cursor: Cell<bool>,
     pub ghost_text: Option<String>,
     pub preedit: Option<(String, Option<std::ops::Range<usize>>)>,
     pub is_markdown_preview: bool,
@@ -47,8 +49,9 @@ impl EditorTab {
             file_name: title.to_string(),
             buffer: TextBuffer::default(),
             highlighter: Highlighter::new(SupportedLanguage::PlainText),
-            scroll_y: 0.0,
-            scroll_x: 0.0,
+            scroll_y: Cell::new(0.0),
+            scroll_x: Cell::new(0.0),
+            needs_scroll_to_cursor: Cell::new(true),
             ghost_text: None,
             preedit: None,
             is_markdown_preview: false,
@@ -92,8 +95,9 @@ impl EditorTab {
         self.file_name = name;
         self.buffer = TextBuffer::new(&content);
         self.highlighter = highlighter;
-        self.scroll_y = 0.0;
-        self.scroll_x = 0.0;
+        self.scroll_y.set(0.0);
+        self.scroll_x.set(0.0);
+        self.needs_scroll_to_cursor.set(true);
         self.ghost_text = None;
         self.preedit = None;
 
@@ -188,6 +192,7 @@ impl EditorTab {
     pub fn on_content_changed(&mut self) {
         self.last_edit_time = Instant::now();
         self.ghost_text = None;
+        self.needs_scroll_to_cursor.set(true);
         let text = self.buffer.full_text();
         self.highlighter.update_source(&text);
 
@@ -198,6 +203,10 @@ impl EditorTab {
         if let Some(ref q) = self.search_query.clone() {
             self.update_search(q);
         }
+    }
+
+    pub fn mark_cursor_moved(&self) {
+        self.needs_scroll_to_cursor.set(true);
     }
 
     pub fn refresh_markdown(&mut self) {

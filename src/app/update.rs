@@ -96,23 +96,25 @@ impl App {
                 self.file_tree_context_menu = None;
                 self.active_header_menu = None;
                 self.show_edit_menu = false;
-                let pane = self.current_pane_mut();
+                let pane = self.pane_mut(pane_id);
                 pane.clear_ghost_text();
                 pane.preedit = None;
                 pane.buffer.cursor = (line, col);
                 pane.buffer.clamp_cursor();
                 pane.buffer.selection_anchor = None;
+                pane.mark_cursor_moved();
                 Task::none()
             }
 
             Message::DragSelect(pane_id, line, col) => {
                 self.active_pane = pane_id;
-                let pane = self.current_pane_mut();
+                let pane = self.pane_mut(pane_id);
                 if pane.buffer.selection_anchor.is_none() {
                     pane.buffer.selection_anchor = Some(pane.buffer.cursor);
                 }
                 pane.buffer.cursor = (line, col);
                 pane.buffer.clamp_cursor();
+                pane.mark_cursor_moved();
                 Task::none()
             }
 
@@ -204,7 +206,16 @@ impl App {
 
             Message::ScrollPane(pane_id, delta_y) => {
                 let target_pane = self.pane_mut(pane_id);
-                target_pane.scroll_y = (target_pane.scroll_y + delta_y).max(0.0);
+                let cur = target_pane.scroll_y.get();
+                target_pane.scroll_y.set((cur + delta_y).max(0.0));
+                target_pane.needs_scroll_to_cursor.set(false);
+                Task::none()
+            }
+
+            Message::SetScrollY(pane_id, val) => {
+                let target_pane = self.pane_mut(pane_id);
+                target_pane.scroll_y.set(val.max(0.0));
+                target_pane.needs_scroll_to_cursor.set(false);
                 Task::none()
             }
 
@@ -695,12 +706,14 @@ impl App {
             Message::NextSearchMatch => {
                 let pane = self.current_pane_mut();
                 pane.next_search_match();
+                pane.mark_cursor_moved();
                 Task::none()
             }
 
             Message::PrevSearchMatch => {
                 let pane = self.current_pane_mut();
                 pane.prev_search_match();
+                pane.mark_cursor_moved();
                 Task::none()
             }
 

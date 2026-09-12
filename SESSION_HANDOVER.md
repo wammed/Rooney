@@ -412,9 +412,39 @@
      - `test_undo_redo_stack_depth_and_performance` を追加（120回の連続編集による 100 件 FIFO 上限と LIFO アンドゥの完全検証）。
      - `test_buffer_edge_cases` を追加（空バッファでの全編集・カーソル動作、10万文字以上の超長行の編集・クランプ検証）。
      - `test_atomic_config_save` を追加（`config.toml` の原子的保存と一時ファイル自動清掃の検証）。
+### セッション 24: エディタ内自動スクロール（Auto-scrolling to Cursor）＆右端スクロールバー（Independent Right-edge Scrollbars）
+- **ユーザー要求**:
+  - エディタ内でカーソルが上端/下端に到達した際、画面が自動でスクロールしない問題を解消する。
+  - エディタ右端にスクロールバーをつける（左右2分割時はそれぞれ独立して表示・動作）。
+- **背景と技術的課題**:
+  - 従来、矢印キーやタイピングでカーソルがエディタ領域の上下限を超えても、`scroll_y` が追従せずカーソルが画面外に見切れていた。
+  - `libcosmic` / `iced` の `Widget::draw` では `&self`（不変参照）しか渡されないため、描画タイミングで正確な行折り返し（`visual_rows`）やピクセル高さ（`bounds.height`）に基づいてスクロール位置を調整するには、内部可変性（Interior Mutability）が必要であった。
+  - 単純に常時カーソル位置へ追従させると、ユーザーがマウスホイールやスクロールバーで他行を閲覧している最中に勝手にカーソル位置へ引き戻される問題が発生するため、操作意図に応じた自動スクロールの能動/休止状態管理が必要であった。
+- **実装内容とアーキテクチャ設計**:
+  1. **内部可変性によるゼロフレーム遅延スクロール管理 (`src/editor/pane.rs`)**:
+     - `EditorTab` の `scroll_y` および `scroll_x` を `std::cell::Cell<f32>` に変更。
+     - 自動スクロール要求フラグ `needs_scroll_to_cursor: std::cell::Cell<bool>` を新設。
+     - `mark_cursor_moved(&self)` メソッドを追加し、カーソル移動時に `needs_scroll_to_cursor.set(true)` を即座に通知。
+     - 新規ファイル読込時（`load_file`）や編集時（`on_content_changed`）にも自動で `needs_scroll_to_cursor = true` を設定。
+  2. **キーバインドおよび各種操作でのカーソル移動追従 (`src/app/keybindings.rs`, `src/app/update.rs`)**:
+     - 単語移動（`Ctrl + Left/Right`）、矢印キー（`Up/Down/Left/Right`）、`Home`、`End`、`PageUp/PageDown` で `pane.mark_cursor_moved()` を呼び出し。
+     - マウスクリック（`ClickPane`）、ドラッグ範囲選択（`DragSelect`）、検索ジャンプ（`NextSearchMatch`, `PrevSearchMatch`）でも `mark_cursor_moved()` を実行。
+     - マウスホイール操作（`ScrollPane`）やスクロールバーのドラッグ操作（`SetScrollY`）では `needs_scroll_to_cursor.set(false)` を設定し、ユーザーがスクロールして閲覧している間はカーソルへ勝手に引き戻されないよう自然なUXを保証。
+  3. **自動スクロールの境界クランプとマージン計算 (`src/ui/canvas_editor.rs`)**:
+     - `draw_frame` の冒頭で、`needs_scroll_to_cursor` が有効な場合にカーソルの表示行インデックス（`cursor_v_idx`）を検出。
+     - 2行分のマージン（`margin = (2.0 * line_height).min(bounds.height * 0.25).max(0.0)`）を設け、カーソルが上端マージンより上または下端マージンより下へ移動した場合にのみ、滑らかに `scroll_y` を更新。
+  4. **独立した右端スクロールバーの描画とインタラクション (`src/ui/canvas_editor.rs`)**:
+     - **スクロールバー描画**: コンテンツ高さがペイン高さを超える場合、右端12pxに背景トラック（`rgba(0,0,0,0.15)`）と境界線（`theme.config.border`）を描画。つまみ（Thumb）は全行数に応じたプロポーショナル高さ（最小28px）で描画し、アクティブペイン時はアクセントカラー（透過75%）、非アクティブ時はボーダーカラー（透過60%）で表示。
+     - **マウスインタラクション**: 右端14pxにカーソルが進入した際、自動で `mouse::Interaction::Pointer`（ポインターカーソル）に切り替え。
+     - **ドラッグ操作**: つまみをクリックしてドラッグする際、マウスが左右に多少ずれても追従を維持（`global_pos.y` に基づくクランプ計算）。
+     - **トラッククリックジャンプ**: つまみ以外のトラックをクリックした際、クリック位置が即座につまみ中心となるようスムーズにジャンプ移動。
+     - **分割モード（Split Layout）完全対応**: 各ペインは独立した `EditorCanvas` インスタンスとして描画されるため、左右ペインそれぞれが右端に独立したスクロールバーを持ち、独立してスクロール・操作可能。
+  5. **テストスイート拡充 (`tests/core_tests.rs`)**:
+     - `test_editor_auto_scroll_flag_and_coordinates`: 新規作成時、描画消費時、明示的カーソル移動時、マウスホイール休止時、文字入力時、タブ切替時の一連の `needs_scroll_to_cursor` 挙動を検証。
+     - `test_scrollbar_proportions_and_thumb_mapping`: 100行バッファ（2400px）でのプロポーショナルつまみ高さ（150px）、上・中・下の位置マッピング、上下マージン自動スクロール計算（1752px / 72px）、および5万行超長ファイルでの最小高さクランプ（28px）を厳密に検証。
 - **検証結果**:
   - `cargo clippy --all-targets -- -D warnings`: 警告 0 件。
-  - `cargo test`: **41/41 全テスト通過 (38 core + 3 ollama, 0 failed)**。
+  - `cargo test`: **43/43 全テスト通過 (40 core + 3 ollama, 0 failed)**。
   - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: クリーンビルド & インストール完了。
 
 ---
@@ -527,10 +557,12 @@ Rooney/
 ## 5. 現在のビルドおよびテスト状態
 
 - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings** (完全クリーン)
-- `cargo test`: **41/41 全テスト通過 (38 core + 3 ollama, 0 failed)**
-  - `test_undo_redo_stack_depth_and_performance` ... ok (新規追加: VecDeque 100件FIFO上限 & LIFOアンドゥ検証)
-  - `test_buffer_edge_cases` ... ok (新規追加: 空バッファおよび10万文字超長行編集・クランプ検証)
-  - `test_atomic_config_save` ... ok (新規追加: config.toml アトミック保存・一時ファイル検証)
+- `cargo test`: **43/43 全テスト通過 (40 core + 3 ollama, 0 failed)**
+  - `test_editor_auto_scroll_flag_and_coordinates` ... ok (新規追加: needs_scroll_to_cursor フラグ動作とカーソル追従検証)
+  - `test_scrollbar_proportions_and_thumb_mapping` ... ok (新規追加: つまみプロポーショナル計算、位置マッピング、マージン自動スクロール計算、最小高さクランプ検証)
+  - `test_undo_redo_stack_depth_and_performance` ... ok (VecDeque 100件FIFO上限 & LIFOアンドゥ検証)
+  - `test_buffer_edge_cases` ... ok (空バッファおよび10万文字超長行編集・クランプ検証)
+  - `test_atomic_config_save` ... ok (config.toml アトミック保存・一時ファイル検証)
   - `test_sensitive_file_ai_protection` ... ok (拡充: .npmrc, .pypirc, kubeconfig, .jks, .keystore, token, secret, .aws, .kube)
   - `test_markdown_spec_commonmark_vs_gfm` ... ok
   - `test_markdown_spec_config_persistence` ... ok
