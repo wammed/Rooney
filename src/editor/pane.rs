@@ -329,26 +329,64 @@ impl EditorPane {
             return Ok(());
         }
 
-        // 2. If current tab is untouched and untitled, reuse it
+        // 2. If current tab is untouched and untitled/welcome, reuse it
         let current_is_untouched = {
             let cur = &self.tabs[self.active_tab_idx];
-            cur.file_path.is_none() && !cur.buffer.is_modified && cur.buffer.full_text().is_empty()
+            cur.file_path.is_none()
+                && !cur.buffer.is_modified
+                && (cur.buffer.full_text().is_empty()
+                    || cur.file_name == "Welcome"
+                    || cur.file_name == "Untitled")
         };
-        if current_is_untouched {
-            self.tabs[self.active_tab_idx].load_file(path)?;
-            return Ok(());
-        }
 
-        // 3. Otherwise, open a new tab
-        let spec = self.active_tab().markdown_spec;
-        let id = self.next_tab_id;
-        self.next_tab_id += 1;
-        let mut tab = EditorTab::new(id, "Untitled");
-        tab.markdown_spec = spec;
-        tab.load_file(path)?;
-        self.tabs.push(tab);
-        self.active_tab_idx = self.tabs.len() - 1;
-        Ok(())
+        if path.exists() {
+            if current_is_untouched {
+                self.tabs[self.active_tab_idx].load_file(path)?;
+                return Ok(());
+            }
+
+            // 3. Otherwise, open a new tab
+            let spec = self.active_tab().markdown_spec;
+            let id = self.next_tab_id;
+            self.next_tab_id += 1;
+            let mut tab = EditorTab::new(id, "Untitled");
+            tab.markdown_spec = spec;
+            tab.load_file(path)?;
+            self.tabs.push(tab);
+            self.active_tab_idx = self.tabs.len() - 1;
+            Ok(())
+        } else {
+            // New file that does not exist on disk yet
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Untitled")
+                .to_string();
+            let lang = SupportedLanguage::from_path(path);
+            let highlighter = Highlighter::new(lang);
+
+            if current_is_untouched {
+                let tab = &mut self.tabs[self.active_tab_idx];
+                tab.file_path = Some(path.to_path_buf());
+                tab.file_name = name;
+                tab.buffer = TextBuffer::new("");
+                tab.highlighter = highlighter;
+                tab.needs_scroll_to_cursor.set(true);
+                return Ok(());
+            }
+
+            let spec = self.active_tab().markdown_spec;
+            let id = self.next_tab_id;
+            self.next_tab_id += 1;
+            let mut tab = EditorTab::new(id, &name);
+            tab.file_path = Some(path.to_path_buf());
+            tab.markdown_spec = spec;
+            tab.highlighter = highlighter;
+            tab.needs_scroll_to_cursor.set(true);
+            self.tabs.push(tab);
+            self.active_tab_idx = self.tabs.len() - 1;
+            Ok(())
+        }
     }
 
     pub fn new_tab(&mut self, title: &str) -> usize {

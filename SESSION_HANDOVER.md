@@ -442,10 +442,49 @@
   5. **テストスイート拡充 (`tests/core_tests.rs`)**:
      - `test_editor_auto_scroll_flag_and_coordinates`: 新規作成時、描画消費時、明示的カーソル移動時、マウスホイール休止時、文字入力時、タブ切替時の一連の `needs_scroll_to_cursor` 挙動を検証。
      - `test_scrollbar_proportions_and_thumb_mapping`: 100行バッファ（2400px）でのプロポーショナルつまみ高さ（150px）、上・中・下の位置マッピング、上下マージン自動スクロール計算（1752px / 72px）、および5万行超長ファイルでの最小高さクランプ（28px）を厳密に検証。
+### セッション 25: CLI 引数処理 & file:// URI 対応によるデスクトップファイルマネージャからのファイルオープン対応
+- **ユーザー要求**:
+  - デスクトップ環境（COSMIC）のファイルマネージャからテキストファイルをダブルクリックして Rooney を起動した際、空白エディタが立ち上がるだけでファイルが開かれない不具合の解消。
+  - コマンドライン引数（CLI 引数 / argv）を受け取り、起動直後にそのファイルの内容を読み込んでエディタに表示する。
+  - 相対パスの場合は絶対パスに解決（正規化）して開く。
+  - `file://` スキームが付与された URI 形式（`file:///...` や URL エンコード `%20`, `%E3%83%86...` 等）も適切にローカルパスに変換して開けるようにする。
+  - 引数が渡されなかった（通常起動の）場合は、これまで通り新規の空白エディタ / セッション復元を行う。
+  - ビルドおよび `/home/susie/.local/bin/rooney` への配置。
+- **背景と根本原因**:
+  - `src/main.rs` において `cosmic::app::run::<App>(settings, ())` のように flags に空タプル `()` がハードコードされており、`std::env::args()` の取得および `App::init` への受け渡し処理が一切存在していなかった。
+  - そのため、`.desktop` ファイルの `Exec=rooney %f` やファイルマネージャからファイル引数・URI が渡されても無視され、常に直前のセッション復元またはデフォルトの Welcome バッファが開かれていた。
+- **実装内容とアーキテクチャ設計**:
+  1. **CLI 引数および URI パーサーの新設 (`src/app/flags.rs`)**:
+     - `normalize_path(&Path) -> PathBuf`: 実在するファイルの場合は `canonicalize()` で実体を解決。新規作成ファイル等で未実在の場合は `directories::BaseDirs` による `~`（チルダ展開）およびカレントディレクトリ（`current_dir()`）との結合を行い、`Component` 解析により `.` や `..` を論理的に正規化。
+     - `parse_path_or_uri(&str) -> Option<PathBuf>`:
+       - `file://` スキームで始まる場合、WHATWG URL 規格準拠の `url::Url::parse` および `to_file_path()` を用いてパーセントデコード（半角スペース `%20` や日本語 UTF-8 `%E3%83%86%E3%82%B9%E3%83%88` 等）を完全処理。
+       - 非標準 URI への安全なフォールバックパーセントデコーダー（`percent_decode_str`）を実装。
+       - 通常の絶対パス・相対パス・チルダパスを正確に判定・正規化。
+     - `AppFlags`: `pub files: Vec<PathBuf>` を保持し、`from_args` で `-h`, `--help`, `-v`, `--version`, `--` 等のオプションフラグを除外して対象ファイル群を抽出。
+  2. **エントリーポイントの更新 (`src/main.rs`)**:
+     - `std::env::args().skip(1)` を取得。
+     - `-h` / `--help` で使用方法（Usage / Options）を表示して終了。
+     - `-v` / `--version` でバージョン番号を表示して終了。
+     - `AppFlags::from_args(args)` を生成し、`cosmic::app::run::<App>(settings, flags)` へ引き渡し。
+  3. **アプリケーション初期化でのファイルロード統合 (`src/app/mod.rs`)**:
+     - `cosmic::Application::Flags` を `AppFlags` に設定。
+     - `App::init` において `flags.files` が指定されている場合：
+       - 指定されたパスがディレクトリであればファイルツリールート（`file_tree.set_root`）に設定。
+       - ファイルであれば、最初のファイルの親ディレクトリに合わせてファイルツリーのフォーカス・選択（`file_tree.select`）を行い、エディタペインで `left_pane.open_file(file_path)` を実行して即座にロード＆表示。
+       - 起動時ステータスメッセージを `Opened <ファイル名>` に更新。
+       - モーダル用の初期作成先ディレクトリ（`new_file_target_dir`, `new_folder_target_dir`）を開いたファイルのフォルダに同期。
+     - `flags.files` が渡されなかった場合（通常起動）は、従来通り直前のセッション復元または Welcome バッファを表示。
+  4. **エディタペインのタブ再利用・新規ファイル対応強化 (`src/editor/pane.rs`)**:
+     - `open_file`: 初期起動時の「Welcome」または未変更の「Untitled」タブが存在する場合、不要な孤立タブを残さずそのタブを再利用して開いたファイルに切り替え。
+     - まだディスク上に存在しない新規ファイルパス（`rooney new.txt` 等）が渡された場合でも、そのパスを保持したタブを初期化し、`Ctrl+S` で即座にそのパスへ保存できるよう対応。
+  5. **テストスイート拡充 (`tests/core_tests.rs`)**:
+     - `test_cli_flags_and_path_resolution`: `file:///...`、`file://localhost/...`、スペース含む `%20`、日本語 `%E3%83%86%E3%82%B9%E3%83%88`、絶対パス、相対パス、ドット正規化、空文字列、フラグスキップの全パターンを網羅検証。
+     - `test_editor_pane_open_file_welcome_tab_reuse_and_non_existent`: Welcome タブの自動再利用、未実在ファイルパスのタブ初期化、複数タブ展開、既存タブへのスイッチを検証。
 - **検証結果**:
   - `cargo clippy --all-targets -- -D warnings`: 警告 0 件。
-  - `cargo test`: **43/43 全テスト通過 (40 core + 3 ollama, 0 failed)**。
-  - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: クリーンビルド & インストール完了。
+  - `cargo test`: **45/45 全テスト通過 (42 core + 3 ollama, 0 failed)**。
+  - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
+  - `/home/susie/.local/bin/rooney --version` および `--help` の正常動作を確認。
 
 ---
 
@@ -453,15 +492,16 @@
 
 ```
 Rooney/
-├── Cargo.toml               # 依存関係定義 (libcosmic, ropey, tree-sitter多言語, futures-channel, rfd, ollama, etc.)
+├── Cargo.toml               # 依存関係定義 (libcosmic, ropey, tree-sitter多言語, futures-channel, rfd, ollama, url, etc.)
 ├── README.md                # 英語公式ドキュメント (Waddle準拠スリム構成)
 ├── README.ja.md             # 日本語公式ドキュメント (Waddle準拠スリム構成)
 ├── SESSION_HANDOVER.md      # 本ファイル (次回再開用完全ハンドオーバー)
 ├── src/
-│   ├── main.rs              # アプリ起動エントリーポイント (デフォルトウィンドウサイズ 1600x1600 設定)
+│   ├── main.rs              # アプリ起動エントリーポイント (CLI引数解析, --help/--version, ウィンドウサイズ設定)
 │   ├── config.rs            # AppConfig & SessionConfig (セッション・設定の ~/.config/rooney/config.toml 永続化)
 │   ├── app/
 │   │   ├── mod.rs           # App 構造体定義、cosmic::Application 実装、init() によるセッション復元
+│   │   ├── flags.rs         # AppFlags, normalize_path, parse_path_or_uri (CLI引数, file:// URI解析)
 │   │   ├── message.rs       # Message 列挙型 (ActiveHeaderMenu, タブ, ファイルツリー, モーダル, AIチャット)
 │   │   ├── keybindings.rs   # handle_key_event (キーボードショートカット、モーダル・メニューキーハンドリング)
 │   │   ├── update.rs        # handle_update (非同期Task/Streamディスパッチ、メニュー開閉、ファイルCRUD、タブ同期)
@@ -557,9 +597,11 @@ Rooney/
 ## 5. 現在のビルドおよびテスト状態
 
 - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings** (完全クリーン)
-- `cargo test`: **43/43 全テスト通過 (40 core + 3 ollama, 0 failed)**
-  - `test_editor_auto_scroll_flag_and_coordinates` ... ok (新規追加: needs_scroll_to_cursor フラグ動作とカーソル追従検証)
-  - `test_scrollbar_proportions_and_thumb_mapping` ... ok (新規追加: つまみプロポーショナル計算、位置マッピング、マージン自動スクロール計算、最小高さクランプ検証)
+- `cargo test`: **45/45 全テスト通過 (42 core + 3 ollama, 0 failed)**
+  - `test_cli_flags_and_path_resolution` ... ok (新規追加: file:// URI, %20, 日本語%E3%83%86..., 相対/絶対パス, 正規化検証)
+  - `test_editor_pane_open_file_welcome_tab_reuse_and_non_existent` ... ok (新規追加: Welcomeタブ再利用, 新規未実在ファイルタブ初期化検証)
+  - `test_editor_auto_scroll_flag_and_coordinates` ... ok (needs_scroll_to_cursor フラグ動作とカーソル追従検証)
+  - `test_scrollbar_proportions_and_thumb_mapping` ... ok (つまみプロポーショナル計算、位置マッピング、マージン自動スクロール計算、最小高さクランプ検証)
   - `test_undo_redo_stack_depth_and_performance` ... ok (VecDeque 100件FIFO上限 & LIFOアンドゥ検証)
   - `test_buffer_edge_cases` ... ok (空バッファおよび10万文字超長行編集・クランプ検証)
   - `test_atomic_config_save` ... ok (config.toml アトミック保存・一時ファイル検証)

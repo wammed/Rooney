@@ -4946,6 +4946,7 @@ dependencies = [
  "tree-sitter-typescript",
  "tree-sitter-yaml",
  "unicode-width",
+ "url",
  "walkdir",
 ]
 

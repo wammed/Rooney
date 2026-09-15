@@ -1,9 +1,11 @@
+pub mod flags;
 pub mod keybindings;
 pub mod message;
 pub mod state;
 pub mod ui;
 pub mod update;
 
+pub use flags::{normalize_path, parse_path_or_uri, AppFlags};
 pub use message::Message;
 
 use crate::ai::{AiStatus, OllamaClient};
@@ -111,7 +113,7 @@ fn ensure_system_icons() {
 
 impl cosmic::Application for App {
     type Executor = executor::Default;
-    type Flags = ();
+    type Flags = AppFlags;
     type Message = Message;
 
     const APP_ID: &'static str = "rooney";
@@ -124,7 +126,7 @@ impl cosmic::Application for App {
         &mut self.core
     }
 
-    fn init(mut core: Core, _flags: Self::Flags) -> (Self, Task<Self::Message>) {
+    fn init(mut core: Core, flags: Self::Flags) -> (Self, Task<Self::Message>) {
         core.window.show_headerbar = false;
         ensure_system_icons();
         let config = AppConfig::load();
@@ -160,30 +162,54 @@ impl cosmic::Application for App {
         };
 
         let mut left_pane = EditorPane::new(PaneId::Left, "Welcome");
-        // Restore left pane tabs from session if available
-        if !config.session.left_pane.tabs.is_empty() {
-            let mut restored_tabs = Vec::new();
-            for (idx, tab_info) in config.session.left_pane.tabs.iter().enumerate() {
-                let mut tab = crate::editor::EditorTab::new(idx + 1, &tab_info.file_name);
-                if let Some(ref path) = tab_info.file_path {
-                    if path.exists() {
-                        let _ = tab.load_file(path);
+        let mut initial_file_opened = false;
+
+        // If files were provided via command line arguments (e.g. desktop file manager double click)
+        if !flags.files.is_empty() {
+            for (idx, file_path) in flags.files.iter().enumerate() {
+                if file_path.is_dir() {
+                    file_tree.set_root(file_path.clone());
+                } else {
+                    if idx == 0 {
+                        // Point file tree to the directory of the opened file if outside current root
+                        if let Some(parent) = file_path.parent() {
+                            if !file_path.starts_with(&file_tree.root) {
+                                file_tree.set_root(parent.to_path_buf());
+                            }
+                        }
+                        file_tree.select(file_path.clone());
                     }
+                    let _ = left_pane.open_file(file_path);
+                    initial_file_opened = true;
                 }
-                tab.buffer.cursor = (tab_info.cursor_line, tab_info.cursor_col);
-                tab.buffer.clamp_cursor();
-                restored_tabs.push(tab);
             }
-            if !restored_tabs.is_empty() {
-                left_pane.tabs = restored_tabs;
-                left_pane.active_tab_idx = config
-                    .session
-                    .left_pane
-                    .active_tab_idx
-                    .min(left_pane.tabs.len() - 1);
-            }
-        } else {
-            let welcome_content = r#"// CosmicCode (Rooney) - Cosmic-Native Lightweight Code & Markdown Editor
+        }
+
+        // If no files were opened via CLI, restore tabs from previous session if available
+        if !initial_file_opened {
+            if !config.session.left_pane.tabs.is_empty() {
+                let mut restored_tabs = Vec::new();
+                for (idx, tab_info) in config.session.left_pane.tabs.iter().enumerate() {
+                    let mut tab = crate::editor::EditorTab::new(idx + 1, &tab_info.file_name);
+                    if let Some(ref path) = tab_info.file_path {
+                        if path.exists() {
+                            let _ = tab.load_file(path);
+                        }
+                    }
+                    tab.buffer.cursor = (tab_info.cursor_line, tab_info.cursor_col);
+                    tab.buffer.clamp_cursor();
+                    restored_tabs.push(tab);
+                }
+                if !restored_tabs.is_empty() {
+                    left_pane.tabs = restored_tabs;
+                    left_pane.active_tab_idx = config
+                        .session
+                        .left_pane
+                        .active_tab_idx
+                        .min(left_pane.tabs.len() - 1);
+                }
+            } else {
+                let welcome_content = r#"// CosmicCode (Rooney) - Cosmic-Native Lightweight Code & Markdown Editor
 // Fast in-process editing with Ropey buffer & Tree-sitter highlighting
 // Built-in Local AI Fill-in-the-Middle (FIM) powered by Ollama
 
@@ -193,10 +219,11 @@ fn main() {
     println!("Use the Split button in the top bar to toggle side-by-side editing.");
 }
 "#;
-            left_pane.buffer = crate::editor::buffer::TextBuffer::new(welcome_content);
-            left_pane.highlighter =
-                crate::syntax::Highlighter::new(crate::syntax::SupportedLanguage::Rust);
-            left_pane.highlighter.update_source(welcome_content);
+                left_pane.buffer = crate::editor::buffer::TextBuffer::new(welcome_content);
+                left_pane.highlighter =
+                    crate::syntax::Highlighter::new(crate::syntax::SupportedLanguage::Rust);
+                left_pane.highlighter.update_source(welcome_content);
+            }
         }
 
         let mut right_pane = EditorPane::new(PaneId::Right, "Preview / Editor 2");
@@ -259,6 +286,13 @@ A lightweight, fast, in-process code and markdown editor.
             AiStatus::Disabled
         };
 
+        let status_msg = if initial_file_opened {
+            Some(format!("Opened {}", left_pane.file_name))
+        } else {
+            Some("CosmicCode Ready".to_string())
+        };
+        let tree_root = file_tree.root.clone();
+
         let app = Self {
             core,
             config,
@@ -278,7 +312,7 @@ A lightweight, fast, in-process code and markdown editor.
             mouse_pos: (0.0, 0.0),
             window_size: (1600.0, 1000.0),
             file_tree_context_menu: None,
-            status_msg: Some("CosmicCode Ready".to_string()),
+            status_msg,
             theme_names,
             font_names,
             ai_request_pending: false,
@@ -286,10 +320,10 @@ A lightweight, fast, in-process code and markdown editor.
             last_ime_commit: Instant::now(),
             show_new_file_modal: false,
             new_file_name_input: String::new(),
-            new_file_target_dir: current_dir.clone(),
+            new_file_target_dir: tree_root.clone(),
             show_new_folder_modal: false,
             new_folder_name_input: String::new(),
-            new_folder_target_dir: current_dir.clone(),
+            new_folder_target_dir: tree_root,
             show_rename_modal: false,
             rename_target_path: None,
             rename_name_input: String::new(),

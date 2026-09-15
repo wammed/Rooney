@@ -85,7 +85,21 @@ install -m 755 target/release/rooney ~/.local/bin/rooney
 ```
 *Standalone binary installed to: `~/.local/bin/rooney`.*
 
-### 5. Persistent Configuration
+### 5. CLI Usage & Desktop File Association
+
+Rooney fully supports command-line arguments, desktop file managers, and `.desktop` (`Exec=rooney %f`) integration:
+```bash
+# Open specific file(s)
+rooney document.txt /path/to/script.rs
+
+# Open from file:// URI (desktop file manager double-click)
+rooney file:///home/user/notes.md
+
+# Open directory in file tree
+rooney /path/to/project
+```
+
+### 6. Persistent Configuration
 
 Rooney automatically preserves all settings—theme, font, font size, independent opacities, dimming, local AI model, Markdown specification, and multi-tab session state—in `~/.config/rooney/config.toml`. Your editing environment is instantly restored every time you launch.
 

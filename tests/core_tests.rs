@@ -1337,3 +1337,103 @@ fn test_scrollbar_proportions_and_thumb_mapping() {
     assert_eq!(huge_thumb_height, 28.0);
 }
 
+#[test]
+fn test_cli_flags_and_path_resolution() {
+    use rooney::app::flags::{parse_path_or_uri, AppFlags};
+    use std::path::PathBuf;
+
+    // 1. Standard file:// URI
+    let uri = "file:///tmp/rooney_test.txt";
+    let parsed = parse_path_or_uri(uri).expect("Should parse file:// URI");
+    assert_eq!(parsed, PathBuf::from("/tmp/rooney_test.txt"));
+
+    // 2. URI with percent-encoded spaces and characters
+    let uri_space = "file:///tmp/My%20Documents/test%20file.txt";
+    let parsed_space = parse_path_or_uri(uri_space).expect("Should parse percent-encoded URI");
+    assert_eq!(parsed_space, PathBuf::from("/tmp/My Documents/test file.txt"));
+
+    // 3. URI with percent-encoded Japanese (UTF-8) characters
+    let uri_cjk = "file:///tmp/%E3%83%86%E3%82%B9%E3%83%88.txt";
+    let parsed_cjk = parse_path_or_uri(uri_cjk).expect("Should parse percent-encoded CJK URI");
+    assert_eq!(parsed_cjk, PathBuf::from("/tmp/テスト.txt"));
+
+    // 4. URI with localhost authority
+    let uri_localhost = "file://localhost/tmp/local_file.txt";
+    let parsed_localhost = parse_path_or_uri(uri_localhost).expect("Should parse file://localhost URI");
+    assert_eq!(parsed_localhost, PathBuf::from("/tmp/local_file.txt"));
+
+    // 5. Absolute standard path
+    let abs = "/var/log/syslog";
+    let parsed_abs = parse_path_or_uri(abs).expect("Should parse absolute path");
+    assert_eq!(parsed_abs, PathBuf::from("/var/log/syslog"));
+
+    // 6. Relative path resolution against current directory
+    let rel = "src/main.rs";
+    let parsed_rel = parse_path_or_uri(rel).expect("Should parse relative path");
+    assert!(parsed_rel.is_absolute());
+    assert!(parsed_rel.ends_with("src/main.rs"));
+
+    // 7. Normalization of .. and .
+    let with_dots = "/tmp/a/../b/./c.txt";
+    let parsed_dots = parse_path_or_uri(with_dots).expect("Should parse dots");
+    assert_eq!(parsed_dots, PathBuf::from("/tmp/b/c.txt"));
+
+    // 8. Empty input
+    assert_eq!(parse_path_or_uri(""), None);
+    assert_eq!(parse_path_or_uri("   "), None);
+
+    // 9. AppFlags::from_args skips options and collects files
+    let args = vec![
+        "-h".to_string(),
+        "--help".to_string(),
+        "-v".to_string(),
+        "--version".to_string(),
+        "--".to_string(),
+        "file:///tmp/doc.txt".to_string(),
+        "notes.md".to_string(),
+    ];
+    let flags = AppFlags::from_args(args);
+    assert_eq!(flags.files.len(), 2);
+    assert_eq!(flags.files[0], PathBuf::from("/tmp/doc.txt"));
+    assert!(flags.files[1].is_absolute());
+    assert!(flags.files[1].ends_with("notes.md"));
+
+    // 10. Empty flags
+    let empty_flags = AppFlags::from_args(Vec::<String>::new());
+    assert!(empty_flags.files.is_empty());
+}
+
+#[test]
+fn test_editor_pane_open_file_welcome_tab_reuse_and_non_existent() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use std::path::Path;
+
+    let mut pane = EditorPane::new(PaneId::Left, "Welcome");
+    assert_eq!(pane.tabs.len(), 1);
+    assert_eq!(pane.active_tab().file_name, "Welcome");
+    assert!(pane.active_tab().file_path.is_none());
+
+    // Opening non-existent file in untouched Welcome tab should reuse tab
+    let non_existent = Path::new("/tmp/rooney_non_existent_12345.txt");
+    let res = pane.open_file(non_existent);
+    assert!(res.is_ok());
+    assert_eq!(pane.tabs.len(), 1, "Should reuse the initial Welcome tab");
+    assert_eq!(pane.active_tab().file_name, "rooney_non_existent_12345.txt");
+    assert_eq!(pane.active_tab().file_path.as_deref(), Some(non_existent));
+    assert!(pane.active_tab().buffer.full_text().is_empty());
+
+    // Opening another file should now open a second tab
+    let another_file = Path::new("/tmp/rooney_second_file_999.rs");
+    let res2 = pane.open_file(another_file);
+    assert!(res2.is_ok());
+    assert_eq!(pane.tabs.len(), 2, "Should create a second tab now");
+    assert_eq!(pane.active_tab_idx, 1);
+    assert_eq!(pane.active_tab().file_name, "rooney_second_file_999.rs");
+
+    // Switching back to first file if reopened
+    let res3 = pane.open_file(non_existent);
+    assert!(res3.is_ok());
+    assert_eq!(pane.tabs.len(), 2, "Should not duplicate existing tab");
+    assert_eq!(pane.active_tab_idx, 0, "Should switch to existing tab");
+}
+

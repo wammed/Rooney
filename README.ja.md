@@ -85,7 +85,21 @@ install -m 755 target/release/rooney ~/.local/bin/rooney
 ```
 *スタンドアロン実行ファイル出力先: `~/.local/bin/rooney`。*
 
-### 5. 設定の永続化
+### 5. CLI 起動 & デスクトップファイル関連付け
+
+Rooney はコマンドライン引数、デスクトップファイルマネージャ（COSMIC Files 等）のダブルクリック、および `.desktop` ファイル（`Exec=rooney %f`）からの直接オープンに完全対応しています：
+```bash
+# 指定ファイルを開いて起動
+rooney document.txt /path/to/script.rs
+
+# file:// URI 形式（ファイルマネージャからの起動）
+rooney file:///home/user/notes.md
+
+# 指定ディレクトリをファイルツリーで開く
+rooney /path/to/project
+```
+
+### 6. 設定の永続化
 
 Rooney は、選択したテーマ、フォント、フォントサイズ、各部独立透明度、ディミング、ローカル AI モデル、Markdown 仕様（GFM / CommonMark）、分割レイアウト、開いているタブのセッション状態を `~/.config/rooney/config.toml` に自動保存します。再起動時にも直前の作業状態がそのまま復元されます。
 
