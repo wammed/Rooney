@@ -721,6 +721,23 @@
   - `cargo test --test benchmark_tests`: **3/3 全テスト通過 (0 failed)**。
   - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
 
+### セッション 35: apply_highlight_tree 非同期フラグリセット競合の解消と Save As メモリ最適化
+- **`apply_highlight_tree` における `is_parsing_async` リセット条件の厳密化 (P0)**:
+  - 従来、`apply_highlight_tree()` 冒頭で generation の一致・不一致に関わらず無条件で `self.is_parsing_async = false;` を実行していた不整合を修正。
+  - Worker A（Gen 10）実行中に編集が発生して Worker B（Gen 11, `is_parsing_async = true`）が起動された場合、遅れて届いた Worker A（Gen 10, stale）によって `is_parsing_async` が誤って `false` に戻り、実行中の Worker B があるにもかかわらず重複ワーカーが起動されるリスクを完全排除。
+  - `self.parse_generation == generation`（世代一致）の時のみ `self.is_parsing_async = false` を実行。世代不一致（Stale Completion）時は `is_parsing_async` を触らず、`needs_highlight_parse = true` を維持して `false` を返却するよう厳密化。
+  - これにより、3大非同期パイプライン（Search, Markdown, Tree-sitter）の完了ハンドラがすべて「世代一致時のみ安全に async フラグを解除する」設計として完全に統一・完成。
+- **`save_file_as` における `full_text()` 二重アロケーションの排除 (P1)**:
+  - `save_file_as()` において、ファイル保存時に生成した `let text = self.buffer.full_text();` の参照（`&text`）を `highlighter.update_source(&text)` および `MarkdownDocument::parse(&text, ...)` に再利用。
+  - 50MB 級の巨大ファイル保存時に発生していた不要な 50MB `String` 二重アロケーション（計 3 回生成から 1 回に集約）を排除し、メモリ使用量とヒープ断片化を大幅に最適化。
+- **回帰テスト拡充 (`tests/core_tests.rs`)**:
+  - `test_treesitter_stale_completion_preserves_is_parsing_async`: Worker A の古い解析結果が届いた際に `is_parsing_async` が `true` のまま維持され、Worker B の最新完了時に正常に `false` へ解除されることを検証する単体テストを追加。
+- **検証結果**:
+  - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings (完全クリーン)**。
+  - `cargo test --test core_tests`: **65/65 全テスト通過 (0 failed)**。
+  - `cargo test --test benchmark_tests`: **3/3 全テスト通過 (0 failed)**。
+  - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
+
 ---
 
 ## 3. ファイル構成と役割

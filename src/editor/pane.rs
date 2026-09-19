@@ -166,14 +166,14 @@ impl EditorTab {
 
         let lang = SupportedLanguage::from_path(path);
         self.highlighter = Highlighter::new(lang);
-        self.highlighter.update_source(&self.buffer.full_text());
+        self.highlighter.update_source(&text);
         self.markdown_generation = self.markdown_generation.wrapping_add(1);
         self.parse_generation = self.parse_generation.wrapping_add(1);
         self.is_parsing_async = false;
         self.needs_highlight_parse = false;
 
         if lang == SupportedLanguage::Markdown && self.is_markdown_preview {
-            self.markdown_doc = Some(MarkdownDocument::parse(&self.buffer.full_text(), self.markdown_spec));
+            self.markdown_doc = Some(MarkdownDocument::parse(&text, self.markdown_spec));
         } else {
             self.markdown_doc = None;
         }
@@ -324,15 +324,23 @@ impl EditorTab {
     }
 
     /// Safely apply parsed Tree-sitter Tree only if parse generation matches.
-    pub fn apply_highlight_tree(&mut self, generation: usize, tree: Option<tree_sitter::Tree>) -> bool {
-        self.is_parsing_async = false;
+    pub fn apply_highlight_tree(
+        &mut self,
+        generation: usize,
+        tree: Option<tree_sitter::Tree>,
+    ) -> bool {
         if self.parse_generation == generation {
+            self.is_parsing_async = false;
+
             if let Some(new_tree) = tree {
                 self.highlighter.set_tree(new_tree);
             }
+
             self.needs_highlight_parse = false;
             true
         } else {
+            // Stale completion: 実行中の後続ワーカーを阻害しないよう async フラグは触らない
+            self.needs_highlight_parse = true;
             false
         }
     }

@@ -2453,6 +2453,60 @@ fn test_treesitter_undo_redo_parse_generation_stale_discard() {
     assert!(!applied_late, "Stale tree from before redo must be discarded");
 }
 
+#[test]
+fn test_treesitter_stale_completion_preserves_is_parsing_async() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use rooney::syntax::SupportedLanguage;
+
+    let mut pane = EditorPane::new(PaneId::Left, "main.rs");
+    pane.active_tab_mut().highlighter = rooney::syntax::highlighter::Highlighter::new(SupportedLanguage::Rust);
+    pane.active_tab_mut().buffer.insert_str("fn first() {}\n");
+    pane.active_tab_mut().on_content_changed();
+    let gen_worker_a = pane.active_tab().parse_generation;
+
+    // Simulate Worker A parsing tree for gen_worker_a
+    let mut parser = tree_sitter::Parser::new();
+    let rs_lang = SupportedLanguage::Rust.tree_sitter_language().unwrap();
+    parser.set_language(&rs_lang).unwrap();
+    let tree_a = parser.parse("fn first() {}\n", None);
+
+    // User makes an edit while Worker A is running:
+    // This increments parse_generation, and Tick would start Worker B setting is_parsing_async = true
+    pane.active_tab_mut().buffer.insert_char('x');
+    pane.active_tab_mut().on_content_changed();
+    let gen_worker_b = pane.active_tab().parse_generation;
+    assert!(gen_worker_b > gen_worker_a);
+
+    // Mark async parsing active for Worker B
+    pane.active_tab_mut().is_parsing_async = true;
+
+    // Worker A finishes late (stale completion with gen_worker_a)
+    let applied_a = pane.active_tab_mut().apply_highlight_tree(gen_worker_a, tree_a);
+    assert!(!applied_a, "Stale worker completion must return false");
+    assert!(
+        pane.active_tab().is_parsing_async,
+        "is_parsing_async must remain true when stale completion arrives, so running worker B is not corrupted"
+    );
+    assert!(
+        pane.active_tab().needs_highlight_parse,
+        "needs_highlight_parse must remain true on stale completion"
+    );
+
+    // Worker B completes with matching generation
+    let tree_b = parser.parse("xfn first() {}\n", None);
+    let applied_b = pane.active_tab_mut().apply_highlight_tree(gen_worker_b, tree_b);
+    assert!(applied_b, "Current generation completion must be applied");
+    assert!(
+        !pane.active_tab().is_parsing_async,
+        "is_parsing_async must be reset to false when current generation completes"
+    );
+    assert!(
+        !pane.active_tab().needs_highlight_parse,
+        "needs_highlight_parse must be cleared on successful parse application"
+    );
+}
+
+
 
 
 
