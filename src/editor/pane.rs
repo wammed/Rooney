@@ -19,6 +19,9 @@ pub enum SplitLayout {
     Split,
 }
 
+pub type WrapCacheKey = (u32, u32, &'static str);
+pub type CachedWrapModel = std::sync::RwLock<Option<(WrapCacheKey, crate::ui::wrap::LineWrapModel)>>;
+
 pub struct EditorTab {
     pub id: usize,
     pub file_path: Option<PathBuf>,
@@ -43,7 +46,9 @@ pub struct EditorTab {
     pub is_parsing_async: bool,
     pub needs_search_update: bool,
     pub last_search_update: Instant,
-    pub cached_wrap_model: std::sync::RwLock<Option<(u32, crate::ui::wrap::LineWrapModel)>>,
+    pub search_generation: usize,
+    pub is_searching_async: bool,
+    pub cached_wrap_model: CachedWrapModel,
 }
 
 impl EditorTab {
@@ -72,6 +77,8 @@ impl EditorTab {
             is_parsing_async: false,
             needs_search_update: false,
             last_search_update: Instant::now(),
+            search_generation: 0,
+            is_searching_async: false,
             cached_wrap_model: std::sync::RwLock::new(None),
         }
     }
@@ -234,8 +241,10 @@ impl EditorTab {
         // Search updates: for files <= 2MB, update matches synchronously.
         // For massive files (> 2MB), defer full-text line scan until user pauses typing
         // to prevent hundreds of milliseconds of typing freeze on keystrokes.
+        // Always increment search_generation to invalidate in-flight search workers from older buffer snapshots.
         const SYNC_SEARCH_MAX_BYTES: usize = 2 * 1024 * 1024;
         if let Some(ref q) = self.search_query.clone() {
+            self.search_generation = self.search_generation.wrapping_add(1);
             if self.buffer.len_bytes() <= SYNC_SEARCH_MAX_BYTES {
                 self.update_search(q);
                 self.needs_search_update = false;
@@ -270,14 +279,69 @@ impl EditorTab {
     }
 
 
+    pub fn invalidate_wrap_cache(&self) {
+        if let Ok(mut guard) = self.cached_wrap_model.write() {
+            *guard = None;
+        }
+    }
+
     pub fn mark_cursor_moved(&self) {
         self.needs_scroll_to_cursor.set(true);
     }
 
     pub fn refresh_markdown(&mut self) {
         if self.is_markdown_preview {
-            let text = self.buffer.full_text();
-            self.markdown_doc = Some(MarkdownDocument::parse(&text, self.markdown_spec));
+            const SYNC_MD_MAX_BYTES: usize = 2 * 1024 * 1024;
+            if self.buffer.len_bytes() <= SYNC_MD_MAX_BYTES {
+                let text = self.buffer.full_text();
+                self.markdown_doc = Some(MarkdownDocument::parse(&text, self.markdown_spec));
+            }
+        }
+    }
+
+    pub fn start_search(&mut self, query: &str) -> (usize, bool) {
+        if query.is_empty() {
+            self.search_query = None;
+            self.search_matches.clear();
+            self.current_match_idx = 0;
+            self.needs_search_update = false;
+            self.is_searching_async = false;
+            return (self.search_generation, false);
+        }
+
+        self.search_query = Some(query.to_string());
+        self.search_generation = self.search_generation.wrapping_add(1);
+        const SYNC_SEARCH_MAX_BYTES: usize = 2 * 1024 * 1024;
+        let is_large = self.buffer.len_bytes() > SYNC_SEARCH_MAX_BYTES;
+
+        if is_large {
+            self.is_searching_async = true;
+            self.needs_search_update = false;
+        } else {
+            self.search_matches = run_search_on_rope(&self.buffer.rope, query);
+            if self.current_match_idx >= self.search_matches.len() {
+                self.current_match_idx = 0;
+            }
+            self.is_searching_async = false;
+            self.needs_search_update = false;
+        }
+        (self.search_generation, is_large)
+    }
+
+    pub fn apply_search_results(
+        &mut self,
+        generation: usize,
+        matches: Vec<(usize, usize, usize)>,
+    ) -> bool {
+        if generation == self.search_generation {
+            self.is_searching_async = false;
+            self.search_matches = matches;
+            if self.current_match_idx >= self.search_matches.len() {
+                self.current_match_idx = 0;
+            }
+            true
+        } else {
+            false
         }
     }
 
@@ -290,24 +354,7 @@ impl EditorTab {
         }
 
         self.search_query = Some(query.to_string());
-        let mut matches = Vec::new();
-        let q_lower = query.to_lowercase();
-        let q_len = query.chars().count();
-
-        for line_idx in 0..self.buffer.line_count() {
-            if let Some(line) = self.buffer.line_text(line_idx) {
-                let line_lower = line.to_lowercase();
-                let mut start_byte = 0;
-                while let Some(byte_pos) = line_lower[start_byte..].find(&q_lower) {
-                    let actual_byte = start_byte + byte_pos;
-                    let char_start = line[..actual_byte].chars().count();
-                    matches.push((line_idx, char_start, char_start + q_len));
-                    start_byte = actual_byte + q_lower.len().max(1);
-                }
-            }
-        }
-
-        self.search_matches = matches;
+        self.search_matches = run_search_on_rope(&self.buffer.rope, query);
         if self.current_match_idx >= self.search_matches.len() {
             self.current_match_idx = 0;
         }
@@ -517,6 +564,36 @@ impl EditorPane {
     pub fn tab_by_id_mut(&mut self, id: usize) -> Option<&mut EditorTab> {
         self.tabs.iter_mut().find(|t| t.id == id)
     }
+
+    pub fn invalidate_wrap_cache(&self) {
+        for tab in &self.tabs {
+            tab.invalidate_wrap_cache();
+        }
+    }
+}
+
+/// Pure helper function to execute substring search on a Rope without mutating editor state.
+pub fn run_search_on_rope(rope: &ropey::Rope, query: &str) -> Vec<(usize, usize, usize)> {
+    if query.is_empty() {
+        return Vec::new();
+    }
+    let q_lower = query.to_lowercase();
+    let q_len = query.chars().count();
+    let mut matches = Vec::new();
+
+    for (line_idx, line_slice) in rope.lines().enumerate() {
+        let line_str = line_slice.to_string();
+        let line_trimmed = line_str.trim_end_matches(['\r', '\n']);
+        let line_lower = line_trimmed.to_lowercase();
+        let mut start_byte = 0;
+        while let Some(byte_pos) = line_lower[start_byte..].find(&q_lower) {
+            let actual_byte = start_byte + byte_pos;
+            let char_start = line_trimmed[..actual_byte].chars().count();
+            matches.push((line_idx, char_start, char_start + q_len));
+            start_byte = actual_byte + q_lower.len().max(1);
+        }
+    }
+    matches
 }
 
 impl Deref for EditorPane {

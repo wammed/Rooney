@@ -27,8 +27,13 @@ impl App {
             if let Some(ref doc) = self.left_pane.markdown_doc {
                 view_markdown(doc, theme, font_name)
             } else {
+                let msg = if self.left_pane.buffer.len_bytes() > 0 {
+                    "Loading Markdown preview..."
+                } else {
+                    "Markdown document empty"
+                };
                 container(
-                    text("Markdown document empty")
+                    text(msg)
                         .class(cosmic::theme::Text::Color(theme.config.fg)),
                 )
                 .width(Length::Fill)
@@ -72,8 +77,13 @@ impl App {
                 if let Some(ref doc) = self.right_pane.markdown_doc {
                     view_markdown(doc, theme, font_name)
                 } else {
+                    let msg = if self.right_pane.buffer.len_bytes() > 0 {
+                        "Loading Markdown preview..."
+                    } else {
+                        "Markdown document empty"
+                    };
                     container(
-                        text("Markdown document empty")
+                        text(msg)
                             .class(cosmic::theme::Text::Color(theme.config.fg)),
                     )
                     .width(Length::Fill)

@@ -74,21 +74,56 @@ impl App {
     pub(crate) fn handle_update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Tick => {
-                // 1. Flush debounced search on large files if user paused typing (> 100ms)
-                if self.left_pane.needs_search_update
-                    && self.left_pane.last_edit_time.elapsed() >= Duration::from_millis(100)
-                {
-                    self.left_pane.flush_pending_search();
-                }
-                if self.split_layout == crate::editor::pane::SplitLayout::Split
-                    && self.right_pane.needs_search_update
-                    && self.right_pane.last_edit_time.elapsed() >= Duration::from_millis(100)
-                {
-                    self.right_pane.flush_pending_search();
+                let mut async_tasks = Vec::new();
+
+                // 1. Offload debounced search on large files (> 2MB) to background thread
+                for pane_id in [crate::editor::PaneId::Left, crate::editor::PaneId::Right] {
+                    if pane_id == crate::editor::PaneId::Right
+                        && self.split_layout != crate::editor::pane::SplitLayout::Split
+                    {
+                        continue;
+                    }
+                    let pane = self.pane_mut(pane_id);
+                    if pane.needs_search_update
+                        && pane.last_edit_time.elapsed() >= Duration::from_millis(100)
+                        && !pane.is_searching_async
+                    {
+                        if let Some(query) = pane.search_query.clone() {
+                            if !query.is_empty() {
+                                pane.search_generation = pane.search_generation.wrapping_add(1);
+                                let generation = pane.search_generation;
+                                pane.is_searching_async = true;
+                                pane.needs_search_update = false;
+                                let rope_clone = pane.buffer.rope.clone();
+                                let tab_id = pane.active_tab_id();
+                                async_tasks.push(Task::perform(
+                                    async move {
+                                        tokio::task::spawn_blocking(move || {
+                                            let matches = crate::editor::pane::run_search_on_rope(&rope_clone, &query);
+                                            (pane_id, tab_id, generation, matches)
+                                        })
+                                        .await
+                                        .unwrap_or_else(|_| (pane_id, tab_id, generation, Vec::new()))
+                                    },
+                                    |(pane_id, tab_id, generation, matches)| {
+                                        cosmic::Action::App(Message::SearchCompleted {
+                                            pane_id,
+                                            tab_id,
+                                            generation,
+                                            matches,
+                                        })
+                                    },
+                                ));
+                            } else {
+                                pane.needs_search_update = false;
+                            }
+                        } else {
+                            pane.needs_search_update = false;
+                        }
+                    }
                 }
 
-                // 2. Offload Tree-sitter parsing on large files to background thread off UI thread
-                let mut async_tasks = Vec::new();
+                // 2. Offload Tree-sitter and Markdown parsing on large files to background thread off UI thread
                 for pane_id in [crate::editor::PaneId::Left, crate::editor::PaneId::Right] {
                     if pane_id == crate::editor::PaneId::Right
                         && self.split_layout != crate::editor::pane::SplitLayout::Split
@@ -103,6 +138,8 @@ impl App {
                         pane.is_parsing_async = true;
                         let rope_clone = pane.buffer.rope.clone();
                         let lang = pane.highlighter.lang;
+                        let is_md_preview = pane.is_markdown_preview && lang == crate::syntax::SupportedLanguage::Markdown;
+                        let md_spec = pane.markdown_spec;
                         let tab_id = pane.active_tab_id();
                         let edit_time = pane.last_edit_time;
 
@@ -115,16 +152,22 @@ impl App {
                                     }
                                     let text = rope_clone.to_string();
                                     let tree = parser.parse(&text, None);
-                                    (pane_id, tab_id, tree, edit_time)
+                                    let md_doc = if is_md_preview {
+                                        Some(crate::markdown::MarkdownDocument::parse(&text, md_spec))
+                                    } else {
+                                        None
+                                    };
+                                    (pane_id, tab_id, tree, md_doc, edit_time)
                                 })
                                 .await
-                                .unwrap_or_else(|_| (pane_id, tab_id, None, edit_time))
+                                .unwrap_or_else(|_| (pane_id, tab_id, None, None, edit_time))
                             },
-                            |(pane_id, tab_id, tree, edit_time)| {
+                            |(pane_id, tab_id, tree, md_doc, edit_time)| {
                                 cosmic::Action::App(Message::HighlightParseCompleted {
                                     pane_id,
                                     tab_id,
                                     tree,
+                                    markdown_doc: md_doc,
                                     edit_time,
                                 })
                             },
@@ -286,12 +329,45 @@ impl App {
                 let target_pane = self.pane_mut(pane_id);
                 target_pane.is_markdown_preview = !target_pane.is_markdown_preview;
                 if target_pane.is_markdown_preview && target_pane.markdown_doc.is_none() {
-                    let text = target_pane.buffer.full_text();
-                    let spec = target_pane.markdown_spec;
-                    target_pane.markdown_doc =
-                        Some(crate::markdown::MarkdownDocument::parse(&text, spec));
+                    const SYNC_MD_MAX_BYTES: usize = 2 * 1024 * 1024;
+                    if target_pane.buffer.len_bytes() <= SYNC_MD_MAX_BYTES {
+                        let text = target_pane.buffer.full_text();
+                        let spec = target_pane.markdown_spec;
+                        target_pane.markdown_doc =
+                            Some(crate::markdown::MarkdownDocument::parse(&text, spec));
+                        Task::none()
+                    } else {
+                        let rope_clone = target_pane.buffer.rope.clone();
+                        let spec = target_pane.markdown_spec;
+                        let tab_id = target_pane.active_tab_id();
+                        let edit_time = target_pane.last_edit_time;
+                        Task::perform(
+                            async move {
+                                tokio::task::spawn_blocking(move || {
+                                    let text = rope_clone.to_string();
+                                    let doc = crate::markdown::MarkdownDocument::parse(&text, spec);
+                                    (pane_id, tab_id, edit_time, doc)
+                                })
+                                .await
+                                .ok()
+                            },
+                            |res| {
+                                if let Some((pane_id, tab_id, edit_time, doc)) = res {
+                                    cosmic::Action::App(Message::MarkdownParseCompleted {
+                                        pane_id,
+                                        tab_id,
+                                        edit_time,
+                                        doc,
+                                    })
+                                } else {
+                                    cosmic::Action::None
+                                }
+                            },
+                        )
+                    }
+                } else {
+                    Task::none()
                 }
-                Task::none()
             }
 
             Message::FileTreeMsg(msg) => {
@@ -393,14 +469,48 @@ impl App {
             }
 
             Message::ToggleMarkdownPreview => {
+                let pane_id = self.active_pane;
                 let pane = self.current_pane_mut();
                 pane.is_markdown_preview = !pane.is_markdown_preview;
                 if pane.is_markdown_preview && pane.markdown_doc.is_none() {
-                    let text = pane.buffer.full_text();
-                    let spec = pane.markdown_spec;
-                    pane.markdown_doc = Some(crate::markdown::MarkdownDocument::parse(&text, spec));
+                    const SYNC_MD_MAX_BYTES: usize = 2 * 1024 * 1024;
+                    if pane.buffer.len_bytes() <= SYNC_MD_MAX_BYTES {
+                        let text = pane.buffer.full_text();
+                        let spec = pane.markdown_spec;
+                        pane.markdown_doc = Some(crate::markdown::MarkdownDocument::parse(&text, spec));
+                        Task::none()
+                    } else {
+                        let rope_clone = pane.buffer.rope.clone();
+                        let spec = pane.markdown_spec;
+                        let tab_id = pane.active_tab_id();
+                        let edit_time = pane.last_edit_time;
+                        Task::perform(
+                            async move {
+                                tokio::task::spawn_blocking(move || {
+                                    let text = rope_clone.to_string();
+                                    let doc = crate::markdown::MarkdownDocument::parse(&text, spec);
+                                    (pane_id, tab_id, edit_time, doc)
+                                })
+                                .await
+                                .ok()
+                            },
+                            |res| {
+                                if let Some((pane_id, tab_id, edit_time, doc)) = res {
+                                    cosmic::Action::App(Message::MarkdownParseCompleted {
+                                        pane_id,
+                                        tab_id,
+                                        edit_time,
+                                        doc,
+                                    })
+                                } else {
+                                    cosmic::Action::None
+                                }
+                            },
+                        )
+                    }
+                } else {
+                    Task::none()
                 }
-                Task::none()
             }
 
             Message::SelectMarkdownSpec(index) => {
@@ -409,11 +519,49 @@ impl App {
                     _ => crate::config::MarkdownSpec::CommonMark,
                 };
                 self.config.markdown_spec = spec;
-                self.left_pane.set_markdown_spec(spec);
-                self.right_pane.set_markdown_spec(spec);
                 self.status_msg = Some(format!("Markdown Spec: {}", spec.display_name()));
                 self.save_config();
-                Task::none()
+
+                let mut tasks = Vec::new();
+                for pane_id in [crate::editor::PaneId::Left, crate::editor::PaneId::Right] {
+                    let pane = self.pane_mut(pane_id);
+                    pane.set_markdown_spec(spec);
+                    let tab = pane.active_tab_mut();
+                    if tab.is_markdown_preview && tab.buffer.len_bytes() > 2 * 1024 * 1024 {
+                        let rope_clone = tab.buffer.rope.clone();
+                        let tab_id = tab.id;
+                        let edit_time = tab.last_edit_time;
+                        tasks.push(Task::perform(
+                            async move {
+                                tokio::task::spawn_blocking(move || {
+                                    let text = rope_clone.to_string();
+                                    let doc = crate::markdown::MarkdownDocument::parse(&text, spec);
+                                    (pane_id, tab_id, edit_time, doc)
+                                })
+                                .await
+                                .ok()
+                            },
+                            |res| {
+                                if let Some((pane_id, tab_id, edit_time, doc)) = res {
+                                    cosmic::Action::App(Message::MarkdownParseCompleted {
+                                        pane_id,
+                                        tab_id,
+                                        edit_time,
+                                        doc,
+                                    })
+                                } else {
+                                    cosmic::Action::None
+                                }
+                            },
+                        ));
+                    }
+                }
+
+                if tasks.is_empty() {
+                    Task::none()
+                } else {
+                    Task::batch(tasks)
+                }
             }
 
             Message::SelectTheme(index) => {
@@ -428,6 +576,9 @@ impl App {
             Message::SelectFont(index) => {
                 if let Some(font) = self.font_names.get(index) {
                     self.font_manager.set_font(font.clone());
+                    self.left_pane.invalidate_wrap_cache();
+                    self.right_pane.invalidate_wrap_cache();
+                    crate::ui::canvas_editor::clear_glyph_cache();
                     self.status_msg = Some(format!("Font: {}", font));
                     self.save_config();
                 }
@@ -437,6 +588,8 @@ impl App {
             Message::IncreaseFontSize => {
                 let s = self.font_manager.font_size + 1.0;
                 self.font_manager.set_font_size(s);
+                self.left_pane.invalidate_wrap_cache();
+                self.right_pane.invalidate_wrap_cache();
                 crate::ui::canvas_editor::clear_glyph_cache();
                 self.save_config();
                 Task::none()
@@ -445,6 +598,8 @@ impl App {
             Message::DecreaseFontSize => {
                 let s = self.font_manager.font_size - 1.0;
                 self.font_manager.set_font_size(s);
+                self.left_pane.invalidate_wrap_cache();
+                self.right_pane.invalidate_wrap_cache();
                 crate::ui::canvas_editor::clear_glyph_cache();
                 self.save_config();
                 Task::none()
@@ -764,8 +919,47 @@ impl App {
 
             Message::SearchQueryChanged(q) => {
                 self.search_input = q.clone();
-                let pane = self.current_pane_mut();
-                pane.update_search(&q);
+                let pane_id = self.active_pane;
+                let pane = self.pane_mut(pane_id);
+                let (generation, is_large) = pane.start_search(&q);
+
+                if is_large && !q.is_empty() {
+                    let rope_clone = pane.buffer.rope.clone();
+                    let tab_id = pane.active_tab_id();
+                    let query = q;
+                    Task::perform(
+                        async move {
+                            tokio::task::spawn_blocking(move || {
+                                let matches = crate::editor::pane::run_search_on_rope(&rope_clone, &query);
+                                (pane_id, tab_id, generation, matches)
+                            })
+                            .await
+                            .unwrap_or_else(|_| (pane_id, tab_id, generation, Vec::new()))
+                        },
+                        |(pane_id, tab_id, generation, matches)| {
+                            cosmic::Action::App(Message::SearchCompleted {
+                                pane_id,
+                                tab_id,
+                                generation,
+                                matches,
+                            })
+                        },
+                    )
+                } else {
+                    Task::none()
+                }
+            }
+
+            Message::SearchCompleted {
+                pane_id,
+                tab_id,
+                generation,
+                matches,
+            } => {
+                let pane = self.pane_mut(pane_id);
+                if let Some(tab) = pane.tab_by_id_mut(tab_id) {
+                    tab.apply_search_results(generation, matches);
+                }
                 Task::none()
             }
 
@@ -1212,20 +1406,39 @@ impl App {
                 pane_id,
                 tab_id,
                 tree,
+                markdown_doc,
                 edit_time,
             } => {
                 let pane = self.pane_mut(pane_id);
                 if let Some(tab) = pane.tab_by_id_mut(tab_id) {
                     tab.is_parsing_async = false;
-                    // Only apply parsed tree if no new edits occurred while background worker was parsing
+                    // Only apply parsed tree and markdown_doc if no new edits occurred while background worker was parsing
                     if tab.last_edit_time == edit_time {
                         if let Some(new_tree) = tree {
                             tab.highlighter.set_tree(new_tree);
+                        }
+                        if let Some(doc) = markdown_doc {
+                            tab.markdown_doc = Some(doc);
                         }
                         tab.needs_highlight_parse = false;
                     } else {
                         // User typed more during background parse, keep needs_highlight_parse = true
                         tab.needs_highlight_parse = true;
+                    }
+                }
+                Task::none()
+            }
+
+            Message::MarkdownParseCompleted {
+                pane_id,
+                tab_id,
+                edit_time,
+                doc,
+            } => {
+                let pane = self.pane_mut(pane_id);
+                if let Some(tab) = pane.tab_by_id_mut(tab_id) {
+                    if tab.last_edit_time == edit_time {
+                        tab.markdown_doc = Some(doc);
                     }
                 }
                 Task::none()

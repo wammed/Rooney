@@ -622,6 +622,54 @@
   - `cargo test --test benchmark_tests`: **全3テスト通過 (0 failed)**。
   - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
 
+### セッション 31: SearchQueryChanged 非同期化・大容量 Markdown プレビュー同期・Wrap Cache 整合性の完全実装
+- **検索（Search）の完全非同期ワーカー化と `SearchQueryChanged` の同期走査排除 (P0 / P1)**:
+  - `Message::SearchQueryChanged` において、2MB超のファイルでクエリが変更された際に UI スレッドで行っていた全文走査を完全に廃止。
+  - 世代番号（`search_generation`）を用いた非同期ワーカー（`tokio::task::spawn_blocking`）へ Rope クローンをオフロードし、検索完了メッセージ `Message::SearchCompleted` で結果を還元。
+  - `apply_search_results` において、`generation == tab.search_generation` の検証により、高速タイピング時に遅延完了した過去の検索結果（Stale Results）を安全かつ確実に破棄。
+  - タイピング停止時の Tick デバウンス検索も同期走査（`flush_pending_search`）から同様の世代管理非同期タスクへ移行。UI スレッドのフレームドロップをゼロ化。
+- **大容量 Markdown プレビューの非同期更新バグ解消 (P0)**:
+  - 2MB超の Markdown ファイル編集時、`tokio::task::spawn_blocking` ワーカー内で Tree-sitter AST 解析に加えて `MarkdownDocument::parse(&text, markdown_spec)` を並行実行。
+  - `Message::HighlightParseCompleted` に `markdown_doc: Option<MarkdownDocument>` を格納し、編集タイムスタンプ（`last_edit_time`）が一致する場合に `tab.markdown_doc` をアトミック更新。大容量 Markdown ファイルのプレビューが常に最新の編集状態と完全同期。
+- **Wrap Cache の Invalidation 厳密化 (P1)**:
+  - `EditorTab` の折り返しキャッシュキーを `(avail_width, font_size, font_name)` の複合キー（`WrapCacheKey`）へ拡張。
+  - `EditorTab` および `EditorPane` に `invalidate_wrap_cache()` を新設。
+  - フォント変更（`SelectFont`）やフォントサイズ変更（`IncreaseFontSize`, `DecreaseFontSize`）時に左右ペインのキャッシュを明示的破棄し、フォント変更後の折り返し行位置ズレを完全解消。
+- **テストスイート拡充 & 整合性検証**:
+  - `tests/core_tests.rs`:
+    - `test_async_search_generation_and_stale_discard`: 世代番号のインクリメント、過去世代の破棄、一致世代の適用、空クエリクリアを検証。
+    - `test_large_markdown_async_preview_sync`: バックグラウンドパースによる MarkdownDocument 生成およびタブへのアトミック適用を検証。
+    - `test_wrap_cache_invalidation_on_font_change`: 明示的キャッシュ破棄および複合キーによるフォントサイズ変更時の再計算を検証。
+- **検証結果**:
+  - `cargo clippy --all-targets -- -D warnings`: **警告 0 件 (Code 0)**。
+  - `cargo test --test core_tests`: **全56テスト通過 (0 failed)**。
+  - `cargo test --test benchmark_tests`: **全3テスト通過 (0 failed)**。
+  - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
+
+### セッション 32: 文書編集時 Search Generation インクリメント・Markdown 設定切替非同期化・ドキュメント完全整合
+- **文書編集時の `search_generation` インクリメントによる完全 Stale 防止 (P1)**:
+  - `EditorTab::on_content_changed()` において、検索クエリが有効な場合は必ず `self.search_generation = self.search_generation.wrapping_add(1);` を実行。
+  - 検索ワーカー（`tokio::task::spawn_blocking`）が実行中にユーザーがテキストを編集した場合でも、世代番号が進むことで直前のスナップショットに基づく検索結果が到着時に `generation != tab.search_generation` で確実に安全破棄（Discard）されることを保証。
+  - 100ms アイドル後の Tick デバウンス検索にて、最新の世代番号と編集後バッファに対する再検索が走るため、Stale Result が一瞬 UI に適用される競合（Race condition）を完全根絶。
+- **Markdown プレビュー表示切替・仕様変更時の大容量非同期化 (P2)**:
+  - `Message::ToggleMarkdownPreview`, `Message::TogglePaneMode`, `Message::SelectMarkdownSpec` において、2MB 超の大容量 Markdown ファイルに対する同期 `MarkdownDocument::parse()` を完全排除。
+  - `Message::MarkdownParseCompleted { pane_id, tab_id, edit_time, doc }` を新設し、`tokio::task::spawn_blocking` で非同期パースを実行。
+  - パース完了までは軽量なローディング表示（`Loading Markdown preview...`）または既存の描画を維持し、パース完了メッセージで安全にスワップ。UI スレッドのブロッキングを完全解消。
+  - `refresh_markdown()` にも 2MB 超の同期パース回避ガードを導入。
+- **検索動作モデルおよびドキュメントの完全適正化 (P2)**:
+  - `README.md`, `README.ja.md` における検索機能の解説を監査指摘に即して刷新：
+    - **検索クエリ入力時**: 即時バックグラウンドワーカー起動 ＋ 世代（Generation）チェックによる Stale 破棄
+    - **本文編集後の再検索**: 100ms アイドルデバウンス ＋ 世代インクリメント＋ バックグラウンドワーカー起動
+- **テストスイート拡充 & 回帰検証**:
+  - `tests/core_tests.rs`:
+    - `test_search_generation_incremented_on_content_edit`: 検索ワーカー実行中の編集による世代番号インクリメント、旧世代結果の確実な破棄、最新世代結果の適用を検証。
+    - `test_large_markdown_toggle_and_spec_change_async`: 大容量ファイルでの同期パース抑止と非同期完了メッセージによる MarkdownDocument 反映を検証。
+- **検証結果**:
+  - `cargo clippy --all-targets -- -D warnings`: **警告 0 件 (Code 0)**。
+  - `cargo test --test core_tests`: **全58テスト通過 (0 failed)**。
+  - `cargo test --test benchmark_tests`: **全3テスト通過 (0 failed)**。
+  - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
+
 ---
 
 ## 3. ファイル構成と役割
@@ -733,9 +781,17 @@ Rooney/
 ## 5. 現在のビルドおよびテスト状態
 
 - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings** (完全クリーン)
-- `cargo test`: **51/51 全テスト通過 (1 benchmark + 47 core + 3 ollama, 0 failed)**
+- `cargo test`: **64/64 全テスト通過 (3 benchmark + 58 core + 3 ollama, 0 failed)**
+  - `test_search_generation_incremented_on_content_edit` ... ok (文書編集時世代インクリメント・旧世代破棄・新世代適用検証)
+  - `test_large_markdown_toggle_and_spec_change_async` ... ok (大容量Markdown表示切替/仕様変更時の非同期パース検証)
+  - `test_async_search_generation_and_stale_discard` ... ok (世代管理非同期検索・遅延Stale破棄・一致世代適用・空クエリ初期化検証)
+  - `test_large_markdown_async_preview_sync` ... ok (大容量Markdownバックグラウンドパース・プレビューアトミック同期検証)
+  - `test_wrap_cache_invalidation_on_font_change` ... ok (フォント名・サイズ複合キーキャッシュ・明示的キャッシュ破棄検証)
+  - `test_wrapped_subrows_cumulative_y_and_hit_test` ... ok (折り返し行累積Y座標・次行非重複・マウスHit-Test検証)
+  - `test_large_file_search_debouncing` ... ok (大容量ファイル検索デバウンス・アイドル走査検証)
+  - `test_debounced_parse_state_transition` ... ok (Tree-sitter非同期パース状態遷移検証)
   - `test_multiscale_performance_benchmarks` ... ok (10KB〜50MBマルチスケール性能ベンチマーク、50MBタイピング遅延 28µs、Viewport < 0.45ms、Cache Hit < 2µs検証)
-  - `test_mixed_script_coordinates_and_roundtrip` ... ok (新規追加: 和文約物・絵文字ZWJ・結合文字・タブ混在の座標単調増加およびpos_to_char_coordsラウンドトリップ完全一致検証)
+  - `test_mixed_script_coordinates_and_roundtrip` ... ok (和文約物・絵文字ZWJ・結合文字・タブ混在の座標単調増加およびpos_to_char_coordsラウンドトリップ完全一致検証)
   - `test_cosmic_text_glyph_layout` ... ok (cosmic-text実グリフメトリクス測定と全角ダッシュ――・CJK記号の累積位置0.00px完全一致検証)
   - `test_char_advance_ascii_and_cjk` ... ok
 

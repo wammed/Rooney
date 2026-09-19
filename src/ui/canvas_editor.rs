@@ -229,7 +229,12 @@ impl<'a> EditorCanvas<'a> {
     }
 
     pub fn build_wrap_model(&self, avail_width: f32) -> LineWrapModel {
-        let key = avail_width.to_bits();
+        let interned_font = match self.font_name {
+            "monospace" => "monospace",
+            "JetBrainsMono Nerd Font" => "JetBrainsMono Nerd Font",
+            _ => intern_font_name(self.font_name),
+        };
+        let key = (avail_width.to_bits(), self.font_size.to_bits(), interned_font);
         if let Ok(guard) = self.pane.active_tab().cached_wrap_model.read() {
             if let Some((cached_key, ref model)) = *guard {
                 if cached_key == key {

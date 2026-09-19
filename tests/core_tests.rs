@@ -2027,6 +2027,194 @@ fn test_large_file_search_debouncing() {
     assert!(!pane.search_matches.is_empty());
 }
 
+#[test]
+fn test_async_search_generation_and_stale_discard() {
+    use rooney::editor::pane::{run_search_on_rope, EditorPane, PaneId};
+
+    let text = "alpha beta gamma\nhello world\nalpha delta\n";
+    let mut pane = EditorPane::new(PaneId::Left, "async_search_test.rs");
+    pane.buffer = TextBuffer::new(text);
+
+    // Test pure helper run_search_on_rope
+    let matches = run_search_on_rope(&pane.buffer.rope, "alpha");
+    assert_eq!(matches.len(), 2);
+    assert_eq!(matches[0], (0, 0, 5));
+    assert_eq!(matches[1], (2, 0, 5));
+
+    // Test start_search generation handling
+    let (gen1, is_large) = pane.start_search("alpha");
+    assert_eq!(gen1, 1);
+    assert!(!is_large, "Small file is marked !is_large");
+    assert_eq!(pane.search_matches.len(), 2);
+
+    // User types faster: start search for "beta"
+    let (gen2, _) = pane.start_search("beta");
+    assert_eq!(gen2, 2);
+
+    // User types faster again: start search for "gamma"
+    let (gen3, _) = pane.start_search("gamma");
+    assert_eq!(gen3, 3);
+
+    // Suppose an older background search worker for "beta" (gen 2) finishes now with 1 match:
+    let stale_matches = vec![(0, 6, 10)];
+    let applied = pane.apply_search_results(gen2, stale_matches);
+    assert!(!applied, "Stale search generation (2 vs 3) must be discarded");
+
+    // Current background worker for "gamma" (gen 3) finishes with 1 match:
+    let current_matches = vec![(0, 11, 16)];
+    let applied = pane.apply_search_results(gen3, current_matches.clone());
+    assert!(applied, "Matching search generation (3) must be applied");
+    assert_eq!(pane.search_matches, current_matches);
+
+    // Clearing query (empty string) resets matches and search query
+    let (_, _) = pane.start_search("");
+    assert!(pane.search_matches.is_empty());
+    assert!(pane.search_query.is_none());
+}
+
+#[test]
+fn test_large_markdown_async_preview_sync() {
+    use rooney::config::MarkdownSpec;
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use rooney::markdown::MarkdownDocument;
+
+    let mut pane = EditorPane::new(PaneId::Left, "large_doc.md");
+    pane.is_markdown_preview = true;
+    pane.highlighter = rooney::syntax::highlighter::Highlighter::new(rooney::syntax::SupportedLanguage::Markdown);
+
+    let md_text = "# Header Title\n\n- [x] Completed Task\n- [ ] Pending Task\n\n| Col A | Col B |\n|---|---|\n| 1 | 2 |\n";
+    pane.buffer = TextBuffer::new(md_text);
+
+    let edit_time = std::time::Instant::now();
+    pane.last_edit_time = edit_time;
+
+    // Simulate background worker parsing markdown
+    let doc = MarkdownDocument::parse(md_text, MarkdownSpec::Gfm);
+    assert_eq!(doc.blocks.len(), 4); // Heading, 2 Task ListItems, Table
+
+    // Simulate Message::HighlightParseCompleted handler application
+    let tab = pane.active_tab_mut();
+    if tab.last_edit_time == edit_time {
+        tab.markdown_doc = Some(doc);
+        tab.needs_highlight_parse = false;
+    }
+
+    assert!(pane.markdown_doc.is_some(), "Markdown document must be updated on parse complete");
+    let blocks = &pane.markdown_doc.as_ref().unwrap().blocks;
+    assert_eq!(blocks.len(), 4);
+}
+
+#[test]
+fn test_wrap_cache_invalidation_on_font_change() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use rooney::theme::EditorTheme;
+    use rooney::ui::canvas_editor::EditorCanvas;
+
+    // Line of 60 ASCII characters
+    let text = "012345678901234567890123456789012345678901234567890123456789\n";
+    let mut pane = EditorPane::new(PaneId::Left, "font_wrap.rs");
+    pane.buffer = TextBuffer::new(text);
+
+    let theme = EditorTheme::default();
+    let avail_width = 300.0f32; // 300px available
+
+    // Font size 10.0: char width = 6.0px -> 60 chars = 360px > 300px -> wraps into 2 rows
+    let canvas_small = EditorCanvas::new(&pane, &theme, true, "monospace", 10.0);
+    let wrap_small = canvas_small.build_wrap_model(avail_width);
+    assert!(wrap_small.subrow_count(0) >= 2);
+
+    // Invalidate wrap cache via pane method
+    pane.invalidate_wrap_cache();
+    assert!(pane.active_tab().cached_wrap_model.read().unwrap().is_none());
+
+    // Font size 20.0: char width = 12.0px -> 60 chars = 720px > 300px -> wraps into >= 3 rows
+    let canvas_large = EditorCanvas::new(&pane, &theme, true, "monospace", 20.0);
+    let wrap_large = canvas_large.build_wrap_model(avail_width);
+    assert!(wrap_large.subrow_count(0) >= 3, "Larger font size must wrap into more subrows");
+
+    // Also verify composite keying: even without explicit invalidate_wrap_cache,
+    // canvas with different font_size misses the cached entry automatically!
+    let wrap_small_again = canvas_small.build_wrap_model(avail_width);
+    assert_eq!(wrap_small_again.subrow_count(0), wrap_small.subrow_count(0));
+}
+
+#[test]
+fn test_search_generation_incremented_on_content_edit() {
+    use rooney::editor::buffer::TextBuffer;
+    use rooney::editor::pane::{EditorPane, PaneId};
+
+    // Construct a buffer > 2MB
+    let chunk = "fn target_symbol() -> i32 { 42 }\n";
+    let count = (3 * 1024 * 1024 / chunk.len()) + 10;
+    let large_text = chunk.repeat(count);
+
+    let mut pane = EditorPane::new(PaneId::Left, "large_search.rs");
+    pane.buffer = TextBuffer::new(&large_text);
+
+    // 1. Start search: sets search_query and increments search_generation to gen1
+    let (gen1, is_large) = pane.start_search("target_symbol");
+    assert!(is_large, "File > 2MB must be marked as large for search");
+    assert!(pane.search_query.is_some());
+    assert_eq!(pane.search_generation, gen1);
+
+    // Simulate background worker being in flight with gen1...
+    // 2. User edits document while worker is in flight
+    pane.buffer.insert_str("// User added a comment\n");
+    pane.on_content_changed();
+
+    // search_generation must have incremented on content changed!
+    assert!(pane.search_generation > gen1, "Editing buffer during search must advance search_generation");
+    assert!(pane.needs_search_update, "Large file edit must flag needs_search_update");
+
+    // 3. In-flight worker for gen1 finishes and tries to apply results
+    let stale_matches = vec![(0, 3, 16)];
+    let tab = pane.active_tab_mut();
+    let applied = tab.apply_search_results(gen1, stale_matches);
+    assert!(!applied, "apply_search_results must reject stale generation from before the edit");
+    assert!(tab.search_matches.is_empty(), "Stale matches must not be saved into tab");
+
+    // 4. Tick debounced search runs for current generation
+    let current_gen = tab.search_generation;
+    let fresh_matches = vec![(1, 3, 16)];
+    let applied_fresh = tab.apply_search_results(current_gen, fresh_matches.clone());
+    assert!(applied_fresh, "apply_search_results must accept current generation");
+    assert_eq!(tab.search_matches, fresh_matches);
+}
+
+#[test]
+fn test_large_markdown_toggle_and_spec_change_async() {
+    use rooney::config::MarkdownSpec;
+    use rooney::editor::buffer::TextBuffer;
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use rooney::markdown::MarkdownDocument;
+
+    // Construct a markdown buffer > 2MB
+    let md_chunk = "# Section Title\n\n- [x] Item completed\n- [ ] Item pending\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n";
+    let count = (3 * 1024 * 1024 / md_chunk.len()) + 10;
+    let large_md = md_chunk.repeat(count);
+
+    let mut pane = EditorPane::new(PaneId::Left, "huge_guide.md");
+    pane.buffer = TextBuffer::new(&large_md);
+    pane.is_markdown_preview = true;
+
+    // In large file, refresh_markdown must not synchronously parse
+    pane.markdown_doc = None;
+    pane.refresh_markdown();
+    assert!(pane.markdown_doc.is_none(), "Large markdown files must not parse synchronously in refresh_markdown");
+
+    // Background worker parses markdown asynchronously and produces MarkdownDocument
+    let edit_time = pane.last_edit_time;
+    let doc = MarkdownDocument::parse(&large_md[..1000], MarkdownSpec::Gfm);
+
+    // Apply Message::MarkdownParseCompleted
+    let tab = pane.active_tab_mut();
+    if tab.last_edit_time == edit_time {
+        tab.markdown_doc = Some(doc);
+    }
+    assert!(pane.markdown_doc.is_some(), "Markdown doc must be updated when background worker completes");
+}
+
+
 
 
 

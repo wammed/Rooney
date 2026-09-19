@@ -121,11 +121,28 @@ pub enum Message {
     InsertAiResponseAtCursor(String),
     CopyAiResponse(String),
 
-    // Background Async Syntax Parsing
+    // Background Async Syntax Parsing & Markdown Doc Sync
     HighlightParseCompleted {
         pane_id: PaneId,
         tab_id: usize,
         tree: Option<tree_sitter::Tree>,
+        markdown_doc: Option<crate::markdown::MarkdownDocument>,
         edit_time: std::time::Instant,
+    },
+
+    // Background Async Search Query Scanning
+    SearchCompleted {
+        pane_id: PaneId,
+        tab_id: usize,
+        generation: usize,
+        matches: Vec<(usize, usize, usize)>,
+    },
+
+    // Background Async Markdown Preview Parsing (for large files on Toggle/Spec change)
+    MarkdownParseCompleted {
+        pane_id: PaneId,
+        tab_id: usize,
+        edit_time: std::time::Instant,
+        doc: crate::markdown::MarkdownDocument,
     },
 }
