@@ -530,10 +530,24 @@
        - **Viewport Layout**: 10KB（326 µs）、100KB（365 µs）、1MB（383 µs）、10MB（359 µs）、50MB（427 µs）。50MB / 185万行でも **0.43 ms 以内** で完了し、2,300 FPS 以上のスループットを実証。
        - **Highlight Cache Hit**: 全スケールで **0.8〜2.0 µs** の超高速アクセス。
        - **Incremental Edit & Parse**: 10KB / 100KB で **1.0〜2.2 ms** で差分解析完了。
+### セッション 27: 抜本的グリフメトリクス連携による全角記号・ダッシュカーソル位置ズレの根本解消
+- **背景と課題**:
+  - `「正確に見せる」――この2方向で` などの日本語文において、ダッシュ記号 `――`（U+2015 Horizontal Bar, East Asian Ambiguous）の表示幅とエディタのカーソル進捗幅（`char_advance`）に乖離が生じ、ダッシュの直後からカーソルが文字の上に重なってずれる現象が発生。
+  - 原因: `unicode-width` の `UnicodeWidthChar::width()` は非 CJK コンテキスト（デフォルト）で Ambiguous 文字を幅 1（8.4px）と判定していたが、GUI レンダリング（`cosmic-text` + JetBrainsMono Nerd Font / Noto Sans CJK JP）では 14.0px（全角幅）でラスタライズされていたため、2文字で 11.2px のズレが累積していた。
+- **抜本的解決策（Roadmap: Direct Glyph Metrics Integration の実現）**:
+  - 固定幅や簡易ヒューリスティクスに頼らず、描画エンジンである `cosmic-text` の実際のグリフシェーピング結果（`Buffer::layout_runs() -> glyph.w`）を直接測定するアーキテクチャ `measure_glyph_advance(c, font_size, font_name)` を `src/ui/canvas_editor.rs` に実装。
+  - ASCII 印字可能文字（`' '..='~'`）は `font_size * 0.60` のファストパスで高速処理。
+  - 非 ASCII 文字は `cosmic_text::FontSystem` による実シェーピングを行い、スレッドセーフな `OnceLock<GlyphMetricsMap>`（`(char, u32, &'static str) -> f32`）にキャッシュ。
+  - 取得コストは初回計測時のみで、キャッシュヒット時は ~10ns。エディタの 2,000+ FPS レンダリング性能を一切損なわない。
+  - `EditorCanvas::char_advance_with_font` / `glyph_advance` を導入し、Viewport レイアウト計算、カーソル座標計算（`cursor_screen_pos`）、マウスクリック文字判定（`pos_to_char_coords`）、選択範囲ハイライト、検索マッチハイライト、文字描画セグメント、IME プレエディット幅の全箇所を統一。
 - **検証結果**:
+  - `tests/core_tests.rs` に `test_cosmic_text_glyph_layout` を追加。
+  - `EditorCanvas::char_advance_with_font('―', 14.0, "JetBrainsMono Nerd Font") == 14.0px` を確認。
+  - 対象文 `「正確に見せる」――この2方向で` の文字進捗累積和（218.40px）が、`cosmic-text` の単一行レイアウト幅（218.40px）と 0.00px 差で完全一致することを検証。
   - `cargo clippy --all-targets -- -D warnings`: **警告 0 件**。
-  - `cargo test`: **49/49 全テスト通過 (1 benchmark + 45 core + 3 ollama, 0 failed)**。
+  - `cargo test`: **50/50 全テスト通過 (1 benchmark + 46 core + 3 ollama, 0 failed)**。
   - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
+  - `README.md` & `README.ja.md` の Roadmap チェックボックス更新（`Direct Glyph Metrics Integration` 完了）および機能ハイライト反映。
 
 ---
 
@@ -646,11 +660,13 @@ Rooney/
 ## 5. 現在のビルドおよびテスト状態
 
 - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings** (完全クリーン)
-- `cargo test`: **49/49 全テスト通過 (1 benchmark + 45 core + 3 ollama, 0 failed)**
-  - `test_multiscale_performance_benchmarks` ... ok (新規追加: 10KB〜50MBマルチスケール性能ベンチマーク、Viewport < 0.45ms、Cache Hit < 2µs検証)
+- `cargo test`: **50/50 全テスト通過 (1 benchmark + 46 core + 3 ollama, 0 failed)**
+  - `test_multiscale_performance_benchmarks` ... ok (10KB〜50MBマルチスケール性能ベンチマーク、Viewport < 0.45ms、Cache Hit < 2µs検証)
+  - `test_cosmic_text_glyph_layout` ... ok (新規追加: cosmic-text実グリフメトリクス測定と全角ダッシュ――・CJK記号の累積位置0.00px完全一致検証)
+  - `test_char_advance_ascii_and_cjk` ... ok
   - `test_treesitter_multibyte_and_emoji_highlight_coordinates` ... ok (日本語・絵文字混在環境でのTree-sitterトークン文字範囲厳密一致検証)
-  - `test_byte_char_mapper_and_slice_by_char_indices` ... ok (新規追加: ByteCharMapper & slice_by_char_indices 各種境界検証)
-  - `test_multiline_block_comment_highlighting` ... ok (新規追加: 複数行ブロックコメントの行境界クリッピング・ハイライト検証)
+  - `test_byte_char_mapper_and_slice_by_char_indices` ... ok (ByteCharMapper & slice_by_char_indices 各種境界検証)
+  - `test_multiline_block_comment_highlighting` ... ok (複数行ブロックコメントの行境界クリッピング・ハイライト検証)
   - `test_cli_flags_and_path_resolution` ... ok (file:// URI, %20, 日本語%E3%83%86..., 相対/絶対パス, 正規化検証)
   - `test_editor_pane_open_file_welcome_tab_reuse_and_non_existent` ... ok (Welcomeタブ再利用, 新規未実在ファイルタブ初期化検証)
   - `test_editor_auto_scroll_flag_and_coordinates` ... ok (needs_scroll_to_cursor フラグ動作とカーソル追従検証)
@@ -667,7 +683,6 @@ Rooney/
   - `test_filename_sanitization_and_path_traversal_guards` ... ok
   - `test_atomic_save_and_file_size_limits` ... ok
   - `test_active_header_menu_and_actions` ... ok
-  - `test_char_advance_ascii_and_cjk` ... ok
   - `test_buffer_selection_and_deletion` ... ok
   - `test_file_type_icons_extended` ... ok
   - `test_file_tree_navigation` ... ok
@@ -696,7 +711,7 @@ Rooney/
   - `test_ollama_connectivity_and_models` ... ok
   - `test_ollama_chat_streaming` ... ok
   - `test_ollama_fim_generation` ... ok
-- `cargo build --release`: **Clean release build (Code 0)**
+- `cargo build --release`: **Clean release build (Code 0), installed to ~/.local/bin/rooney**
 
 ---
 

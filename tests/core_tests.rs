@@ -1593,3 +1593,58 @@ fn test_multiline_block_comment_highlighting() {
     assert_eq!(let_span.end_col, 3);
 }
 
+#[test]
+fn test_cosmic_text_glyph_layout() {
+    use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping};
+    use rooney::ui::canvas_editor::EditorCanvas;
+    use std::sync::Mutex;
+
+    static TEST_FONT_SYSTEM: Mutex<Option<FontSystem>> = Mutex::new(None);
+    {
+        let mut guard = TEST_FONT_SYSTEM.lock().unwrap();
+        if guard.is_none() {
+            *guard = Some(FontSystem::new());
+        }
+    }
+
+    let text = "「正確に見せる」――この2方向で";
+    let font_size = 14.0;
+    let font_name = "JetBrainsMono Nerd Font";
+
+    // 1. Verify that '―' (U+2015 Horizontal Bar) advances by full-width 14.0px
+    let dash_adv = EditorCanvas::char_advance_with_font('―', font_size, font_name);
+    assert!(
+        (dash_adv - 14.0).abs() < 1e-4,
+        "Horizontal bar '―' (U+2015) must advance 14.0px, got {dash_adv}"
+    );
+
+    // 2. Verify individual glyph advances match cosmic-text's actual line layout
+    let mut cumulative_x = 0.0;
+    for c in text.chars() {
+        let adv = EditorCanvas::char_advance_with_font(c, font_size, font_name);
+        cumulative_x += adv;
+    }
+
+    let mut guard = TEST_FONT_SYSTEM.lock().unwrap();
+    let fs = guard.as_mut().unwrap();
+    let metrics = Metrics::new(font_size, 21.0);
+    let mut buffer = Buffer::new(fs, metrics);
+    buffer.set_text(
+        fs,
+        text,
+        Attrs::new().family(Family::Name(font_name)),
+        Shaping::Advanced,
+    );
+    buffer.shape_until_scroll(fs, false);
+
+    let full_run = buffer.layout_runs().next().unwrap();
+    let full_w = full_run.line_w;
+
+    assert!(
+        (cumulative_x - full_w).abs() < 0.01,
+        "Individual glyph advances sum ({cumulative_x:.2}) must match full line width ({full_w:.2})!"
+    );
+}
+
+
+

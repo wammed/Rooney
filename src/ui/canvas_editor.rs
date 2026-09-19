@@ -56,15 +56,91 @@ pub struct VisualRow {
     pub y: f32,
 }
 
-impl<'a> EditorCanvas<'a> {
-    pub fn char_advance(c: char, font_size: f32) -> f32 {
-        if c == '\t' {
-            font_size * 0.60 * 4.0
-        } else if c.width().unwrap_or(1) == 2 {
+type GlyphMetricKey = (char, u32, &'static str);
+type GlyphMetricsMap = std::sync::Mutex<std::collections::HashMap<GlyphMetricKey, f32>>;
+
+fn measure_glyph_advance(c: char, font_size: f32, font_name: &str) -> f32 {
+    if c == '\t' {
+        return font_size * 0.60 * 4.0;
+    }
+    // Fast path: ASCII printable characters have uniform monospace width
+    if (' '..='~').contains(&c) {
+        return font_size * 0.60;
+    }
+
+    use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping};
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+
+    static METRICS_CACHE: OnceLock<GlyphMetricsMap> = OnceLock::new();
+    static FONT_SYSTEM: OnceLock<Mutex<FontSystem>> = OnceLock::new();
+
+    let interned_name = intern_font_name(font_name);
+    let key = (c, font_size.to_bits(), interned_name);
+
+    let cache = METRICS_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(guard) = cache.lock() {
+        if let Some(&w) = guard.get(&key) {
+            return w;
+        }
+    }
+
+    let font_system_lock = FONT_SYSTEM.get_or_init(|| Mutex::new(FontSystem::new()));
+    let mut measured_w = None;
+
+    if let Ok(mut fs) = font_system_lock.lock() {
+        let metrics = Metrics::new(font_size, (font_size * 1.5).round());
+        let mut buffer = Buffer::new(&mut fs, metrics);
+        let mut s = [0u8; 4];
+        let str_slice = c.encode_utf8(&mut s);
+        let family = if font_name == "monospace" {
+            Family::Monospace
+        } else {
+            Family::Name(font_name)
+        };
+        buffer.set_text(&mut fs, str_slice, Attrs::new().family(family), Shaping::Advanced);
+        buffer.shape_until_scroll(&mut fs, false);
+
+        let mut total_w = 0.0;
+        for run in buffer.layout_runs() {
+            for glyph in run.glyphs {
+                total_w += glyph.w;
+            }
+        }
+        if total_w > 0.0 {
+            measured_w = Some(total_w);
+        }
+    }
+
+    let w = measured_w.unwrap_or_else(|| {
+        if c.width_cjk().unwrap_or(1) == 2 {
             font_size * 1.0
         } else {
             font_size * 0.60
         }
+    });
+
+    if let Ok(mut guard) = cache.lock() {
+        guard.insert(key, w);
+    }
+
+    w
+}
+
+impl<'a> EditorCanvas<'a> {
+    #[inline]
+    pub fn char_advance(c: char, font_size: f32) -> f32 {
+        Self::char_advance_with_font(c, font_size, "JetBrainsMono Nerd Font")
+    }
+
+    #[inline]
+    pub fn char_advance_with_font(c: char, font_size: f32, font_name: &str) -> f32 {
+        measure_glyph_advance(c, font_size, font_name)
+    }
+
+    #[inline]
+    pub fn glyph_advance(&self, c: char) -> f32 {
+        measure_glyph_advance(c, self.font_size, self.font_name)
     }
 
     pub fn new(
@@ -175,7 +251,7 @@ impl<'a> EditorCanvas<'a> {
 
             for (i, c) in line_text.chars().enumerate() {
                 total_chars = i + 1;
-                let w = Self::char_advance(c, self.font_size);
+                let w = self.glyph_advance(c);
                 if cur_row_w + w > avail_width && i > start {
                     visual_rows.push(VisualRow {
                         line_idx,
@@ -223,7 +299,7 @@ impl<'a> EditorCanvas<'a> {
 
         let chars: Vec<char> = line_text.chars().collect();
         for (i, &c) in chars.iter().enumerate() {
-            let w = Self::char_advance(c, self.font_size);
+            let w = self.glyph_advance(c);
             if cur_row_w + w > avail_width && i > start {
                 if cursor.1 >= start && cursor.1 <= i {
                     target_subrow_start = start;
@@ -245,7 +321,7 @@ impl<'a> EditorCanvas<'a> {
         let mut pixel_offset = 0.0;
         if cursor.1 > target_subrow_start {
             for &ch in chars.iter().skip(target_subrow_start).take(cursor.1.saturating_sub(target_subrow_start)) {
-                pixel_offset += Self::char_advance(ch, self.font_size);
+                pixel_offset += self.glyph_advance(ch);
             }
         }
 
@@ -276,7 +352,7 @@ impl<'a> EditorCanvas<'a> {
         let mut start = 0;
         let mut cur_row_w = 0.0;
         for (i, &c) in chars.iter().enumerate() {
-            let w = Self::char_advance(c, self.font_size);
+            let w = self.glyph_advance(c);
             if cur_row_w + w > avail_width && i > start {
                 subrows.push((start, i));
                 start = i;
@@ -295,7 +371,7 @@ impl<'a> EditorCanvas<'a> {
 
         if sub_end > sub_start {
             for (idx_offset, &ch) in chars[sub_start..sub_end].iter().enumerate() {
-                let char_pixel_w = Self::char_advance(ch, self.font_size);
+                let char_pixel_w = self.glyph_advance(ch);
                 if acc_width + char_pixel_w / 2.0 >= rel_x {
                     break;
                 }
@@ -427,13 +503,13 @@ impl<'a> EditorCanvas<'a> {
                             let mut start_x_offset = 0.0;
                             if line_sel_start > row.char_start {
                                 for ch in line_text.chars().skip(row.char_start).take(line_sel_start - row.char_start) {
-                                    start_x_offset += Self::char_advance(ch, self.font_size);
+                                    start_x_offset += self.glyph_advance(ch);
                                 }
                             }
 
                             let mut sel_w = 0.0;
                             for ch in line_text.chars().skip(line_sel_start).take(line_sel_end - line_sel_start) {
-                                sel_w += Self::char_advance(ch, self.font_size);
+                                sel_w += self.glyph_advance(ch);
                             }
 
                             let sel_rect = Rectangle {
@@ -472,13 +548,13 @@ impl<'a> EditorCanvas<'a> {
                             let mut x_offset = 0.0;
                             if match_vis_start > row.char_start {
                                 for ch in line_text.chars().skip(row.char_start).take(match_vis_start - row.char_start) {
-                                    x_offset += Self::char_advance(ch, self.font_size);
+                                    x_offset += self.glyph_advance(ch);
                                 }
                             }
 
                             let mut match_w = 0.0;
                             for ch in line_text.chars().skip(match_vis_start).take(match_vis_end - match_vis_start) {
-                                match_w += Self::char_advance(ch, self.font_size);
+                                match_w += self.glyph_advance(ch);
                             }
 
                             let is_current = match_idx == self.pane.current_match_idx;
@@ -565,7 +641,7 @@ impl<'a> EditorCanvas<'a> {
                         let segment = Self::slice_by_char_indices(&line_text, cur_col, token_end);
                         let mut seg_w = 0.0;
                         for ch in segment.chars() {
-                            seg_w += Self::char_advance(ch, self.font_size);
+                            seg_w += self.glyph_advance(ch);
                         }
 
                         frame.fill_text(Text {
@@ -597,7 +673,7 @@ impl<'a> EditorCanvas<'a> {
                             let preedit_x = cursor_pt.x;
                             let mut preedit_w = 0.0;
                             for c in preedit_str.chars() {
-                                preedit_w += Self::char_advance(c, self.font_size);
+                                preedit_w += self.glyph_advance(c);
                             }
 
                             // Highlight underlay for preedit
@@ -631,7 +707,7 @@ impl<'a> EditorCanvas<'a> {
                             let sel_end = sel.as_ref().map(|r| r.end).unwrap_or(preedit_str.chars().count());
                             let mut sel_w = 0.0;
                             for c in preedit_str.chars().take(sel_end) {
-                                sel_w += Self::char_advance(c, self.font_size);
+                                sel_w += self.glyph_advance(c);
                             }
                             caret_x = preedit_x + sel_w;
                             preedit_offset_x = preedit_w + 4.0;
