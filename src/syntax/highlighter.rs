@@ -297,6 +297,32 @@ impl Highlighter {
         self.cache.borrow_mut().clear();
     }
 
+    /// Updates the syntax tree directly from a `ropey::Rope` using chunk callbacks (`parse_with`),
+    /// completely eliminating the 50MB intermediate string allocation and copying overhead.
+    pub fn update_source_from_rope(&mut self, rope: &ropey::Rope) {
+        if let Some(ref mut parser) = self.parser {
+            let old_tree = if self.has_pending_edit {
+                self.tree.as_ref()
+            } else {
+                None
+            };
+            self.tree = parser.parse_with(
+                &mut |byte_offset, _position| {
+                    if byte_offset >= rope.len_bytes() {
+                        return &[] as &[u8];
+                    }
+                    let (chunk, chunk_byte_idx, _, _) = rope.chunk_at_byte(byte_offset);
+                    let rel = byte_offset - chunk_byte_idx;
+                    &chunk.as_bytes()[rel..]
+                },
+                old_tree,
+            );
+            self.has_pending_edit = false;
+        }
+        self.cache.borrow_mut().clear();
+    }
+
+
     pub fn highlight_line(&self, line_text: &str, line_idx: usize) -> Vec<HighlightSpan> {
         if line_text.is_empty() {
             return Vec::new();

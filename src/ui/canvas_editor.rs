@@ -57,7 +57,20 @@ pub struct VisualRow {
 }
 
 type GlyphMetricKey = (char, u32, &'static str);
-type GlyphMetricsMap = std::sync::Mutex<std::collections::HashMap<GlyphMetricKey, f32>>;
+type GlyphMetricsMap = std::sync::RwLock<std::collections::HashMap<GlyphMetricKey, f32>>;
+
+static METRICS_CACHE: std::sync::OnceLock<GlyphMetricsMap> = std::sync::OnceLock::new();
+static FONT_SYSTEM: std::sync::OnceLock<std::sync::Mutex<cosmic_text::FontSystem>> =
+    std::sync::OnceLock::new();
+
+/// Clears the global glyph advance cache. Call this when font family, size, or themes are changed.
+pub fn clear_glyph_cache() {
+    if let Some(cache) = METRICS_CACHE.get() {
+        if let Ok(mut guard) = cache.write() {
+            guard.clear();
+        }
+    }
+}
 
 fn measure_glyph_advance(c: char, font_size: f32, font_name: &str) -> f32 {
     if c == '\t' {
@@ -70,22 +83,19 @@ fn measure_glyph_advance(c: char, font_size: f32, font_name: &str) -> f32 {
 
     use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping};
     use std::collections::HashMap;
-    use std::sync::{Mutex, OnceLock};
-
-    static METRICS_CACHE: OnceLock<GlyphMetricsMap> = OnceLock::new();
-    static FONT_SYSTEM: OnceLock<Mutex<FontSystem>> = OnceLock::new();
+    use std::sync::RwLock;
 
     let interned_name = intern_font_name(font_name);
     let key = (c, font_size.to_bits(), interned_name);
 
-    let cache = METRICS_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Ok(guard) = cache.lock() {
+    let cache = METRICS_CACHE.get_or_init(|| RwLock::new(HashMap::new()));
+    if let Ok(guard) = cache.read() {
         if let Some(&w) = guard.get(&key) {
             return w;
         }
     }
 
-    let font_system_lock = FONT_SYSTEM.get_or_init(|| Mutex::new(FontSystem::new()));
+    let font_system_lock = FONT_SYSTEM.get_or_init(|| std::sync::Mutex::new(FontSystem::new()));
     let mut measured_w = None;
 
     if let Ok(mut fs) = font_system_lock.lock() {
@@ -120,7 +130,7 @@ fn measure_glyph_advance(c: char, font_size: f32, font_name: &str) -> f32 {
         }
     });
 
-    if let Ok(mut guard) = cache.lock() {
+    if let Ok(mut guard) = cache.write() {
         guard.insert(key, w);
     }
 
@@ -128,6 +138,11 @@ fn measure_glyph_advance(c: char, font_size: f32, font_name: &str) -> f32 {
 }
 
 impl<'a> EditorCanvas<'a> {
+    #[inline]
+    pub fn clear_glyph_cache() {
+        clear_glyph_cache();
+    }
+
     #[inline]
     pub fn char_advance(c: char, font_size: f32) -> f32 {
         Self::char_advance_with_font(c, font_size, "JetBrainsMono Nerd Font")
@@ -142,6 +157,7 @@ impl<'a> EditorCanvas<'a> {
     pub fn glyph_advance(&self, c: char) -> f32 {
         measure_glyph_advance(c, self.font_size, self.font_name)
     }
+
 
     pub fn new(
         pane: &'a EditorPane,

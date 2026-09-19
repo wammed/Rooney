@@ -1646,5 +1646,79 @@ fn test_cosmic_text_glyph_layout() {
     );
 }
 
+#[test]
+fn test_mixed_script_coordinates_and_roundtrip() {
+    use cosmic::iced::{Point, Rectangle, Size};
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use rooney::theme::EditorTheme;
+    use rooney::ui::canvas_editor::EditorCanvas;
+
+    let test_cases = [
+        // 1. Japanese punctuation & East Asian Ambiguous characters (quotes, dashes, ellipsis)
+        ("「正確に見せる」――この2方向で……（検証中）！", "Japanese Punctuation & Dashes"),
+        // 2. Emojis with ZWJ and surrogate pairs
+        ("🦀 Rust 🚀 and 👨‍💻 Hacker", "Emojis & ZWJ Sequence"),
+        // 3. Combining characters (e + acute accent, kana dakuten)
+        ("Cafe\u{0301} & か\u{3099}", "Combining Characters"),
+        // 4. Tabs, spaces, CJK and ASCII mixed
+        ("\tfn main() {\t// こんにちは世界！", "Tabs + CJK + ASCII"),
+    ];
+
+    let theme = EditorTheme::default();
+    let bounds = Rectangle::new(Point::ORIGIN, Size::new(1600.0, 800.0));
+    let font_size = 14.0;
+    let font_name = "JetBrainsMono Nerd Font";
+
+    for (text, label) in test_cases {
+        let mut pane = EditorPane::new(PaneId::Left, "MixedScriptTest");
+        pane.buffer = TextBuffer::new(text);
+        let chars: Vec<char> = text.lines().next().unwrap_or("").chars().collect();
+
+        // 1. Strictly monotonic increase of character positions
+        let mut x_positions = Vec::new();
+        for col in 0..=chars.len() {
+            pane.buffer.cursor = (0, col);
+            let canvas = EditorCanvas::new(&pane, &theme, true, font_name, font_size);
+            let pos = canvas.cursor_screen_pos(bounds).expect("cursor_screen_pos must be Some");
+            x_positions.push(pos.x);
+        }
+
+        for i in 0..x_positions.len() - 1 {
+            assert!(
+                x_positions[i + 1] > x_positions[i],
+                "[{label}] Cursor X position must strictly increase at col {i}: prev={}, next={}",
+                x_positions[i],
+                x_positions[i + 1]
+            );
+        }
+
+        // 2. Round-trip: pos_to_char_coords at cursor position returns exact column
+        for (col, &ch) in chars.iter().enumerate() {
+            pane.buffer.cursor = (0, col);
+            let canvas = EditorCanvas::new(&pane, &theme, true, font_name, font_size);
+            let cursor_pos = canvas.cursor_screen_pos(bounds).unwrap();
+
+            // Clicking right on the character start should map to col
+            let (hit_line, hit_col) = canvas.pos_to_char_coords(cursor_pos, bounds);
+            assert_eq!(hit_line, 0, "[{label}] Hit line mismatch at col {col}");
+            assert_eq!(hit_col, col, "[{label}] Round-trip hit col mismatch at col {col}");
+
+            // Clicking just inside the left half of character col should still map to col
+            let char_w = canvas.glyph_advance(ch);
+            let left_half_pt = Point::new(cursor_pos.x + char_w * 0.25, cursor_pos.y);
+            let (_, left_col) = canvas.pos_to_char_coords(left_half_pt, bounds);
+            assert_eq!(left_col, col, "[{label}] Left half click mismatch at col {col}");
+
+            // Clicking in the right half of character col should advance to col + 1
+            let right_half_pt = Point::new(cursor_pos.x + char_w * 0.75, cursor_pos.y);
+            let (_, right_col) = canvas.pos_to_char_coords(right_half_pt, bounds);
+            assert_eq!(right_col, col + 1, "[{label}] Right half click mismatch at col {col}");
+        }
+
+
+    }
+}
+
+
 
 

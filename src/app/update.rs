@@ -74,6 +74,20 @@ impl App {
     pub(crate) fn handle_update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Tick => {
+                // Flush debounced Tree-sitter AST parsing on large files if user paused typing (> 100ms)
+                if self.left_pane.needs_highlight_parse
+                    && self.left_pane.last_edit_time.elapsed() >= Duration::from_millis(100)
+                {
+                    self.left_pane.flush_highlight_parse();
+                }
+                if self.split_layout == crate::editor::pane::SplitLayout::Split
+                    && self.right_pane.needs_highlight_parse
+                    && self.right_pane.last_edit_time.elapsed() >= Duration::from_millis(100)
+                {
+                    self.right_pane.flush_highlight_parse();
+                }
+
+
                 let pane = self.current_pane();
                 let elapsed = pane.last_edit_time.elapsed();
 
@@ -87,6 +101,7 @@ impl App {
                 }
                 Task::none()
             }
+
 
             Message::Event(event) => self.handle_key_event(event),
 
@@ -374,6 +389,7 @@ impl App {
             Message::IncreaseFontSize => {
                 let s = self.font_manager.font_size + 1.0;
                 self.font_manager.set_font_size(s);
+                crate::ui::canvas_editor::clear_glyph_cache();
                 self.save_config();
                 Task::none()
             }
@@ -381,9 +397,11 @@ impl App {
             Message::DecreaseFontSize => {
                 let s = self.font_manager.font_size - 1.0;
                 self.font_manager.set_font_size(s);
+                crate::ui::canvas_editor::clear_glyph_cache();
                 self.save_config();
                 Task::none()
             }
+
 
             Message::ToggleAi => {
                 self.ollama.is_enabled = !self.ollama.is_enabled;

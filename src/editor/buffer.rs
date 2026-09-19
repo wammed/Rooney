@@ -86,6 +86,17 @@ impl TextBuffer {
         self.rope.len_lines()
     }
 
+    #[inline]
+    pub fn len_bytes(&self) -> usize {
+        self.rope.len_bytes()
+    }
+
+    #[inline]
+    pub fn len_chars(&self) -> usize {
+        self.rope.len_chars()
+    }
+
+
     pub fn line_text(&self, line_idx: usize) -> Option<String> {
         if line_idx < self.rope.len_lines() {
             let slice = self.rope.line(line_idx);
