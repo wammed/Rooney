@@ -48,11 +48,12 @@ pub struct EditorCanvas<'a> {
 }
 
 #[derive(Debug, Clone)]
-struct VisualRow {
-    line_idx: usize,
-    char_start: usize,
-    char_end: usize,
-    is_first_subrow: bool,
+pub struct VisualRow {
+    pub line_idx: usize,
+    pub char_start: usize,
+    pub char_end: usize,
+    pub is_first_subrow: bool,
+    pub y: f32,
 }
 
 impl<'a> EditorCanvas<'a> {
@@ -123,14 +124,36 @@ impl<'a> EditorCanvas<'a> {
         &text[start_byte..end_byte]
     }
 
-    fn build_visual_rows(&self, bounds_width: f32) -> Vec<VisualRow> {
+    #[inline]
+    pub fn total_content_height(&self) -> f32 {
+        let total_lines = self.pane.buffer.line_count();
+        (total_lines as f32) * self.line_height
+    }
+
+    pub fn build_viewport_visual_rows(
+        &self,
+        bounds_width: f32,
+        scroll_y: f32,
+        bounds_height: f32,
+    ) -> Vec<VisualRow> {
+        let total_lines = self.pane.buffer.line_count();
+        if total_lines == 0 {
+            return Vec::new();
+        }
+
+        let first_visible_line = (scroll_y / self.line_height).floor().max(0.0) as usize;
+        let visible_count = (bounds_height / self.line_height).ceil().max(1.0) as usize;
+        let margin = 5;
+        let start_line = first_visible_line.saturating_sub(margin).min(total_lines.saturating_sub(1));
+        let end_line = (first_visible_line + visible_count + margin).min(total_lines);
+
         let gutter = self.gutter_width();
         let avail_width = (bounds_width - gutter - 24.0).max(120.0);
 
         let mut visual_rows = Vec::new();
-        let total_lines = self.pane.buffer.line_count();
 
-        for line_idx in 0..total_lines {
+        for line_idx in start_line..end_line {
+            let line_base_y = (line_idx as f32) * self.line_height;
             let line_text = self.pane.buffer.line_text(line_idx).unwrap_or_default();
 
             if line_text.is_empty() {
@@ -139,6 +162,7 @@ impl<'a> EditorCanvas<'a> {
                     char_start: 0,
                     char_end: 0,
                     is_first_subrow: true,
+                    y: line_base_y,
                 });
                 continue;
             }
@@ -147,6 +171,7 @@ impl<'a> EditorCanvas<'a> {
             let mut cur_row_w = 0.0;
             let mut is_first = true;
             let mut total_chars = 0;
+            let mut subrow_idx = 0;
 
             for (i, c) in line_text.chars().enumerate() {
                 total_chars = i + 1;
@@ -157,10 +182,12 @@ impl<'a> EditorCanvas<'a> {
                         char_start: start,
                         char_end: i,
                         is_first_subrow: is_first,
+                        y: line_base_y + (subrow_idx as f32) * self.line_height,
                     });
                     start = i;
                     cur_row_w = 0.0;
                     is_first = false;
+                    subrow_idx += 1;
                 }
                 cur_row_w += w;
             }
@@ -170,66 +197,113 @@ impl<'a> EditorCanvas<'a> {
                 char_start: start,
                 char_end: total_chars,
                 is_first_subrow: is_first,
+                y: line_base_y + (subrow_idx as f32) * self.line_height,
             });
         }
 
         visual_rows
     }
 
+    #[allow(dead_code)]
+    fn build_visual_rows(&self, bounds_width: f32) -> Vec<VisualRow> {
+        self.build_viewport_visual_rows(bounds_width, 0.0, f32::MAX)
+    }
+
     pub fn cursor_screen_pos(&self, bounds: Rectangle) -> Option<Point> {
         let gutter = self.gutter_width();
-        let visual_rows = self.build_visual_rows(bounds.width);
         let cursor = self.pane.buffer.cursor;
+        let line_text = self.pane.buffer.line_text(cursor.0).unwrap_or_default();
+        let avail_width = (bounds.width - gutter - 24.0).max(120.0);
 
-        for (v_idx, row) in visual_rows.iter().enumerate() {
-            if row.line_idx == cursor.0 && cursor.1 >= row.char_start && cursor.1 <= row.char_end {
-                let y = (v_idx as f32) * self.line_height - self.pane.scroll_y.get();
-                let line_text = self.pane.buffer.line_text(cursor.0).unwrap_or_default();
+        let mut start = 0;
+        let mut cur_row_w = 0.0;
+        let mut subrow_idx = 0;
+        let mut target_subrow_start = 0;
+        let mut target_subrow_idx = 0;
 
-                let mut pixel_offset = 0.0;
-                if cursor.1 > row.char_start {
-                    for ch in line_text.chars().skip(row.char_start).take(cursor.1 - row.char_start) {
-                        pixel_offset += Self::char_advance(ch, self.font_size);
-                    }
+        let chars: Vec<char> = line_text.chars().collect();
+        for (i, &c) in chars.iter().enumerate() {
+            let w = Self::char_advance(c, self.font_size);
+            if cur_row_w + w > avail_width && i > start {
+                if cursor.1 >= start && cursor.1 <= i {
+                    target_subrow_start = start;
+                    target_subrow_idx = subrow_idx;
+                    break;
                 }
+                start = i;
+                cur_row_w = 0.0;
+                subrow_idx += 1;
+            }
+            cur_row_w += w;
+        }
+        if cursor.1 >= start {
+            target_subrow_start = start;
+            target_subrow_idx = subrow_idx;
+        }
 
-                let x = gutter + 10.0 + pixel_offset - self.pane.scroll_x.get();
-                return Some(Point::new(x, y));
+        let y = ((cursor.0 + target_subrow_idx) as f32) * self.line_height - self.pane.scroll_y.get();
+        let mut pixel_offset = 0.0;
+        if cursor.1 > target_subrow_start {
+            for &ch in chars.iter().skip(target_subrow_start).take(cursor.1.saturating_sub(target_subrow_start)) {
+                pixel_offset += Self::char_advance(ch, self.font_size);
             }
         }
-        None
+
+        let x = gutter + 10.0 + pixel_offset - self.pane.scroll_x.get();
+        Some(Point::new(x, y))
     }
 
     pub fn pos_to_char_coords(&self, pos: Point, bounds: Rectangle) -> (usize, usize) {
         let gutter = self.gutter_width();
-        let visual_rows = self.build_visual_rows(bounds.width);
-
-        let clicked_v_idx = ((pos.y + self.pane.scroll_y.get()) / self.line_height).floor() as isize;
-        let clicked_v_idx = clicked_v_idx.max(0) as usize;
-
-        if let Some(row) = visual_rows.get(clicked_v_idx) {
-            let line_text = self.pane.buffer.line_text(row.line_idx).unwrap_or_default();
-            let rel_x = (pos.x - gutter - 10.0 + self.pane.scroll_x.get()).max(0.0);
-
-            let mut acc_width = 0.0;
-            let mut chosen_col = row.char_start;
-
-            if row.char_end > row.char_start {
-                for (idx_offset, ch) in line_text.chars().skip(row.char_start).take(row.char_end - row.char_start).enumerate() {
-                    let char_pixel_w = Self::char_advance(ch, self.font_size);
-                    if acc_width + char_pixel_w / 2.0 >= rel_x {
-                        break;
-                    }
-                    acc_width += char_pixel_w;
-                    chosen_col = row.char_start + idx_offset + 1;
-                }
-            }
-            (row.line_idx, chosen_col)
-        } else if let Some(last) = visual_rows.last() {
-            (last.line_idx, last.char_end)
-        } else {
-            (0, 0)
+        let total_lines = self.pane.buffer.line_count();
+        if total_lines == 0 {
+            return (0, 0);
         }
+
+        let clicked_line = ((pos.y + self.pane.scroll_y.get()) / self.line_height).floor().max(0.0) as usize;
+        let clicked_line = clicked_line.min(total_lines - 1);
+        let line_text = self.pane.buffer.line_text(clicked_line).unwrap_or_default();
+        let avail_width = (bounds.width - gutter - 24.0).max(120.0);
+
+        let chars: Vec<char> = line_text.chars().collect();
+        if chars.is_empty() {
+            return (clicked_line, 0);
+        }
+
+        let rel_x = (pos.x - gutter - 10.0 + self.pane.scroll_x.get()).max(0.0);
+
+        let mut subrows = Vec::new();
+        let mut start = 0;
+        let mut cur_row_w = 0.0;
+        for (i, &c) in chars.iter().enumerate() {
+            let w = Self::char_advance(c, self.font_size);
+            if cur_row_w + w > avail_width && i > start {
+                subrows.push((start, i));
+                start = i;
+                cur_row_w = 0.0;
+            }
+            cur_row_w += w;
+        }
+        subrows.push((start, chars.len()));
+
+        let line_top_y = (clicked_line as f32) * self.line_height - self.pane.scroll_y.get();
+        let subrow_idx = (((pos.y - line_top_y) / self.line_height).floor().max(0.0) as usize).min(subrows.len() - 1);
+
+        let (sub_start, sub_end) = subrows[subrow_idx];
+        let mut acc_width = 0.0;
+        let mut chosen_col = sub_start;
+
+        if sub_end > sub_start {
+            for (idx_offset, &ch) in chars[sub_start..sub_end].iter().enumerate() {
+                let char_pixel_w = Self::char_advance(ch, self.font_size);
+                if acc_width + char_pixel_w / 2.0 >= rel_x {
+                    break;
+                }
+                acc_width += char_pixel_w;
+                chosen_col = sub_start + idx_offset + 1;
+            }
+        }
+        (clicked_line, chosen_col)
     }
 
     pub fn draw_frame(
@@ -272,29 +346,24 @@ impl<'a> EditorCanvas<'a> {
         let font = Font::with_name(intern_font_name(self.font_name));
         let text_size = Pixels(self.font_size);
 
-        // 3. Build soft-wrapped visual rows
-        let visual_rows = self.build_visual_rows(bounds.width);
-        let total_content_height = (visual_rows.len() as f32) * self.line_height;
+        // 3. Viewport virtualized visual rows
+        let total_content_height = self.total_content_height();
         let max_scroll = (total_content_height - bounds.height).max(0.0);
 
         // 3.1 Auto-scrolling to keep cursor visible if requested
         if self.pane.needs_scroll_to_cursor.get() {
             let cursor = buffer.cursor;
-            if let Some((cursor_v_idx, _)) = visual_rows.iter().enumerate().find(|(_, r)| {
-                r.line_idx == cursor.0 && cursor.1 >= r.char_start && cursor.1 <= r.char_end
-            }) {
-                let cursor_top = (cursor_v_idx as f32) * self.line_height;
-                let cursor_bottom = cursor_top + self.line_height;
-                let margin = (2.0 * self.line_height).min(bounds.height * 0.25).max(0.0);
+            let cursor_top = (cursor.0 as f32) * self.line_height;
+            let cursor_bottom = cursor_top + self.line_height;
+            let margin = (2.0 * self.line_height).min(bounds.height * 0.25).max(0.0);
 
-                let mut scroll = self.pane.scroll_y.get();
-                if cursor_top < scroll + margin {
-                    scroll = (cursor_top - margin).max(0.0);
-                } else if cursor_bottom > scroll + bounds.height - margin {
-                    scroll = (cursor_bottom + margin - bounds.height).max(0.0);
-                }
-                self.pane.scroll_y.set(scroll.clamp(0.0, max_scroll));
+            let mut scroll = self.pane.scroll_y.get();
+            if cursor_top < scroll + margin {
+                scroll = (cursor_top - margin).max(0.0);
+            } else if cursor_bottom > scroll + bounds.height - margin {
+                scroll = (cursor_bottom + margin - bounds.height).max(0.0);
             }
+            self.pane.scroll_y.set(scroll.clamp(0.0, max_scroll));
             self.pane.needs_scroll_to_cursor.set(false);
         }
 
@@ -302,10 +371,12 @@ impl<'a> EditorCanvas<'a> {
         self.pane.scroll_y.set(cur_scroll_y);
         let cur_scroll_x = self.pane.scroll_x.get();
 
+        let visual_rows = self.build_viewport_visual_rows(bounds.width, cur_scroll_y, bounds.height);
+
         // 4. Current Line highlight
-        for (v_idx, row) in visual_rows.iter().enumerate() {
+        for row in &visual_rows {
             if row.line_idx == buffer.cursor.0 {
-                let y = (v_idx as f32) * self.line_height - cur_scroll_y;
+                let y = row.y - cur_scroll_y;
                 if y + self.line_height >= 0.0 && y <= bounds.height {
                     let cur_line_rect = Rectangle {
                         x: gutter,
@@ -331,8 +402,8 @@ impl<'a> EditorCanvas<'a> {
                     (anchor, buffer.cursor)
                 };
 
-                for (v_idx, row) in visual_rows.iter().enumerate() {
-                    let y = (v_idx as f32) * self.line_height - cur_scroll_y;
+                for row in &visual_rows {
+                    let y = row.y - cur_scroll_y;
                     if y + self.line_height < 0.0 || y > bounds.height {
                         continue;
                     }
@@ -385,8 +456,8 @@ impl<'a> EditorCanvas<'a> {
         // 4.2 Draw Search Match Highlights
         if !self.pane.search_matches.is_empty() {
             for (match_idx, &(m_line, m_start, m_end)) in self.pane.search_matches.iter().enumerate() {
-                for (v_idx, row) in visual_rows.iter().enumerate() {
-                    let y = (v_idx as f32) * self.line_height - cur_scroll_y;
+                for row in &visual_rows {
+                    let y = row.y - cur_scroll_y;
                     if y + self.line_height < 0.0 || y > bounds.height {
                         continue;
                     }
@@ -438,8 +509,8 @@ impl<'a> EditorCanvas<'a> {
         }
 
         // 5. Draw lines (Gutter and soft-wrapped text)
-        for (v_idx, row) in visual_rows.iter().enumerate() {
-            let y = (v_idx as f32) * self.line_height - cur_scroll_y;
+        for row in &visual_rows {
+            let y = row.y - cur_scroll_y;
 
             // Vertical clipping: only render rows inside visible window
             if y + self.line_height < 0.0 {
@@ -767,8 +838,7 @@ impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if let Some(pos) = cursor.position_in(bounds) {
-                    let visual_rows = self.build_visual_rows(bounds.width);
-                    let total_content_height = (visual_rows.len() as f32) * self.line_height;
+                    let total_content_height = self.total_content_height();
                     let max_scroll = (total_content_height - bounds.height).max(0.0);
 
                     if total_content_height > bounds.height && pos.x >= bounds.width - 14.0 {
@@ -814,8 +884,7 @@ impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
                 if state.is_dragging_scrollbar {
                     if let Some(global_pos) = cursor.position() {
                         let rel_y = global_pos.y - bounds.y;
-                        let visual_rows = self.build_visual_rows(bounds.width);
-                        let total_content_height = (visual_rows.len() as f32) * self.line_height;
+                        let total_content_height = self.total_content_height();
                         let max_scroll = (total_content_height - bounds.height).max(0.0);
                         if total_content_height > bounds.height && max_scroll > 0.0 {
                             let thumb_height = ((bounds.height / total_content_height) * bounds.height)

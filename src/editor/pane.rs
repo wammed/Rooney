@@ -193,6 +193,9 @@ impl EditorTab {
         self.last_edit_time = Instant::now();
         self.ghost_text = None;
         self.needs_scroll_to_cursor.set(true);
+        if let Some(edit) = self.buffer.last_edit.take() {
+            self.highlighter.apply_edit(&edit);
+        }
         let text = self.buffer.full_text();
         self.highlighter.update_source(&text);
 

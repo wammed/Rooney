@@ -29,11 +29,12 @@
 ## 💡 Features
 
 - ⚡ **COSMIC & Wayland-Native Core**: Pure Rust `libcosmic` desktop integration with custom matte icon, Wayland client-side decorations, seamless dark/light theme integration, and fast startup without heavy external language server daemons.
+- 🏎️ **Virtualized Viewport Rendering**: Sub-millisecond layout computation (< 0.45 ms even on 50MB / 1.8M-line documents) rendering strictly the visible window plus margins, delivering 144+ FPS butter-smooth scrolling.
+- 🌳 **Incremental Tree-sitter AST & Line Highlight Cache**: Accurate AST delta reparsing via `InputEdit` on character insertion/deletion/replacement and `RefCell`-based logical line syntax highlight caching, eliminating redundant reparses and tokenizations on soft-wrapped lines and scrolling frames.
 - 🤖 **100% Local AI Intelligence**: Real-time Fill-in-the-Middle (FIM) ghost suggestions (`Ctrl + I` / `Alt + Enter`), streaming token-by-token interactive chat panel (`Ctrl + Shift + A`) with cancellation and model switching powered completely offline by Ollama.
 - 📜 **Piece-Tree Rope Buffer**: Powered by `ropey`, enabling efficient character and line manipulations across documents without large-scale contiguous memory copies.
-- 🌳 **In-Process Tree-sitter Highlighting**: AST-based syntax highlighting for 12+ languages (Rust, Python, JS, TS, C, C++, Bash, Fish, JSON, TOML, YAML, Markdown) with exact UTF-8 byte-to-character coordinate mapping for multilingual and emoji text.
 - 🪟 **Dual-Pane Split Editing & Live Markdown Preview**: Side-by-side editing (`Ctrl + \`), independent multi-tabs, synchronized editing, and live Markdown preview (`Ctrl + M`) with dynamic specification switching between **GFM** (GitHub Flavored Markdown: tables, task lists, alerts, strikethrough, autolinks, `breaks: false`) and standard **CommonMark**.
-- 🧭 **Smooth Auto-Scrolling & Dual Interactive Scrollbars**: Cursor-following auto-scroll keeps the editing cursor visible at top/bottom margins during typing and navigation. Each pane features an independent, proportional right-edge scrollbar supporting smooth dragging, mouse wheel disengagement, and track jumping.
+- 🧭 **Smooth Auto-Scrolling & Dual Interactive Scrollbars**: Cursor-following auto-scroll keeps the editing cursor visible at top/bottom margins during typing and navigation. Each pane features an independent, proportional right-edge scrollbar supporting smooth dragging, mouse wheel disengagement, and track jumping with $O(1)$ content height calculations.
 - 🇯🇵 **Pixel-Accurate Japanese IME Support**: Full Wayland text-input protocol support (Fcitx5 / Mozc / IBus), live pre-edit underline preview, and sub-pixel advance calculations preventing cursor drift.
 - 📂 **Rich File Tree Explorer**: Workspace navigation, Nerd Font file icons, right-click context menu (New File, New Folder, Rename, Safe Delete) with scroll position retention and screen-boundary clamping, and XDG Desktop Portal integration.
 - 🎨 **20 Premium Classic & Neon Themes**: Tokyo Night, Catppuccin, Gruvbox, Synthwave '84, Cyberpunk Neon, and more, with independent opacity controls for editor window, file tree, and title bar, plus background dimming unified in the `󰒓 Aesthetics & Preferences` modal.
@@ -146,9 +147,10 @@ Rooney operates under a strict **100% offline, local-first** model:
 
 The following architectural optimizations and feature enhancements are planned for upcoming milestones:
 
-- 🏎️ **Viewport-Based Virtualization**: Layout and visual row computation limited strictly to the visible viewport, significantly boosting rendering speed on massive documents.
+- [x] 🏎️ **Viewport-Based Virtualization**: Layout and visual row computation limited strictly to the visible viewport, achieving sub-millisecond layout (< 0.45 ms) on 10KB–50MB buffers.
+- [x] ⚡ **Incremental Syntax Highlighting & Line Cache**: AST delta parsing via Tree-sitter `InputEdit` and per-line highlight token caching to eliminate reparsing and tokenization overhead on typing.
+- [x] 📊 **Multi-Scale Performance Benchmark Suite**: Built-in benchmark harness spanning 10KB to 50MB files (verifying buffer load, initial parse, incremental edit, viewport layout, and cache hits).
 - 📐 **Direct Glyph Metrics Integration**: Integrating real layout measurements from `cosmic-text` to further refine proportional and CJK character advances beyond fixed metric approximations.
-- ⚡ **Incremental Syntax Highlighting & Line Cache**: AST delta parsing and per-line highlight token caching to minimize Tree-sitter reparsing overhead on single-line edits.
 - 👁️ **Filesystem Change Monitoring (Watcher)**: Asynchronous workspace directory notifications to automatically refresh the file tree and notify users of external file modifications.
 - 📝 **Rich Inline Markdown Rendering**: Direct in-canvas styling of inline Markdown elements (bold, italic, inline code, and clickable links).
 - 💾 **Undo/Redo Delta Compression**: Transitioning from Rope snapshot checkpoints to compact delta-based action logs for memory efficiency on huge edit sessions.

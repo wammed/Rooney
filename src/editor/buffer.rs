@@ -7,6 +7,7 @@ pub struct TextBuffer {
     pub cursor: (usize, usize), // (line_idx, col_idx)
     pub selection_anchor: Option<(usize, usize)>,
     pub is_modified: bool,
+    pub last_edit: Option<tree_sitter::InputEdit>,
     undo_stack: VecDeque<Rope>,
     redo_stack: VecDeque<Rope>,
 }
@@ -14,6 +15,56 @@ pub struct TextBuffer {
 impl Default for TextBuffer {
     fn default() -> Self {
         Self::new("")
+    }
+}
+
+pub fn compute_input_edit(
+    rope: &Rope,
+    start_char_idx: usize,
+    end_char_idx: usize,
+    inserted_text: &str,
+) -> tree_sitter::InputEdit {
+    let start_byte = rope.char_to_byte(start_char_idx);
+    let old_end_byte = rope.char_to_byte(end_char_idx);
+    let new_end_byte = start_byte + inserted_text.len();
+
+    let start_row = rope.char_to_line(start_char_idx);
+    let start_line_byte = rope.line_to_byte(start_row);
+    let start_col_byte = start_byte.saturating_sub(start_line_byte);
+    let start_position = tree_sitter::Point {
+        row: start_row,
+        column: start_col_byte,
+    };
+
+    let old_end_row = rope.char_to_line(end_char_idx);
+    let old_end_line_byte = rope.line_to_byte(old_end_row);
+    let old_end_col_byte = old_end_byte.saturating_sub(old_end_line_byte);
+    let old_end_position = tree_sitter::Point {
+        row: old_end_row,
+        column: old_end_col_byte,
+    };
+
+    let newline_count = inserted_text.chars().filter(|&c| c == '\n').count();
+    let new_end_position = if newline_count == 0 {
+        tree_sitter::Point {
+            row: start_row,
+            column: start_col_byte + inserted_text.len(),
+        }
+    } else {
+        let last_segment = inserted_text.split('\n').next_back().unwrap_or("");
+        tree_sitter::Point {
+            row: start_row + newline_count,
+            column: last_segment.len(),
+        }
+    };
+
+    tree_sitter::InputEdit {
+        start_byte,
+        old_end_byte,
+        new_end_byte,
+        start_position,
+        old_end_position,
+        new_end_position,
     }
 }
 
@@ -25,6 +76,7 @@ impl TextBuffer {
             cursor: (0, 0),
             selection_anchor: None,
             is_modified: false,
+            last_edit: None,
             undo_stack: VecDeque::new(),
             redo_stack: VecDeque::new(),
         }
@@ -83,6 +135,7 @@ impl TextBuffer {
         if let Some(prev) = self.undo_stack.pop_back() {
             self.redo_stack.push_back(self.rope.clone());
             self.rope = prev;
+            self.last_edit = None;
             self.clamp_cursor();
             self.selection_anchor = None;
         }
@@ -92,6 +145,7 @@ impl TextBuffer {
         if let Some(next) = self.redo_stack.pop_back() {
             self.undo_stack.push_back(self.rope.clone());
             self.rope = next;
+            self.last_edit = None;
             self.clamp_cursor();
             self.selection_anchor = None;
         }
@@ -118,35 +172,49 @@ impl TextBuffer {
     }
 
     pub fn insert_char(&mut self, ch: char) {
-        self.delete_selection();
-        self.push_undo();
-
-        let char_idx = self.char_index(self.cursor.0, self.cursor.1);
-        self.rope.insert_char(char_idx, ch);
-
-        if ch == '\n' {
-            self.cursor.0 += 1;
-            self.cursor.1 = 0;
-        } else {
-            self.cursor.1 += 1;
-        }
-        self.selection_anchor = None;
+        let mut buf = [0u8; 4];
+        self.insert_str(ch.encode_utf8(&mut buf));
     }
 
     pub fn insert_str(&mut self, s: &str) {
-        self.delete_selection();
-        self.push_undo();
+        let (start_idx, end_idx) = if let Some(anchor) = self.selection_anchor {
+            if anchor != self.cursor {
+                let (start, end) = if (self.cursor.0, self.cursor.1) < (anchor.0, anchor.1) {
+                    (self.cursor, anchor)
+                } else {
+                    (anchor, self.cursor)
+                };
+                (self.char_index(start.0, start.1), self.char_index(end.0, end.1))
+            } else {
+                let idx = self.char_index(self.cursor.0, self.cursor.1);
+                (idx, idx)
+            }
+        } else {
+            let idx = self.char_index(self.cursor.0, self.cursor.1);
+            (idx, idx)
+        };
 
-        let char_idx = self.char_index(self.cursor.0, self.cursor.1);
-        self.rope.insert(char_idx, s);
+        self.push_undo();
+        let edit = compute_input_edit(&self.rope, start_idx, end_idx, s);
+
+        if start_idx < end_idx && end_idx <= self.rope.len_chars() {
+            self.rope.remove(start_idx..end_idx);
+        }
+        self.rope.insert(start_idx, s);
+        self.last_edit = Some(edit);
 
         let lines_added = s.chars().filter(|&c| c == '\n').count();
+        let start_line = self.rope.char_to_line(start_idx);
+        let start_line_char = self.rope.line_to_char(start_line);
+        let start_col = start_idx - start_line_char;
+
         if lines_added > 0 {
-            self.cursor.0 += lines_added;
+            self.cursor.0 = start_line + lines_added;
             let last_line = s.split('\n').next_back().unwrap_or("");
             self.cursor.1 = last_line.chars().count();
         } else {
-            self.cursor.1 += s.chars().count();
+            self.cursor.0 = start_line;
+            self.cursor.1 = start_col + s.chars().count();
         }
         self.selection_anchor = None;
     }
@@ -159,7 +227,9 @@ impl TextBuffer {
         let char_idx = self.char_index(self.cursor.0, self.cursor.1);
         if char_idx > 0 {
             self.push_undo();
+            let edit = compute_input_edit(&self.rope, char_idx - 1, char_idx, "");
             self.rope.remove(char_idx - 1..char_idx);
+            self.last_edit = Some(edit);
 
             if self.cursor.1 > 0 {
                 self.cursor.1 -= 1;
@@ -178,7 +248,9 @@ impl TextBuffer {
         let char_idx = self.char_index(self.cursor.0, self.cursor.1);
         if char_idx < self.rope.len_chars() {
             self.push_undo();
+            let edit = compute_input_edit(&self.rope, char_idx, char_idx + 1, "");
             self.rope.remove(char_idx..char_idx + 1);
+            self.last_edit = Some(edit);
         }
     }
 
@@ -203,7 +275,9 @@ impl TextBuffer {
         let end_idx = self.char_index(end.0, end.1);
 
         if start_idx < end_idx && end_idx <= self.rope.len_chars() {
+            let edit = compute_input_edit(&self.rope, start_idx, end_idx, "");
             self.rope.remove(start_idx..end_idx);
+            self.last_edit = Some(edit);
         }
 
         self.cursor = start;
@@ -428,7 +502,9 @@ impl TextBuffer {
         };
 
         if start_idx < end_idx {
+            let edit = compute_input_edit(&self.rope, start_idx, end_idx, "");
             self.rope.remove(start_idx..end_idx);
+            self.last_edit = Some(edit);
         }
         self.selection_anchor = None;
         self.clamp_cursor();
@@ -445,7 +521,10 @@ impl TextBuffer {
                 self.rope.insert_char(len, '\n');
                 self.rope.len_chars()
             };
-            self.rope.insert(insert_idx, &format!("{}\n", line_str));
+            let text_to_insert = format!("{}\n", line_str);
+            let edit = compute_input_edit(&self.rope, insert_idx, insert_idx, &text_to_insert);
+            self.rope.insert(insert_idx, &text_to_insert);
+            self.last_edit = Some(edit);
             self.cursor.0 += 1;
             self.clamp_cursor();
         }
@@ -459,6 +538,7 @@ impl TextBuffer {
         };
 
         self.push_undo();
+        self.last_edit = None;
         let comment_str = format!("{} ", prefix);
 
         let mut all_commented = true;
@@ -504,6 +584,7 @@ impl TextBuffer {
         };
 
         self.push_undo();
+        self.last_edit = None;
         for l in start_line..=end_line {
             let line_start = self.rope.line_to_char(l);
             self.rope.insert(line_start, "    ");
@@ -520,6 +601,7 @@ impl TextBuffer {
         };
 
         self.push_undo();
+        self.last_edit = None;
         for l in start_line..=end_line {
             if let Some(txt) = self.line_text(l) {
                 let spaces = txt.chars().take_while(|&c| c == ' ').count().min(4);

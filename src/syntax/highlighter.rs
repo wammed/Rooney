@@ -1,7 +1,10 @@
 use crate::theme::ThemeConfig;
 use cosmic::iced::Color;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::path::Path;
-use tree_sitter::{Node, Parser, Tree};
+use tree_sitter::{InputEdit, Node, Parser, Tree};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SupportedLanguage {
@@ -216,10 +219,18 @@ pub fn byte_to_char_idx(line_text: &str, byte_offset: usize) -> usize {
     line_text[..safe_offset].chars().count()
 }
 
+#[derive(Debug, Clone)]
+struct CachedLine {
+    hash: u64,
+    spans: Vec<HighlightSpan>,
+}
+
 pub struct Highlighter {
     pub lang: SupportedLanguage,
     parser: Option<Parser>,
     tree: Option<Tree>,
+    has_pending_edit: bool,
+    cache: RefCell<HashMap<usize, CachedLine>>,
 }
 
 impl Highlighter {
@@ -256,21 +267,53 @@ impl Highlighter {
             lang,
             parser,
             tree: None,
+            has_pending_edit: false,
+            cache: RefCell::new(HashMap::new()),
         }
+    }
+
+    /// Applies a localized text edit to the existing syntax tree before reparsing.
+    ///
+    /// Calling this enables Tree-sitter's incremental parsing, allowing unchanged
+    /// subtrees to be reused with minimal latency during continuous typing.
+    pub fn apply_edit(&mut self, edit: &InputEdit) {
+        if let Some(ref mut tree) = self.tree {
+            tree.edit(edit);
+            self.has_pending_edit = true;
+        }
+        self.cache.borrow_mut().clear();
     }
 
     pub fn update_source(&mut self, source: &str) {
         if let Some(ref mut parser) = self.parser {
-            self.tree = parser.parse(source, self.tree.as_ref());
+            let old_tree = if self.has_pending_edit {
+                self.tree.as_ref()
+            } else {
+                None
+            };
+            self.tree = parser.parse(source, old_tree);
+            self.has_pending_edit = false;
         }
+        self.cache.borrow_mut().clear();
     }
 
     pub fn highlight_line(&self, line_text: &str, line_idx: usize) -> Vec<HighlightSpan> {
-        let mut spans = Vec::new();
-
         if line_text.is_empty() {
-            return spans;
+            return Vec::new();
         }
+
+        // Fast hash check for line caching
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        line_text.hash(&mut hasher);
+        let hash = hasher.finish();
+
+        if let Some(entry) = self.cache.borrow().get(&line_idx) {
+            if entry.hash == hash {
+                return entry.spans.clone();
+            }
+        }
+
+        let mut spans = Vec::new();
 
         match self.lang {
             SupportedLanguage::Markdown => {
@@ -297,6 +340,18 @@ impl Highlighter {
                 }
             }
         }
+
+        let mut cache = self.cache.borrow_mut();
+        if cache.len() >= 2000 {
+            cache.clear();
+        }
+        cache.insert(
+            line_idx,
+            CachedLine {
+                hash,
+                spans: spans.clone(),
+            },
+        );
 
         spans
     }

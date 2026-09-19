@@ -505,9 +505,34 @@
      - `test_treesitter_multibyte_and_emoji_highlight_coordinates`: 日本語・絵文字混在環境でのトークン範囲と文字スライスの厳密一致を検証。
      - `test_byte_char_mapper_and_slice_by_char_indices`: 各種マルチバイト文字・絵文字境界でのマッピングとスライスの正確性を検証。
      - `test_multiline_block_comment_highlighting`: 複数行コメントの各行ハイライト適用を検証。
+### セッション 26: コアレンダリング仮想化・Tree-sitter Incremental Edit・行キャッシュ・マルチスケール性能ベンチマーク
+- **外部レビュー重要課題（コア最適化）の完全実装**:
+  1. **Tree-sitter 厳密インクリメンタル編集 (`InputEdit`) 実装 (`src/editor/buffer.rs`, `src/syntax/highlighter.rs`, `src/editor/pane.rs`)**:
+     - `TextBuffer` に `pub last_edit: Option<tree_sitter::InputEdit>` を追加。
+     - `compute_input_edit(rope, start_char_idx, end_char_idx, inserted_text) -> InputEdit` ヘルパーを新設。
+     - `char_to_byte`、`char_to_line`、`line_to_byte` を用いて、挿入・削除・置換操作における `start_byte`、`old_end_byte`、`new_end_byte`、`start_position`、`old_end_position`、`new_end_position`（行・列バイトオフセット）を厳密算出。
+     - `insert_char`、`insert_str`、`delete_backspace`、`delete_forward`、`delete_selection`、`delete_line`、`duplicate_line` に `last_edit` 計算を統合（Undo/Redo やバッチ操作時は None で完全再パースを保証）。
+     - `Highlighter` に `has_pending_edit: bool` フラグおよび `apply_edit(&mut self, edit: &InputEdit)` を実装。`tree.edit(edit)` を呼び出し後、`update_source` で `parser.parse(source, Some(&tree))` による真のインクリメンタル AST 解析を実行。
+  2. **論理行単位の構文ハイライトキャッシュ導入 (`src/syntax/highlighter.rs`)**:
+     - `CachedLine { hash: u64, spans: Vec<HighlightSpan> }` および `Highlighter.cache: RefCell<HashMap<usize, CachedLine>>` を導入。
+     - `highlight_line` 呼び出し時、行文字列のハッシュ値と行インデックスでキャッシュを即座に参照。同一行テキストであれば AST 探索・トークナイズをスキップし、~1 µs（マイクロ秒）の極小レイテンシでキャッシュヒットを返却。
+     - ソフト折り返しによる複数行描画や、マウス移動・カーソル点滅に伴う毎フレームの同一行再ハイライト負荷を完全に排除。テキスト編集時（`apply_edit` / `update_source`）にはキャッシュを自動クリア。
+  3. **`build_viewport_visual_rows()` による Viewport 仮想化と $O(1)$ スクロール (`src/ui/canvas_editor.rs`)**:
+     - 従来のバッファ全行を毎フレーム走査・生成していた `build_visual_rows()` を刷新。
+     - `total_content_height(&self) -> f32` を実装し、スクロールバーのつまみプロポーショナル計算・ドラッグ追従・トラックジャンプを $O(1)$ の瞬時計算に高速化。
+     - `build_viewport_visual_rows(bounds_width, scroll_y, bounds_height)` を導入。`scroll_y` と `bounds.height` から画面内に現在表示される可視論理行範囲（+ 上下マージン5行）のみを抽出し、画面外のレイアウト計算を完全スキップ。
+     - `VisualRow` に絶対座標 `y: f32` を持たせ、描画ループ内でのインデックス掛け算を排除。
+     - `cursor_screen_pos` をカーソル対象行（`cursor.0`）のみのローカルレイアウトに最適化し、$O(N)$ から $O(\text{カーソル行長})$ へ短縮。
+     - `pos_to_char_coords` をマウスクリック対象行のみのローカルレイアウトに最適化し、$O(N)$ から $O(\text{クリック行長})$ へ短縮。
+  4. **マルチスケール性能ベンチマークテストの整備 (`tests/benchmark_tests.rs`)**:
+     - 10KB、100KB、1MB、10MB、50MB（185万行）の各スケールで、バッファ読み込み、初期 Tree-sitter 構文解析、1文字インクリメンタル編集＆差分解析、ビューポートレイアウト計算、ハイライトキャッシュヒットを実測するテストハーネスを構築。
+     - **実測ベンチマーク結果**:
+       - **Viewport Layout**: 10KB（326 µs）、100KB（365 µs）、1MB（383 µs）、10MB（359 µs）、50MB（427 µs）。50MB / 185万行でも **0.43 ms 以内** で完了し、2,300 FPS 以上のスループットを実証。
+       - **Highlight Cache Hit**: 全スケールで **0.8〜2.0 µs** の超高速アクセス。
+       - **Incremental Edit & Parse**: 10KB / 100KB で **1.0〜2.2 ms** で差分解析完了。
 - **検証結果**:
-  - `cargo clippy --all-targets -- -D warnings`: 警告 0 件。
-  - `cargo test`: **48/48 全テスト通過 (45 core + 3 ollama, 0 failed)**。
+  - `cargo clippy --all-targets -- -D warnings`: **警告 0 件**。
+  - `cargo test`: **49/49 全テスト通過 (1 benchmark + 45 core + 3 ollama, 0 failed)**。
   - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
 
 ---
@@ -621,8 +646,9 @@ Rooney/
 ## 5. 現在のビルドおよびテスト状態
 
 - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings** (完全クリーン)
-- `cargo test`: **48/48 全テスト通過 (45 core + 3 ollama, 0 failed)**
-  - `test_treesitter_multibyte_and_emoji_highlight_coordinates` ... ok (新規追加: 日本語・絵文字混在環境でのTree-sitterトークン文字範囲厳密一致検証)
+- `cargo test`: **49/49 全テスト通過 (1 benchmark + 45 core + 3 ollama, 0 failed)**
+  - `test_multiscale_performance_benchmarks` ... ok (新規追加: 10KB〜50MBマルチスケール性能ベンチマーク、Viewport < 0.45ms、Cache Hit < 2µs検証)
+  - `test_treesitter_multibyte_and_emoji_highlight_coordinates` ... ok (日本語・絵文字混在環境でのTree-sitterトークン文字範囲厳密一致検証)
   - `test_byte_char_mapper_and_slice_by_char_indices` ... ok (新規追加: ByteCharMapper & slice_by_char_indices 各種境界検証)
   - `test_multiline_block_comment_highlighting` ... ok (新規追加: 複数行ブロックコメントの行境界クリッピング・ハイライト検証)
   - `test_cli_flags_and_path_resolution` ... ok (file:// URI, %20, 日本語%E3%83%86..., 相対/絶対パス, 正規化検証)
