@@ -48,6 +48,7 @@ pub struct EditorTab {
     pub last_search_update: Instant,
     pub search_generation: usize,
     pub is_searching_async: bool,
+    pub markdown_generation: usize,
     pub cached_wrap_model: CachedWrapModel,
 }
 
@@ -79,6 +80,7 @@ impl EditorTab {
             last_search_update: Instant::now(),
             search_generation: 0,
             is_searching_async: false,
+            markdown_generation: 0,
             cached_wrap_model: std::sync::RwLock::new(None),
         }
     }
@@ -121,6 +123,7 @@ impl EditorTab {
         self.needs_scroll_to_cursor.set(true);
         self.ghost_text = None;
         self.preedit = None;
+        self.markdown_generation = self.markdown_generation.wrapping_add(1);
 
         if lang == SupportedLanguage::Markdown && self.is_markdown_preview {
             self.markdown_doc = Some(MarkdownDocument::parse(&content, self.markdown_spec));
@@ -159,6 +162,7 @@ impl EditorTab {
         let lang = SupportedLanguage::from_path(path);
         self.highlighter = Highlighter::new(lang);
         self.highlighter.update_source(&self.buffer.full_text());
+        self.markdown_generation = self.markdown_generation.wrapping_add(1);
 
         if lang == SupportedLanguage::Markdown && self.is_markdown_preview {
             self.markdown_doc = Some(MarkdownDocument::parse(&self.buffer.full_text(), self.markdown_spec));
@@ -214,6 +218,7 @@ impl EditorTab {
         self.last_edit_time = Instant::now();
         self.ghost_text = None;
         self.needs_scroll_to_cursor.set(true);
+        self.markdown_generation = self.markdown_generation.wrapping_add(1);
         if let Ok(mut guard) = self.cached_wrap_model.write() {
             *guard = None;
         }
@@ -296,6 +301,16 @@ impl EditorTab {
                 let text = self.buffer.full_text();
                 self.markdown_doc = Some(MarkdownDocument::parse(&text, self.markdown_spec));
             }
+        }
+    }
+
+    /// Safely apply parsed MarkdownDocument only if generation matches and preview is still enabled.
+    pub fn apply_markdown_doc(&mut self, generation: usize, doc: MarkdownDocument) -> bool {
+        if self.markdown_generation == generation && self.is_markdown_preview {
+            self.markdown_doc = Some(doc);
+            true
+        } else {
+            false
         }
     }
 
@@ -515,7 +530,11 @@ impl EditorPane {
     pub fn set_markdown_spec(&mut self, spec: MarkdownSpec) {
         for tab in &mut self.tabs {
             tab.markdown_spec = spec;
+            tab.markdown_generation = tab.markdown_generation.wrapping_add(1);
             tab.refresh_markdown();
+            if !tab.is_markdown_preview {
+                tab.markdown_doc = None;
+            }
         }
     }
 

@@ -2214,6 +2214,116 @@ fn test_large_markdown_toggle_and_spec_change_async() {
     assert!(pane.markdown_doc.is_some(), "Markdown doc must be updated when background worker completes");
 }
 
+#[test]
+fn test_markdown_spec_change_generation_race() {
+    use rooney::config::MarkdownSpec;
+    use rooney::editor::buffer::TextBuffer;
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use rooney::markdown::MarkdownDocument;
+
+    let chunk = "# Title\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n";
+    let large_md = chunk.repeat(3 * 1024 * 1024 / chunk.len() + 10);
+
+    let mut pane = EditorPane::new(PaneId::Left, "race.md");
+    pane.buffer = TextBuffer::new(&large_md);
+    pane.is_markdown_preview = true;
+    pane.markdown_spec = MarkdownSpec::Gfm;
+
+    // Generation 0
+    let gen_gfm = pane.markdown_generation;
+
+    // Simulate worker 1 starting in background with gen_gfm...
+    // User switches Spec to CommonMark before worker 1 returns:
+    pane.set_markdown_spec(MarkdownSpec::CommonMark);
+    let gen_cm = pane.markdown_generation;
+    assert!(gen_cm > gen_gfm, "Spec change must advance markdown_generation");
+
+    // Worker 1 (GFM) finishes and attempts to apply results:
+    let gfm_doc = MarkdownDocument::parse("| A | B |\n|---|---|\n| 1 | 2 |", MarkdownSpec::Gfm);
+    let tab = pane.active_tab_mut();
+    let applied_stale = tab.apply_markdown_doc(gen_gfm, gfm_doc);
+    assert!(!applied_stale, "Stale generation GFM doc must be discarded");
+    assert!(tab.markdown_doc.is_none(), "Markdown doc must not be set by stale worker");
+
+    // Worker 2 (CommonMark) finishes for current generation:
+    let cm_doc = MarkdownDocument::parse("| A | B |\n|---|---|\n| 1 | 2 |", MarkdownSpec::CommonMark);
+    let applied_fresh = tab.apply_markdown_doc(gen_cm, cm_doc);
+    assert!(applied_fresh, "Matching generation CommonMark doc must be applied");
+    assert!(tab.markdown_doc.is_some(), "Markdown doc must be set by current worker");
+}
+
+#[test]
+fn test_markdown_preview_toggle_race() {
+    use rooney::config::MarkdownSpec;
+    use rooney::editor::buffer::TextBuffer;
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use rooney::markdown::MarkdownDocument;
+
+    let chunk = "# Title\n\nSome paragraph text.\n\n";
+    let large_md = chunk.repeat(3 * 1024 * 1024 / chunk.len() + 10);
+
+    let mut pane = EditorPane::new(PaneId::Left, "toggle_race.md");
+    pane.buffer = TextBuffer::new(&large_md);
+
+    // Turn preview ON: advances generation to gen1
+    pane.is_markdown_preview = true;
+    pane.markdown_generation = pane.markdown_generation.wrapping_add(1);
+    let gen_on = pane.markdown_generation;
+
+    // While worker is in flight, user turns preview OFF:
+    pane.is_markdown_preview = false;
+    pane.markdown_generation = pane.markdown_generation.wrapping_add(1);
+    pane.markdown_doc = None;
+
+    // Worker finishes with gen_on:
+    let doc = MarkdownDocument::parse("# Title\n\nSome paragraph text.", MarkdownSpec::Gfm);
+    let tab = pane.active_tab_mut();
+    let applied = tab.apply_markdown_doc(gen_on, doc);
+    assert!(!applied, "Worker results must be discarded when preview was turned OFF and generation changed");
+    assert!(tab.markdown_doc.is_none(), "Markdown doc must remain None");
+}
+
+#[test]
+fn test_all_tabs_markdown_spec_sync() {
+    use rooney::config::MarkdownSpec;
+    use rooney::editor::buffer::TextBuffer;
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use rooney::markdown::MarkdownDocument;
+
+    let chunk = "# Title\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n";
+    let large_md = chunk.repeat(3 * 1024 * 1024 / chunk.len() + 10);
+
+    let mut pane = EditorPane::new(PaneId::Left, "tab0.rs");
+    // Tab 0 is active (code)
+    assert_eq!(pane.active_tab_idx, 0);
+
+    // Tab 1 is inactive (large Markdown file with preview enabled)
+    let tab1_idx = pane.new_tab("tab1.md");
+    pane.tabs[tab1_idx].buffer = TextBuffer::new(&large_md);
+    pane.tabs[tab1_idx].is_markdown_preview = true;
+    pane.tabs[tab1_idx].markdown_spec = MarkdownSpec::Gfm;
+
+    // Switch active tab back to Tab 0
+    pane.active_tab_idx = 0;
+    assert_eq!(pane.active_tab_idx, 0);
+
+    let tab1_old_gen = pane.tabs[1].markdown_generation;
+
+    // User changes spec to CommonMark
+    pane.set_markdown_spec(MarkdownSpec::CommonMark);
+
+    // Verify Tab 1 (inactive) has updated spec and advanced generation
+    assert_eq!(pane.tabs[1].markdown_spec, MarkdownSpec::CommonMark);
+    assert!(pane.tabs[1].markdown_generation > tab1_old_gen, "Inactive tab markdown_generation must be advanced");
+
+    // Simulate async worker for Tab 1 completing with Tab 1's new generation
+    let tab1_new_gen = pane.tabs[1].markdown_generation;
+    let cm_doc = MarkdownDocument::parse(&large_md[..500], MarkdownSpec::CommonMark);
+    let applied = pane.tabs[1].apply_markdown_doc(tab1_new_gen, cm_doc);
+    assert!(applied, "Inactive tab must accept parsed doc for its matching generation");
+    assert!(pane.tabs[1].markdown_doc.is_some());
+}
+
 
 
 

@@ -126,7 +126,7 @@ pub enum Message {
         pane_id: PaneId,
         tab_id: usize,
         tree: Option<tree_sitter::Tree>,
-        markdown_doc: Option<crate::markdown::MarkdownDocument>,
+        markdown_doc: Option<(usize, crate::markdown::MarkdownDocument)>,
         edit_time: std::time::Instant,
     },
 
@@ -142,7 +142,7 @@ pub enum Message {
     MarkdownParseCompleted {
         pane_id: PaneId,
         tab_id: usize,
-        edit_time: std::time::Instant,
+        generation: usize,
         doc: crate::markdown::MarkdownDocument,
     },
 }

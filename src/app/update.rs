@@ -140,6 +140,7 @@ impl App {
                         let lang = pane.highlighter.lang;
                         let is_md_preview = pane.is_markdown_preview && lang == crate::syntax::SupportedLanguage::Markdown;
                         let md_spec = pane.markdown_spec;
+                        let md_gen = pane.markdown_generation;
                         let tab_id = pane.active_tab_id();
                         let edit_time = pane.last_edit_time;
 
@@ -153,7 +154,7 @@ impl App {
                                     let text = rope_clone.to_string();
                                     let tree = parser.parse(&text, None);
                                     let md_doc = if is_md_preview {
-                                        Some(crate::markdown::MarkdownDocument::parse(&text, md_spec))
+                                        Some((md_gen, crate::markdown::MarkdownDocument::parse(&text, md_spec)))
                                     } else {
                                         None
                                     };
@@ -328,7 +329,11 @@ impl App {
             Message::TogglePaneMode(pane_id) => {
                 let target_pane = self.pane_mut(pane_id);
                 target_pane.is_markdown_preview = !target_pane.is_markdown_preview;
-                if target_pane.is_markdown_preview && target_pane.markdown_doc.is_none() {
+                target_pane.markdown_generation = target_pane.markdown_generation.wrapping_add(1);
+                if !target_pane.is_markdown_preview {
+                    target_pane.markdown_doc = None;
+                    Task::none()
+                } else if target_pane.markdown_doc.is_none() {
                     const SYNC_MD_MAX_BYTES: usize = 2 * 1024 * 1024;
                     if target_pane.buffer.len_bytes() <= SYNC_MD_MAX_BYTES {
                         let text = target_pane.buffer.full_text();
@@ -337,26 +342,26 @@ impl App {
                             Some(crate::markdown::MarkdownDocument::parse(&text, spec));
                         Task::none()
                     } else {
+                        let generation = target_pane.markdown_generation;
                         let rope_clone = target_pane.buffer.rope.clone();
                         let spec = target_pane.markdown_spec;
                         let tab_id = target_pane.active_tab_id();
-                        let edit_time = target_pane.last_edit_time;
                         Task::perform(
                             async move {
                                 tokio::task::spawn_blocking(move || {
                                     let text = rope_clone.to_string();
                                     let doc = crate::markdown::MarkdownDocument::parse(&text, spec);
-                                    (pane_id, tab_id, edit_time, doc)
+                                    (pane_id, tab_id, generation, doc)
                                 })
                                 .await
                                 .ok()
                             },
                             |res| {
-                                if let Some((pane_id, tab_id, edit_time, doc)) = res {
+                                if let Some((pane_id, tab_id, generation, doc)) = res {
                                     cosmic::Action::App(Message::MarkdownParseCompleted {
                                         pane_id,
                                         tab_id,
-                                        edit_time,
+                                        generation,
                                         doc,
                                     })
                                 } else {
@@ -472,7 +477,11 @@ impl App {
                 let pane_id = self.active_pane;
                 let pane = self.current_pane_mut();
                 pane.is_markdown_preview = !pane.is_markdown_preview;
-                if pane.is_markdown_preview && pane.markdown_doc.is_none() {
+                pane.markdown_generation = pane.markdown_generation.wrapping_add(1);
+                if !pane.is_markdown_preview {
+                    pane.markdown_doc = None;
+                    Task::none()
+                } else if pane.markdown_doc.is_none() {
                     const SYNC_MD_MAX_BYTES: usize = 2 * 1024 * 1024;
                     if pane.buffer.len_bytes() <= SYNC_MD_MAX_BYTES {
                         let text = pane.buffer.full_text();
@@ -480,26 +489,26 @@ impl App {
                         pane.markdown_doc = Some(crate::markdown::MarkdownDocument::parse(&text, spec));
                         Task::none()
                     } else {
+                        let generation = pane.markdown_generation;
                         let rope_clone = pane.buffer.rope.clone();
                         let spec = pane.markdown_spec;
                         let tab_id = pane.active_tab_id();
-                        let edit_time = pane.last_edit_time;
                         Task::perform(
                             async move {
                                 tokio::task::spawn_blocking(move || {
                                     let text = rope_clone.to_string();
                                     let doc = crate::markdown::MarkdownDocument::parse(&text, spec);
-                                    (pane_id, tab_id, edit_time, doc)
+                                    (pane_id, tab_id, generation, doc)
                                 })
                                 .await
                                 .ok()
                             },
                             |res| {
-                                if let Some((pane_id, tab_id, edit_time, doc)) = res {
+                                if let Some((pane_id, tab_id, generation, doc)) = res {
                                     cosmic::Action::App(Message::MarkdownParseCompleted {
                                         pane_id,
                                         tab_id,
-                                        edit_time,
+                                        generation,
                                         doc,
                                     })
                                 } else {
@@ -526,34 +535,36 @@ impl App {
                 for pane_id in [crate::editor::PaneId::Left, crate::editor::PaneId::Right] {
                     let pane = self.pane_mut(pane_id);
                     pane.set_markdown_spec(spec);
-                    let tab = pane.active_tab_mut();
-                    if tab.is_markdown_preview && tab.buffer.len_bytes() > 2 * 1024 * 1024 {
-                        let rope_clone = tab.buffer.rope.clone();
-                        let tab_id = tab.id;
-                        let edit_time = tab.last_edit_time;
-                        tasks.push(Task::perform(
-                            async move {
-                                tokio::task::spawn_blocking(move || {
-                                    let text = rope_clone.to_string();
-                                    let doc = crate::markdown::MarkdownDocument::parse(&text, spec);
-                                    (pane_id, tab_id, edit_time, doc)
-                                })
-                                .await
-                                .ok()
-                            },
-                            |res| {
-                                if let Some((pane_id, tab_id, edit_time, doc)) = res {
-                                    cosmic::Action::App(Message::MarkdownParseCompleted {
-                                        pane_id,
-                                        tab_id,
-                                        edit_time,
-                                        doc,
+                    // Iterate through ALL tabs in the pane to ensure inactive preview tabs are also updated!
+                    for tab in &mut pane.tabs {
+                        if tab.is_markdown_preview && tab.buffer.len_bytes() > 2 * 1024 * 1024 {
+                            let generation = tab.markdown_generation;
+                            let rope_clone = tab.buffer.rope.clone();
+                            let tab_id = tab.id;
+                            tasks.push(Task::perform(
+                                async move {
+                                    tokio::task::spawn_blocking(move || {
+                                        let text = rope_clone.to_string();
+                                        let doc = crate::markdown::MarkdownDocument::parse(&text, spec);
+                                        (pane_id, tab_id, generation, doc)
                                     })
-                                } else {
-                                    cosmic::Action::None
-                                }
-                            },
-                        ));
+                                    .await
+                                    .ok()
+                                },
+                                |res| {
+                                    if let Some((pane_id, tab_id, generation, doc)) = res {
+                                        cosmic::Action::App(Message::MarkdownParseCompleted {
+                                            pane_id,
+                                            tab_id,
+                                            generation,
+                                            doc,
+                                        })
+                                    } else {
+                                        cosmic::Action::None
+                                    }
+                                },
+                            ));
+                        }
                     }
                 }
 
@@ -1412,13 +1423,13 @@ impl App {
                 let pane = self.pane_mut(pane_id);
                 if let Some(tab) = pane.tab_by_id_mut(tab_id) {
                     tab.is_parsing_async = false;
-                    // Only apply parsed tree and markdown_doc if no new edits occurred while background worker was parsing
+                    // Only apply parsed tree if no new edits occurred while background worker was parsing
                     if tab.last_edit_time == edit_time {
                         if let Some(new_tree) = tree {
                             tab.highlighter.set_tree(new_tree);
                         }
-                        if let Some(doc) = markdown_doc {
-                            tab.markdown_doc = Some(doc);
+                        if let Some((gen, doc)) = markdown_doc {
+                            tab.apply_markdown_doc(gen, doc);
                         }
                         tab.needs_highlight_parse = false;
                     } else {
@@ -1432,14 +1443,12 @@ impl App {
             Message::MarkdownParseCompleted {
                 pane_id,
                 tab_id,
-                edit_time,
+                generation,
                 doc,
             } => {
                 let pane = self.pane_mut(pane_id);
                 if let Some(tab) = pane.tab_by_id_mut(tab_id) {
-                    if tab.last_edit_time == edit_time {
-                        tab.markdown_doc = Some(doc);
-                    }
+                    tab.apply_markdown_doc(generation, doc);
                 }
                 Task::none()
             }

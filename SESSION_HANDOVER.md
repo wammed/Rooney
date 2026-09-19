@@ -670,6 +670,29 @@
   - `cargo test --test benchmark_tests`: **全3テスト通過 (0 failed)**。
   - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
 
+### セッション 33: Markdown 非同期パイプラインの世代管理（markdown_generation）導入と全タブ整合性の確立
+- **`EditorTab` への `markdown_generation` 導入と無効化トリガーの完全統一 (P0)**:
+  - `EditorTab` に `pub markdown_generation: usize` を追加。
+  - バッファ編集時（`on_content_changed`）、ファイル読込時（`load_file`）、別名保存時（`save_file_as`）、Spec 変更時（`set_markdown_spec`）、Preview 表示切替時（`ToggleMarkdownPreview` / `TogglePaneMode`）の全状態で世代番号をインクリメント。
+  - `Message::MarkdownParseCompleted { pane_id, tab_id, generation, doc }` へ刷新し、`EditorTab::apply_markdown_doc(generation, doc)` により、`self.markdown_generation == generation && self.is_markdown_preview` を満たす場合のみ安全にドキュメントを適用。
+  - 世代不一致、またはプレビュー OFF 状態での完了は確実に破棄（Discard）され、高速な Spec 切替や Preview ON/OFF 時に古いパース結果が上書きされる Race Condition を 100% 根絶。
+- **Spec 変更時における「全プレビュー中タブ（非アクティブ含む）」の整合性確保 (P1)**:
+  - `Message::SelectMarkdownSpec` において、`active_tab` だけでなく全ペインの全タブ（`tabs`）を走査。
+  - プレビュー有効な 2MB 超の全タブに対して個別に `markdown_generation` を進めて非同期パースワーカーをディスパッチ。
+  - プレビュー無効なタブは `tab.markdown_doc = None;` で古いキャッシュを破棄し、次回プレビュー有効化時に新 Spec で確実に再パースされるようフォールバックを徹底。
+- **Tick 非同期ハイライトと Markdown パースの世代保護**:
+  - `Message::Tick` からの非同期パースでも `md_gen` を渡し、`HighlightParseCompleted` で `tab.apply_markdown_doc(gen, doc)` を呼ぶことで、Tick 実行中のプレビュー OFF / Spec 変更による競合も完全防止。
+- **テストスイート拡充 & 回帰検証**:
+  - `tests/core_tests.rs`:
+    - `test_markdown_spec_change_generation_race`: GFM ワーカー実行中に CommonMark へ切替時、GFM 結果の安全破棄と CommonMark 結果の適用を検証。
+    - `test_markdown_preview_toggle_race`: Preview ON ワーカー実行中に Preview OFF 切替時、完了結果が破棄され None を維持することを検証。
+    - `test_all_tabs_markdown_spec_sync`: 非アクティブタブの大容量 Markdown プレビューが Spec 変更時に正しく新世代パースされ反映されることを検証。
+- **検証結果**:
+  - `cargo clippy --all-targets -- -D warnings`: **警告 0 件 (Code 0)**。
+  - `cargo test --test core_tests`: **全61テスト通過 (0 failed)**。
+  - `cargo test --test benchmark_tests`: **全3テスト通過 (0 failed)**。
+  - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
+
 ---
 
 ## 3. ファイル構成と役割
@@ -781,7 +804,10 @@ Rooney/
 ## 5. 現在のビルドおよびテスト状態
 
 - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings** (完全クリーン)
-- `cargo test`: **64/64 全テスト通過 (3 benchmark + 58 core + 3 ollama, 0 failed)**
+- `cargo test`: **67/67 全テスト通過 (3 benchmark + 61 core + 3 ollama, 0 failed)**
+  - `test_markdown_spec_change_generation_race` ... ok (Markdown Spec変更時世代Race破棄・新世代適用検証)
+  - `test_markdown_preview_toggle_race` ... ok (MarkdownプレビューON/OFF切替Race破棄検証)
+  - `test_all_tabs_markdown_spec_sync` ... ok (全プレビュー中タブ/非アクティブタブのSpec変更同期検証)
   - `test_search_generation_incremented_on_content_edit` ... ok (文書編集時世代インクリメント・旧世代破棄・新世代適用検証)
   - `test_large_markdown_toggle_and_spec_change_async` ... ok (大容量Markdown表示切替/仕様変更時の非同期パース検証)
   - `test_async_search_generation_and_stale_discard` ... ok (世代管理非同期検索・遅延Stale破棄・一致世代適用・空クエリ初期化検証)
