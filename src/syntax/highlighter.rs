@@ -282,6 +282,11 @@ impl Highlighter {
         self.cache.borrow_mut().clear();
     }
 
+    /// Returns whether a parsed syntax tree is currently present.
+    pub fn has_tree(&self) -> bool {
+        self.tree.is_some()
+    }
+
     /// Applies a localized text edit to the existing syntax tree before reparsing.
     ///
     /// Calling this enables Tree-sitter's incremental parsing, allowing unchanged

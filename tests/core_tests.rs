@@ -2092,12 +2092,11 @@ fn test_large_markdown_async_preview_sync() {
     let doc = MarkdownDocument::parse(md_text, MarkdownSpec::Gfm);
     assert_eq!(doc.blocks.len(), 4); // Heading, 2 Task ListItems, Table
 
-    // Simulate Message::HighlightParseCompleted handler application
+    // Simulate Message::MarkdownParseCompleted handler application
     let tab = pane.active_tab_mut();
-    if tab.last_edit_time == edit_time {
-        tab.markdown_doc = Some(doc);
-        tab.needs_highlight_parse = false;
-    }
+    let applied = tab.apply_markdown_doc(tab.markdown_generation, doc);
+    assert!(applied);
+    tab.needs_highlight_parse = false;
 
     assert!(pane.markdown_doc.is_some(), "Markdown document must be updated on parse complete");
     let blocks = &pane.markdown_doc.as_ref().unwrap().blocks;
@@ -2322,6 +2321,136 @@ fn test_all_tabs_markdown_spec_sync() {
     let applied = pane.tabs[1].apply_markdown_doc(tab1_new_gen, cm_doc);
     assert!(applied, "Inactive tab must accept parsed doc for its matching generation");
     assert!(pane.tabs[1].markdown_doc.is_some());
+}
+
+#[test]
+fn test_treesitter_file_switch_parse_generation_race() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use rooney::syntax::SupportedLanguage;
+
+    let dir = std::env::temp_dir();
+    let file_rs = dir.join("test_ts_race_a.rs");
+    let file_py = dir.join("test_ts_race_b.py");
+    std::fs::write(&file_rs, "fn main() { println!(\"Hello\"); }").unwrap();
+    std::fs::write(&file_py, "def hello():\n    print(\"Hello\")\n").unwrap();
+
+    let mut pane = EditorPane::new(PaneId::Left, "Untitled");
+    pane.active_tab_mut().load_file(&file_rs).unwrap();
+
+    let initial_gen = pane.active_tab().parse_generation;
+    assert_eq!(pane.active_tab().highlighter.lang, SupportedLanguage::Rust);
+
+    // Simulate async parse starting for file_rs (generation = initial_gen)
+    let mut parser = tree_sitter::Parser::new();
+    let rs_ts_lang = SupportedLanguage::Rust.tree_sitter_language().unwrap();
+    parser.set_language(&rs_ts_lang).unwrap();
+    let tree_rs = parser.parse("fn main() { println!(\"Hello\"); }", None);
+
+    // Before worker completes, user loads file_py into the same tab
+    pane.active_tab_mut().load_file(&file_py).unwrap();
+    let new_gen = pane.active_tab().parse_generation;
+    assert_ne!(initial_gen, new_gen, "load_file must increment parse_generation");
+    assert_eq!(pane.active_tab().highlighter.lang, SupportedLanguage::Python);
+
+    // Stale tree from file_rs returns with initial_gen
+    let applied = pane.active_tab_mut().apply_highlight_tree(initial_gen, tree_rs);
+    assert!(!applied, "Stale AST from old file must be rejected");
+
+    // Fresh tree for file_py with new_gen arrives
+    let mut py_parser = tree_sitter::Parser::new();
+    let py_ts_lang = SupportedLanguage::Python.tree_sitter_language().unwrap();
+    py_parser.set_language(&py_ts_lang).unwrap();
+    let tree_py = py_parser.parse("def hello():\n    print(\"Hello\")\n", None);
+
+    let applied_py = pane.active_tab_mut().apply_highlight_tree(new_gen, tree_py);
+    assert!(applied_py, "Matching generation AST must be accepted");
+    assert!(pane.active_tab().highlighter.has_tree(), "Highlighter must now have the Python tree");
+
+    let _ = std::fs::remove_file(file_rs);
+    let _ = std::fs::remove_file(file_py);
+}
+
+#[test]
+fn test_treesitter_save_as_language_change_race() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use rooney::syntax::SupportedLanguage;
+
+    let dir = std::env::temp_dir();
+    let file_py = dir.join("test_save_as_race.py");
+
+    let mut pane = EditorPane::new(PaneId::Left, "scratch.txt");
+    pane.active_tab_mut().buffer.insert_str("print('hello')\n");
+    pane.active_tab_mut().on_content_changed();
+    let gen_before_save = pane.active_tab().parse_generation;
+
+    // Simulate background parse dispatched for PlainText / Rust
+    let mut parser = tree_sitter::Parser::new();
+    let dummy_tree = parser.parse("print('hello')\n", None);
+
+    // User performs save_file_as to python file
+    pane.active_tab_mut().save_file_as(&file_py).unwrap();
+    let gen_after_save = pane.active_tab().parse_generation;
+    assert!(gen_after_save > gen_before_save, "save_file_as must increment parse_generation");
+    assert_eq!(pane.active_tab().highlighter.lang, SupportedLanguage::Python);
+
+    // Stale parse returns with gen_before_save
+    let applied = pane.active_tab_mut().apply_highlight_tree(gen_before_save, dummy_tree);
+    assert!(!applied, "Stale AST before save_as must be rejected");
+
+    // Correct Python parse returns
+    let mut py_parser = tree_sitter::Parser::new();
+    let py_lang = SupportedLanguage::Python.tree_sitter_language().unwrap();
+    py_parser.set_language(&py_lang).unwrap();
+    let py_tree = py_parser.parse("print('hello')\n", None);
+
+    let applied_correct = pane.active_tab_mut().apply_highlight_tree(gen_after_save, py_tree);
+    assert!(applied_correct, "Current generation AST must be applied");
+
+    let _ = std::fs::remove_file(file_py);
+}
+
+#[test]
+fn test_treesitter_undo_redo_parse_generation_stale_discard() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use rooney::syntax::SupportedLanguage;
+
+    let mut pane = EditorPane::new(PaneId::Left, "code.rs");
+    pane.active_tab_mut().highlighter = rooney::syntax::highlighter::Highlighter::new(SupportedLanguage::Rust);
+    pane.active_tab_mut().buffer.insert_str("fn foo() {}");
+    pane.active_tab_mut().on_content_changed();
+    let gen_edit1 = pane.active_tab().parse_generation;
+
+    // Worker started for edit1
+    let mut parser = tree_sitter::Parser::new();
+    let rs_lang = SupportedLanguage::Rust.tree_sitter_language().unwrap();
+    parser.set_language(&rs_lang).unwrap();
+    let tree_edit1 = parser.parse("fn foo() {}", None);
+
+    // User undoes the change
+    pane.active_tab_mut().undo();
+    assert_eq!(pane.active_tab().buffer.full_text(), "");
+    let gen_undo = pane.active_tab().parse_generation;
+    assert!(gen_undo > gen_edit1, "undo() must increment parse_generation");
+
+    // Worker for edit1 completes late
+    let applied_stale = pane.active_tab_mut().apply_highlight_tree(gen_edit1, tree_edit1);
+    assert!(!applied_stale, "Stale tree from before undo must be discarded");
+
+    // Worker for undo state completes
+    let tree_undo = parser.parse("", None);
+    let applied_undo = pane.active_tab_mut().apply_highlight_tree(gen_undo, tree_undo);
+    assert!(applied_undo, "AST matching undo generation must be applied");
+
+    // User redoes the change
+    pane.active_tab_mut().redo();
+    assert_eq!(pane.active_tab().buffer.full_text(), "fn foo() {}");
+    let gen_redo = pane.active_tab().parse_generation;
+    assert!(gen_redo > gen_undo, "redo() must increment parse_generation");
+
+    // Late tree for undo state should be discarded
+    let late_undo_tree = parser.parse("", None);
+    let applied_late = pane.active_tab_mut().apply_highlight_tree(gen_undo, late_undo_tree);
+    assert!(!applied_late, "Stale tree from before redo must be discarded");
 }
 
 

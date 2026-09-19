@@ -121,13 +121,12 @@ pub enum Message {
     InsertAiResponseAtCursor(String),
     CopyAiResponse(String),
 
-    // Background Async Syntax Parsing & Markdown Doc Sync
+    // Background Async Tree-sitter Syntax Parsing
     HighlightParseCompleted {
         pane_id: PaneId,
         tab_id: usize,
+        generation: usize,
         tree: Option<tree_sitter::Tree>,
-        markdown_doc: Option<(usize, crate::markdown::MarkdownDocument)>,
-        edit_time: std::time::Instant,
     },
 
     // Background Async Search Query Scanning

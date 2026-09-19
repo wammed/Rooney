@@ -141,8 +141,8 @@ impl App {
                         let is_md_preview = pane.is_markdown_preview && lang == crate::syntax::SupportedLanguage::Markdown;
                         let md_spec = pane.markdown_spec;
                         let md_gen = pane.markdown_generation;
+                        let parse_gen = pane.parse_generation;
                         let tab_id = pane.active_tab_id();
-                        let edit_time = pane.last_edit_time;
 
                         async_tasks.push(Task::perform(
                             async move {
@@ -153,26 +153,43 @@ impl App {
                                     }
                                     let text = rope_clone.to_string();
                                     let tree = parser.parse(&text, None);
-                                    let md_doc = if is_md_preview {
-                                        Some((md_gen, crate::markdown::MarkdownDocument::parse(&text, md_spec)))
-                                    } else {
-                                        None
-                                    };
-                                    (pane_id, tab_id, tree, md_doc, edit_time)
+                                    (pane_id, tab_id, parse_gen, tree)
                                 })
                                 .await
-                                .unwrap_or_else(|_| (pane_id, tab_id, None, None, edit_time))
+                                .unwrap_or_else(|_| (pane_id, tab_id, parse_gen, None))
                             },
-                            |(pane_id, tab_id, tree, md_doc, edit_time)| {
+                            |(pane_id, tab_id, parse_gen, tree)| {
                                 cosmic::Action::App(Message::HighlightParseCompleted {
                                     pane_id,
                                     tab_id,
+                                    generation: parse_gen,
                                     tree,
-                                    markdown_doc: md_doc,
-                                    edit_time,
                                 })
                             },
                         ));
+
+                        if is_md_preview {
+                            let rope_clone_md = pane.buffer.rope.clone();
+                            async_tasks.push(Task::perform(
+                                async move {
+                                    tokio::task::spawn_blocking(move || {
+                                        let text = rope_clone_md.to_string();
+                                        let doc = crate::markdown::MarkdownDocument::parse(&text, md_spec);
+                                        (pane_id, tab_id, md_gen, doc)
+                                    })
+                                    .await
+                                    .unwrap_or_else(|_| (pane_id, tab_id, md_gen, crate::markdown::MarkdownDocument::parse("", md_spec)))
+                                },
+                                |(pane_id, tab_id, md_gen, doc)| {
+                                    cosmic::Action::App(Message::MarkdownParseCompleted {
+                                        pane_id,
+                                        tab_id,
+                                        generation: md_gen,
+                                        doc,
+                                    })
+                                },
+                            ));
+                        }
                     }
                 }
                 if !async_tasks.is_empty() {
@@ -1416,26 +1433,12 @@ impl App {
             Message::HighlightParseCompleted {
                 pane_id,
                 tab_id,
+                generation,
                 tree,
-                markdown_doc,
-                edit_time,
             } => {
                 let pane = self.pane_mut(pane_id);
                 if let Some(tab) = pane.tab_by_id_mut(tab_id) {
-                    tab.is_parsing_async = false;
-                    // Only apply parsed tree if no new edits occurred while background worker was parsing
-                    if tab.last_edit_time == edit_time {
-                        if let Some(new_tree) = tree {
-                            tab.highlighter.set_tree(new_tree);
-                        }
-                        if let Some((gen, doc)) = markdown_doc {
-                            tab.apply_markdown_doc(gen, doc);
-                        }
-                        tab.needs_highlight_parse = false;
-                    } else {
-                        // User typed more during background parse, keep needs_highlight_parse = true
-                        tab.needs_highlight_parse = true;
-                    }
+                    tab.apply_highlight_tree(generation, tree);
                 }
                 Task::none()
             }

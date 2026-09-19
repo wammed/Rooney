@@ -49,6 +49,7 @@ pub struct EditorTab {
     pub search_generation: usize,
     pub is_searching_async: bool,
     pub markdown_generation: usize,
+    pub parse_generation: usize,
     pub cached_wrap_model: CachedWrapModel,
 }
 
@@ -81,6 +82,7 @@ impl EditorTab {
             search_generation: 0,
             is_searching_async: false,
             markdown_generation: 0,
+            parse_generation: 0,
             cached_wrap_model: std::sync::RwLock::new(None),
         }
     }
@@ -124,6 +126,9 @@ impl EditorTab {
         self.ghost_text = None;
         self.preedit = None;
         self.markdown_generation = self.markdown_generation.wrapping_add(1);
+        self.parse_generation = self.parse_generation.wrapping_add(1);
+        self.is_parsing_async = false;
+        self.needs_highlight_parse = false;
 
         if lang == SupportedLanguage::Markdown && self.is_markdown_preview {
             self.markdown_doc = Some(MarkdownDocument::parse(&content, self.markdown_spec));
@@ -163,6 +168,9 @@ impl EditorTab {
         self.highlighter = Highlighter::new(lang);
         self.highlighter.update_source(&self.buffer.full_text());
         self.markdown_generation = self.markdown_generation.wrapping_add(1);
+        self.parse_generation = self.parse_generation.wrapping_add(1);
+        self.is_parsing_async = false;
+        self.needs_highlight_parse = false;
 
         if lang == SupportedLanguage::Markdown && self.is_markdown_preview {
             self.markdown_doc = Some(MarkdownDocument::parse(&self.buffer.full_text(), self.markdown_spec));
@@ -219,6 +227,7 @@ impl EditorTab {
         self.ghost_text = None;
         self.needs_scroll_to_cursor.set(true);
         self.markdown_generation = self.markdown_generation.wrapping_add(1);
+        self.parse_generation = self.parse_generation.wrapping_add(1);
         if let Ok(mut guard) = self.cached_wrap_model.write() {
             *guard = None;
         }
@@ -312,6 +321,30 @@ impl EditorTab {
         } else {
             false
         }
+    }
+
+    /// Safely apply parsed Tree-sitter Tree only if parse generation matches.
+    pub fn apply_highlight_tree(&mut self, generation: usize, tree: Option<tree_sitter::Tree>) -> bool {
+        self.is_parsing_async = false;
+        if self.parse_generation == generation {
+            if let Some(new_tree) = tree {
+                self.highlighter.set_tree(new_tree);
+            }
+            self.needs_highlight_parse = false;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn undo(&mut self) {
+        self.buffer.undo();
+        self.on_content_changed();
+    }
+
+    pub fn redo(&mut self) {
+        self.buffer.redo();
+        self.on_content_changed();
     }
 
     pub fn start_search(&mut self, query: &str) -> (usize, bool) {
@@ -498,6 +531,9 @@ impl EditorPane {
                 tab.file_name = name;
                 tab.buffer = TextBuffer::new("");
                 tab.highlighter = highlighter;
+                tab.parse_generation = tab.parse_generation.wrapping_add(1);
+                tab.is_parsing_async = false;
+                tab.needs_highlight_parse = false;
                 tab.needs_scroll_to_cursor.set(true);
                 return Ok(());
             }

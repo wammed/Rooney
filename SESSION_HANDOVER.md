@@ -693,6 +693,34 @@
   - `cargo test --test benchmark_tests`: **全3テスト通過 (0 failed)**。
   - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
 
+### セッション 34: Tree-sitter への parse_generation 導入と非同期状態管理アーキテクチャの完全統一
+- **`EditorTab` への `parse_generation` 導入と `last_edit_time` 依存の完全排除 (P0)**:
+  - `EditorTab` に `pub parse_generation: usize` を新設（初期値 0）。
+  - バッファ編集時（`on_content_changed`）、ファイル読込時（`load_file`）、別名保存時（`save_file_as`）、未編集タブ再利用時（`open_file`）、Undo/Redo 時（`undo` / `redo`）の全状態で決定論的にインクリメント。
+  - `Message::HighlightParseCompleted { pane_id, tab_id, generation, tree }` へ改修し、`last_edit_time: Instant` や `markdown_doc` を完全に排除。
+  - `EditorTab::apply_highlight_tree(generation, tree)` メソッドを新設。`self.parse_generation == generation` の場合のみ構文木を安全に適用して `needs_highlight_parse = false` を設定。世代不一致の場合は AST を破棄し `needs_highlight_parse = true` を維持。
+  - `Highlighter::has_tree(&self) -> bool` を追加。
+- **Search / Markdown / Tree-sitter 三位一体の Generation アーキテクチャ確立 (P1)**:
+  - Rooney 内の全非同期パイプライン（Search, Markdown, Tree-sitter）を完全にタイムスタンプ非依存かつ決定論的な整数世代管理へ統一：
+    - `SearchCompleted { pane_id, tab_id, generation: search_generation, matches }`
+    - `MarkdownParseCompleted { pane_id, tab_id, generation: markdown_generation, doc }`
+    - `HighlightParseCompleted { pane_id, tab_id, generation: parse_generation, tree }`
+  - `EditorTab` に 3 つの対称的な検証・適用 API を完備：
+    - `apply_search_results(gen, matches) -> bool`
+    - `apply_markdown_doc(gen, doc) -> bool`
+    - `apply_highlight_tree(gen, tree) -> bool`
+- **Markdown パース処理の Tick からの完全分離 (Clean Decoupling)**:
+  - `Tick` 内で Markdown プレビューが有効な場合、`HighlightParseCompleted` にタプル同乗させる旧方式を廃止し、専用の `Message::MarkdownParseCompleted` を独立ディスパッチ。
+- **回帰テスト拡充 (`tests/core_tests.rs`)**:
+  - `test_treesitter_file_switch_parse_generation_race`: 解析中に別ファイルを開いた場合の古い AST 破棄と新 AST 適用を検証。
+  - `test_treesitter_save_as_language_change_race`: 解析中に言語変更（Save As）が行われた場合の古い言語 AST 破棄と新言語 AST 適用を検証。
+  - `test_treesitter_undo_redo_parse_generation_stale_discard`: Undo / Redo で世代が進んだ場合の遅延 AST 破棄を検証。
+- **検証結果**:
+  - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings (完全クリーン)**。
+  - `cargo test --test core_tests`: **64/64 全テスト通過 (0 failed)**。
+  - `cargo test --test benchmark_tests`: **3/3 全テスト通過 (0 failed)**。
+  - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
+
 ---
 
 ## 3. ファイル構成と役割
@@ -804,7 +832,10 @@ Rooney/
 ## 5. 現在のビルドおよびテスト状態
 
 - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings** (完全クリーン)
-- `cargo test`: **67/67 全テスト通過 (3 benchmark + 61 core + 3 ollama, 0 failed)**
+- `cargo test`: **70/70 全テスト通過 (3 benchmark + 64 core + 3 ollama, 0 failed)**
+  - `test_treesitter_file_switch_parse_generation_race` ... ok (ファイル切替時旧AST安全破棄・新AST適用検証)
+  - `test_treesitter_save_as_language_change_race` ... ok (言語変更Save-As時旧AST破棄・新言語AST適用検証)
+  - `test_treesitter_undo_redo_parse_generation_stale_discard` ... ok (Undo/Redo世代進行時遅延AST破棄検証)
   - `test_markdown_spec_change_generation_race` ... ok (Markdown Spec変更時世代Race破棄・新世代適用検証)
   - `test_markdown_preview_toggle_race` ... ok (MarkdownプレビューON/OFF切替Race破棄検証)
   - `test_all_tabs_markdown_spec_sync` ... ok (全プレビュー中タブ/非アクティブタブのSpec変更同期検証)
