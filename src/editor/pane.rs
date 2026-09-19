@@ -40,6 +40,10 @@ pub struct EditorTab {
     pub last_edit_time: Instant,
     pub last_cursor_time: Instant,
     pub needs_highlight_parse: bool,
+    pub is_parsing_async: bool,
+    pub needs_search_update: bool,
+    pub last_search_update: Instant,
+    pub cached_wrap_model: std::sync::RwLock<Option<(u32, crate::ui::wrap::LineWrapModel)>>,
 }
 
 impl EditorTab {
@@ -65,6 +69,10 @@ impl EditorTab {
             last_edit_time: Instant::now(),
             last_cursor_time: Instant::now(),
             needs_highlight_parse: false,
+            is_parsing_async: false,
+            needs_search_update: false,
+            last_search_update: Instant::now(),
+            cached_wrap_model: std::sync::RwLock::new(None),
         }
     }
 
@@ -97,6 +105,9 @@ impl EditorTab {
         self.file_path = Some(path.to_path_buf());
         self.file_name = name;
         self.buffer = TextBuffer::new(&content);
+        if let Ok(mut guard) = self.cached_wrap_model.write() {
+            *guard = None;
+        }
         self.highlighter = highlighter;
         self.scroll_y.set(0.0);
         self.scroll_x.set(0.0);
@@ -196,6 +207,9 @@ impl EditorTab {
         self.last_edit_time = Instant::now();
         self.ghost_text = None;
         self.needs_scroll_to_cursor.set(true);
+        if let Ok(mut guard) = self.cached_wrap_model.write() {
+            *guard = None;
+        }
         if let Some(edit) = self.buffer.last_edit.take() {
             self.highlighter.apply_edit(&edit);
         }
@@ -217,8 +231,28 @@ impl EditorTab {
             self.needs_highlight_parse = true;
         }
 
+        // Search updates: for files <= 2MB, update matches synchronously.
+        // For massive files (> 2MB), defer full-text line scan until user pauses typing
+        // to prevent hundreds of milliseconds of typing freeze on keystrokes.
+        const SYNC_SEARCH_MAX_BYTES: usize = 2 * 1024 * 1024;
         if let Some(ref q) = self.search_query.clone() {
-            self.update_search(q);
+            if self.buffer.len_bytes() <= SYNC_SEARCH_MAX_BYTES {
+                self.update_search(q);
+                self.needs_search_update = false;
+            } else {
+                self.needs_search_update = true;
+            }
+        }
+    }
+
+    /// Flushes any pending background/debounced search query scan for large files (> 2MB).
+    pub fn flush_pending_search(&mut self) {
+        if self.needs_search_update {
+            if let Some(ref q) = self.search_query.clone() {
+                self.update_search(q);
+            }
+            self.needs_search_update = false;
+            self.last_search_update = Instant::now();
         }
     }
 
@@ -474,6 +508,14 @@ impl EditorPane {
                 self.active_tab_idx - 1
             };
         }
+    }
+
+    pub fn active_tab_id(&self) -> usize {
+        self.active_tab().id
+    }
+
+    pub fn tab_by_id_mut(&mut self, id: usize) -> Option<&mut EditorTab> {
+        self.tabs.iter_mut().find(|t| t.id == id)
     }
 }
 

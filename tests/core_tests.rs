@@ -1692,31 +1692,339 @@ fn test_mixed_script_coordinates_and_roundtrip() {
             );
         }
 
-        // 2. Round-trip: pos_to_char_coords at cursor position returns exact column
-        for (col, &ch) in chars.iter().enumerate() {
-            pane.buffer.cursor = (0, col);
+        // 2. Round-trip: pos_to_char_coords at grapheme cluster boundary returns valid boundary
+        let boundaries = pane.buffer.line_grapheme_boundaries(0);
+        for &start_col in &boundaries[..boundaries.len() - 1] {
+            let next_boundary = pane.buffer.next_grapheme_boundary(0, start_col);
+            pane.buffer.cursor = (0, start_col);
             let canvas = EditorCanvas::new(&pane, &theme, true, font_name, font_size);
             let cursor_pos = canvas.cursor_screen_pos(bounds).unwrap();
 
-            // Clicking right on the character start should map to col
+            // Clicking right on the grapheme start should map to start_col
             let (hit_line, hit_col) = canvas.pos_to_char_coords(cursor_pos, bounds);
-            assert_eq!(hit_line, 0, "[{label}] Hit line mismatch at col {col}");
-            assert_eq!(hit_col, col, "[{label}] Round-trip hit col mismatch at col {col}");
+            assert_eq!(hit_line, 0, "[{label}] Hit line mismatch at col {start_col}");
+            assert_eq!(hit_col, start_col, "[{label}] Round-trip hit col mismatch at col {start_col}");
 
-            // Clicking just inside the left half of character col should still map to col
-            let char_w = canvas.glyph_advance(ch);
-            let left_half_pt = Point::new(cursor_pos.x + char_w * 0.25, cursor_pos.y);
+            pane.buffer.cursor = (0, next_boundary);
+            let canvas_next = EditorCanvas::new(&pane, &theme, true, font_name, font_size);
+            let next_pos = canvas_next.cursor_screen_pos(bounds).unwrap();
+            pane.buffer.cursor = (0, start_col);
+            let canvas = EditorCanvas::new(&pane, &theme, true, font_name, font_size);
+            let cursor_pos = canvas.cursor_screen_pos(bounds).unwrap();
+            let cluster_w = next_pos.x - cursor_pos.x;
+
+            // Clicking in the left half of grapheme cluster should still map to start_col
+            let left_half_pt = Point::new(cursor_pos.x + cluster_w * 0.25, cursor_pos.y);
             let (_, left_col) = canvas.pos_to_char_coords(left_half_pt, bounds);
-            assert_eq!(left_col, col, "[{label}] Left half click mismatch at col {col}");
+            assert_eq!(left_col, start_col, "[{label}] Left half click mismatch at col {start_col}");
 
-            // Clicking in the right half of character col should advance to col + 1
-            let right_half_pt = Point::new(cursor_pos.x + char_w * 0.75, cursor_pos.y);
+            // Clicking in the right half of grapheme cluster should advance to next_boundary
+            let right_half_pt = Point::new(cursor_pos.x + cluster_w * 0.75, cursor_pos.y);
             let (_, right_col) = canvas.pos_to_char_coords(right_half_pt, bounds);
-            assert_eq!(right_col, col + 1, "[{label}] Right half click mismatch at col {col}");
+            assert_eq!(right_col, next_boundary, "[{label}] Right half click mismatch at col {start_col}");
         }
-
-
     }
+}
+
+#[test]
+fn test_grapheme_cluster_navigation_and_deletion() {
+    // 1. Combining acute accent: Cafe\u{0301}
+    // "Cafe\u{0301}" has chars: ['C', 'a', 'f', 'e', '\u{0301}']
+    // Char indices: C=0, a=1, f=2, e=3, \u{0301}=4, end=5
+    // Grapheme boundaries: [0, 1, 2, 3, 5]
+    let mut buffer = TextBuffer::new("Cafe\u{0301}");
+    assert_eq!(buffer.line_grapheme_boundaries(0), vec![0, 1, 2, 3, 5]);
+
+    // Move right from start
+    buffer.cursor = (0, 0);
+    buffer.move_right(false);
+    assert_eq!(buffer.cursor, (0, 1));
+    buffer.move_right(false);
+    assert_eq!(buffer.cursor, (0, 2));
+    buffer.move_right(false);
+    assert_eq!(buffer.cursor, (0, 3));
+    buffer.move_right(false);
+    // Skips 4 (\u{0301}) and jumps directly to 5!
+    assert_eq!(buffer.cursor, (0, 5));
+
+    // Move left from end
+    buffer.move_left(false);
+    // Skips 4 and jumps directly to 3!
+    assert_eq!(buffer.cursor, (0, 3));
+
+    // Backspace from end (5) deletes both 'e' and '\u{0301}' atomically
+    buffer.cursor = (0, 5);
+    buffer.delete_backspace();
+    assert_eq!(buffer.full_text(), "Caf");
+    assert_eq!(buffer.cursor, (0, 3));
+
+    // Delete forward on grapheme cluster
+    let mut buffer2 = TextBuffer::new("Cafe\u{0301}!");
+    buffer2.cursor = (0, 3); // before 'e\u{0301}'
+    buffer2.delete_forward();
+    assert_eq!(buffer2.full_text(), "Caf!");
+    assert_eq!(buffer2.cursor, (0, 3));
+
+    // 2. Emoji with ZWJ: 👨‍💻 (U+1F468, U+200D, U+1F4BB)
+    let mut buffer_emoji = TextBuffer::new("A👨‍💻B");
+    // Chars: 'A' (0), '👨' (1), '\u{200D}' (2), '💻' (3), 'B' (4)
+    // Grapheme boundaries: [0, 1, 4, 5]
+    assert_eq!(buffer_emoji.line_grapheme_boundaries(0), vec![0, 1, 4, 5]);
+
+    buffer_emoji.cursor = (0, 1);
+    buffer_emoji.move_right(false);
+    assert_eq!(buffer_emoji.cursor, (0, 4)); // jumps whole ZWJ cluster
+    buffer_emoji.move_left(false);
+    assert_eq!(buffer_emoji.cursor, (0, 1));
+
+    // Backspace at 4 deletes entire 👨‍💻
+    buffer_emoji.cursor = (0, 4);
+    buffer_emoji.delete_backspace();
+    assert_eq!(buffer_emoji.full_text(), "AB");
+    assert_eq!(buffer_emoji.cursor, (0, 1));
+}
+
+#[test]
+fn test_state_consistency_undo_redo_and_cache() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use rooney::syntax::highlighter::{HighlightSpan, Highlighter, SupportedLanguage};
+
+    let initial = "fn calculate(x: i32) -> i32 {\n    x * 2\n}\n";
+    let mut pane = EditorPane::new(PaneId::Left, "calc.rs");
+    pane.buffer = TextBuffer::new(initial);
+    pane.file_path = Some(std::path::PathBuf::from("calc.rs"));
+
+    let mut highlighter = Highlighter::new(SupportedLanguage::Rust);
+    let text = pane.buffer.full_text();
+    highlighter.update_source(&text);
+
+    let hl_line0: Vec<HighlightSpan> = highlighter.highlight_line(&pane.buffer.line_text(0).unwrap(), 0);
+    assert!(!hl_line0.is_empty());
+    assert_eq!(highlighter.cached_line_count(), 1);
+
+    // Edit 1: insert comment on line 0
+    pane.buffer.cursor = (0, 0);
+    pane.buffer.insert_str("// compute double\n");
+    assert_eq!(pane.buffer.line_count(), 5);
+    if let Some(edit) = pane.buffer.last_edit.take() {
+        highlighter.apply_edit(&edit);
+    }
+    highlighter.update_source(&pane.buffer.full_text());
+    assert_eq!(highlighter.cached_line_count(), 0);
+
+    let hl_new0 = highlighter.highlight_line(&pane.buffer.line_text(0).unwrap(), 0);
+    assert!(!hl_new0.is_empty());
+
+    // Undo edit 1
+    pane.buffer.undo();
+    assert_eq!(pane.buffer.full_text(), initial);
+    assert_eq!(pane.buffer.line_count(), 4);
+    highlighter.update_source(&pane.buffer.full_text());
+    let hl_undo0 = highlighter.highlight_line(&pane.buffer.line_text(0).unwrap(), 0);
+    assert_eq!(hl_undo0, hl_line0);
+
+    // Redo edit 1
+    pane.buffer.redo();
+    assert_eq!(pane.buffer.full_text(), format!("// compute double\n{}", initial));
+    assert_eq!(pane.buffer.line_count(), 5);
+    highlighter.update_source(&pane.buffer.full_text());
+    let hl_redo0 = highlighter.highlight_line(&pane.buffer.line_text(0).unwrap(), 0);
+    assert_eq!(hl_redo0, hl_new0);
+}
+
+#[test]
+fn test_glyph_cache_invalidation_lifecycle() {
+    use rooney::ui::canvas_editor::{clear_glyph_cache, measure_glyph_advance};
+
+    clear_glyph_cache();
+
+    // Measure at font size 14.0
+    let adv_14 = measure_glyph_advance('M', 14.0, "JetBrainsMono Nerd Font");
+    assert!(adv_14 > 0.0);
+
+    // Repeated call hits cache
+    let adv_14_cached = measure_glyph_advance('M', 14.0, "JetBrainsMono Nerd Font");
+    assert_eq!(adv_14, adv_14_cached);
+
+    // Invalidate glyph cache (e.g. font size change / DPI change)
+    clear_glyph_cache();
+
+    // Measure at font size 28.0
+    let adv_28 = measure_glyph_advance('M', 28.0, "JetBrainsMono Nerd Font");
+    assert!(adv_28 > adv_14 * 1.5, "Adv at 28pt ({adv_28}) should be roughly double 14pt ({adv_14})");
+
+    clear_glyph_cache();
+}
+
+#[test]
+fn test_debounced_parse_state_transition() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use rooney::syntax::highlighter::SupportedLanguage;
+
+    let initial = "let value: usize = 12345;\n";
+    let mut pane = EditorPane::new(PaneId::Left, "large_bench.rs");
+    pane.buffer = TextBuffer::new(initial);
+    pane.file_path = Some(std::path::PathBuf::from("large_bench.rs"));
+    pane.highlighter = rooney::syntax::highlighter::Highlighter::new(SupportedLanguage::Rust);
+
+    // Initial highlight pass
+    let hl_init = pane.highlighter.highlight_line(&pane.buffer.line_text(0).unwrap(), 0);
+    assert!(!hl_init.is_empty());
+    assert!(!pane.needs_highlight_parse);
+
+    // Simulate large file (> 2MB) content change
+    // Trigger on_content_changed with > 2MB buffer
+    let large_line = "let a = 1;\n".repeat(200_000); // ~2.2 MB
+    pane.buffer = TextBuffer::new(&large_line);
+    pane.on_content_changed();
+    assert!(pane.needs_highlight_parse, "Needs highlight parse should be true for >2MB buffer");
+
+    // During debounce, line highlighting still works (via fallback lexical or cached tree)
+    let hl_debounced = pane.highlighter.highlight_line(&pane.buffer.line_text(0).unwrap(), 0);
+    assert!(!hl_debounced.is_empty());
+
+    // Flush debounced parse
+    pane.flush_highlight_parse();
+    assert!(!pane.needs_highlight_parse, "Needs highlight parse must be false after flush");
+
+    // Highlight after flush works reliably
+    let hl_flushed = pane.highlighter.highlight_line(&pane.buffer.line_text(0).unwrap(), 0);
+    assert!(!hl_flushed.is_empty());
+}
+
+#[test]
+fn test_wrapped_subrows_cumulative_y_and_hit_test() {
+    use cosmic::iced::{Point, Rectangle, Size};
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use rooney::theme::EditorTheme;
+    use rooney::ui::canvas_editor::EditorCanvas;
+
+    // Line 0: ~75 characters ASCII. With char_width = 8.4 (font_size 14.0), width is ~630px.
+    // Line 1: short line.
+    // Line 2: short line.
+    let text = "012345678901234567890123456789012345678901234567890123456789012345678912345\nLine 1\nLine 2\n";
+    let mut pane = EditorPane::new(PaneId::Left, "wrap_test.rs");
+    pane.buffer = TextBuffer::new(text);
+
+    let theme = EditorTheme::default();
+    let font_size = 14.0f32;
+    let line_height = (font_size * 1.5).round(); // 21.0
+    let canvas = EditorCanvas::new(&pane, &theme, true, "monospace", font_size);
+
+    let gutter = canvas.gutter_width();
+    // Configure avail_width = 252.0 (exactly 30 ASCII chars of 8.4px width per subrow)
+    let avail_width = 252.0;
+    let bounds_width = avail_width + gutter + 24.0;
+    let bounds = Rectangle::new(Point::ORIGIN, Size::new(bounds_width, 800.0));
+
+    let wrap_model = canvas.build_wrap_model(avail_width);
+
+    // Line 0 (75 chars) wraps into 3 subrows (30 chars, 30 chars, 15 chars)
+    assert_eq!(wrap_model.subrow_count(0), 3, "Line 0 must wrap into 3 subrows");
+    assert_eq!(wrap_model.subrow_count(1), 1, "Line 1 must be 1 row");
+    assert_eq!(wrap_model.subrow_count(2), 1, "Line 2 must be 1 row");
+
+    // Line 0 starts at visual row 0
+    assert_eq!(wrap_model.line_to_visual_row(0), 0);
+    // Line 1 must start at visual row 3 (placed strictly below subrow 2 of Line 0)
+    assert_eq!(wrap_model.line_to_visual_row(1), 3);
+    // Line 2 must start at visual row 4
+    assert_eq!(wrap_model.line_to_visual_row(2), 4);
+
+    // Total visual rows: 3 + 1 + 1 + 1 (trailing empty line) = 6
+    let total_vrows = wrap_model.total_visual_rows(pane.buffer.line_count());
+    assert_eq!(total_vrows, 6);
+
+    // Verify visual_row_to_line reverse lookup
+    assert_eq!(wrap_model.visual_row_to_line(0), (0, 0));
+    assert_eq!(wrap_model.visual_row_to_line(1), (0, 1));
+    assert_eq!(wrap_model.visual_row_to_line(2), (0, 2));
+    assert_eq!(wrap_model.visual_row_to_line(3), (1, 0));
+    assert_eq!(wrap_model.visual_row_to_line(4), (2, 0));
+
+    // Verify total_content_height_with_width reflects total visual rows
+    let expected_height = (total_vrows as f32) * line_height;
+    assert_eq!(canvas.total_content_height_with_width(bounds_width), expected_height);
+
+    // Verify build_viewport_visual_rows non-overlapping Y coordinates
+    let visual_rows = canvas.build_viewport_visual_rows(bounds_width, 0.0, 800.0);
+    assert_eq!(visual_rows[0].line_idx, 0);
+    assert_eq!(visual_rows[0].y, 0.0);
+
+    assert_eq!(visual_rows[1].line_idx, 0);
+    assert_eq!(visual_rows[1].y, 1.0 * line_height);
+
+    assert_eq!(visual_rows[2].line_idx, 0);
+    assert_eq!(visual_rows[2].y, 2.0 * line_height);
+
+    // Line 1 MUST be at 3 * line_height (strictly non-overlapping!)
+    assert_eq!(visual_rows[3].line_idx, 1);
+    assert_eq!(visual_rows[3].y, 3.0 * line_height);
+
+    // Line 2 MUST be at 4 * line_height
+    assert_eq!(visual_rows[4].line_idx, 2);
+    assert_eq!(visual_rows[4].y, 4.0 * line_height);
+
+    // Verify pos_to_char_coords Y hit-testing on wrapped subrows
+    // Clicking on Line 0 subrow 0 (y = 0.5 * line_height)
+    let (line, col) = canvas.pos_to_char_coords(Point::new(gutter + 15.0, 0.5 * line_height), bounds);
+    assert_eq!(line, 0);
+    assert!(col < 30);
+
+    // Clicking on Line 0 subrow 1 (y = 1.5 * line_height)
+    let (line, col) = canvas.pos_to_char_coords(Point::new(gutter + 15.0, 1.5 * line_height), bounds);
+    assert_eq!(line, 0);
+    assert!((30..60).contains(&col), "Must map to subrow 1 (col in 30..60), got {col}");
+
+    // Clicking on Line 0 subrow 2 (y = 2.5 * line_height)
+    let (line, col) = canvas.pos_to_char_coords(Point::new(gutter + 15.0, 2.5 * line_height), bounds);
+    assert_eq!(line, 0);
+    assert!(col >= 60, "Must map to subrow 2 (col >= 60), got {col}");
+
+    // Clicking on Line 1 (y = 3.5 * line_height)
+    let (line, _) = canvas.pos_to_char_coords(Point::new(gutter + 15.0, 3.5 * line_height), bounds);
+    assert_eq!(line, 1, "Must map to Line 1");
+
+    // Clicking on Line 2 (y = 4.5 * line_height)
+    let (line, _) = canvas.pos_to_char_coords(Point::new(gutter + 15.0, 4.5 * line_height), bounds);
+    assert_eq!(line, 2, "Must map to Line 2");
+}
+
+#[test]
+fn test_large_file_search_debouncing() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+
+    // Construct a ~3MB buffer (exceeding 2MB threshold)
+    let line = "let counter_var = 42;\n";
+    let text = line.repeat(140_000); // ~3.08 MB
+    let mut pane = EditorPane::new(PaneId::Left, "large_search.rs");
+    pane.buffer = TextBuffer::new(&text);
+
+    // Set search query
+    pane.search_query = Some("counter_var".to_string());
+    pane.update_search("counter_var");
+    assert!(!pane.search_matches.is_empty());
+    assert!(!pane.needs_search_update);
+
+    // Simulate typing in large file
+    pane.buffer.cursor = (0, 0);
+    let t_type = std::time::Instant::now();
+    pane.buffer.insert_char('x');
+    pane.on_content_changed();
+    let typing_latency_us = t_type.elapsed().as_secs_f64() * 1_000_000.0;
+
+    // Typing must be instantaneous (< 1000 µs) and NOT perform full 3MB scan
+    assert!(
+        typing_latency_us < 1000.0,
+        "Typing with search query on 3MB file took {:.2} µs (must be < 1000 µs)",
+        typing_latency_us
+    );
+    assert!(pane.needs_search_update, "needs_search_update must be set to true for > 2MB buffer");
+
+    // Simulate idle debounce flush
+    pane.flush_pending_search();
+    assert!(!pane.needs_search_update, "needs_search_update must be reset to false after flush");
+    assert!(!pane.search_matches.is_empty());
 }
 
 

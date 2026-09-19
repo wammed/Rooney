@@ -74,17 +74,65 @@ impl App {
     pub(crate) fn handle_update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Tick => {
-                // Flush debounced Tree-sitter AST parsing on large files if user paused typing (> 100ms)
-                if self.left_pane.needs_highlight_parse
+                // 1. Flush debounced search on large files if user paused typing (> 100ms)
+                if self.left_pane.needs_search_update
                     && self.left_pane.last_edit_time.elapsed() >= Duration::from_millis(100)
                 {
-                    self.left_pane.flush_highlight_parse();
+                    self.left_pane.flush_pending_search();
                 }
                 if self.split_layout == crate::editor::pane::SplitLayout::Split
-                    && self.right_pane.needs_highlight_parse
+                    && self.right_pane.needs_search_update
                     && self.right_pane.last_edit_time.elapsed() >= Duration::from_millis(100)
                 {
-                    self.right_pane.flush_highlight_parse();
+                    self.right_pane.flush_pending_search();
+                }
+
+                // 2. Offload Tree-sitter parsing on large files to background thread off UI thread
+                let mut async_tasks = Vec::new();
+                for pane_id in [crate::editor::PaneId::Left, crate::editor::PaneId::Right] {
+                    if pane_id == crate::editor::PaneId::Right
+                        && self.split_layout != crate::editor::pane::SplitLayout::Split
+                    {
+                        continue;
+                    }
+                    let pane = self.pane_mut(pane_id);
+                    if pane.needs_highlight_parse
+                        && pane.last_edit_time.elapsed() >= Duration::from_millis(100)
+                        && !pane.is_parsing_async
+                    {
+                        pane.is_parsing_async = true;
+                        let rope_clone = pane.buffer.rope.clone();
+                        let lang = pane.highlighter.lang;
+                        let tab_id = pane.active_tab_id();
+                        let edit_time = pane.last_edit_time;
+
+                        async_tasks.push(Task::perform(
+                            async move {
+                                tokio::task::spawn_blocking(move || {
+                                    let mut parser = tree_sitter::Parser::new();
+                                    if let Some(ts_lang) = lang.tree_sitter_language() {
+                                        let _ = parser.set_language(&ts_lang);
+                                    }
+                                    let text = rope_clone.to_string();
+                                    let tree = parser.parse(&text, None);
+                                    (pane_id, tab_id, tree, edit_time)
+                                })
+                                .await
+                                .unwrap_or_else(|_| (pane_id, tab_id, None, edit_time))
+                            },
+                            |(pane_id, tab_id, tree, edit_time)| {
+                                cosmic::Action::App(Message::HighlightParseCompleted {
+                                    pane_id,
+                                    tab_id,
+                                    tree,
+                                    edit_time,
+                                })
+                            },
+                        ));
+                    }
+                }
+                if !async_tasks.is_empty() {
+                    return Task::batch(async_tasks);
                 }
 
 
@@ -1158,6 +1206,29 @@ impl App {
                 let to_copy = extract_code_block_or_text(&text);
                 self.status_msg = Some("Copied AI response to clipboard".into());
                 cosmic::iced::clipboard::write(to_copy)
+            }
+
+            Message::HighlightParseCompleted {
+                pane_id,
+                tab_id,
+                tree,
+                edit_time,
+            } => {
+                let pane = self.pane_mut(pane_id);
+                if let Some(tab) = pane.tab_by_id_mut(tab_id) {
+                    tab.is_parsing_async = false;
+                    // Only apply parsed tree if no new edits occurred while background worker was parsing
+                    if tab.last_edit_time == edit_time {
+                        if let Some(new_tree) = tree {
+                            tab.highlighter.set_tree(new_tree);
+                        }
+                        tab.needs_highlight_parse = false;
+                    } else {
+                        // User typed more during background parse, keep needs_highlight_parse = true
+                        tab.needs_highlight_parse = true;
+                    }
+                }
+                Task::none()
             }
         }
     }

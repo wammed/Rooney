@@ -1,5 +1,7 @@
 use ropey::Rope;
 use std::collections::VecDeque;
+use unicode_segmentation::UnicodeSegmentation;
+
 
 #[derive(Debug, Clone)]
 pub struct TextBuffer {
@@ -8,6 +10,7 @@ pub struct TextBuffer {
     pub selection_anchor: Option<(usize, usize)>,
     pub is_modified: bool,
     pub last_edit: Option<tree_sitter::InputEdit>,
+    pub max_line_len: usize,
     undo_stack: VecDeque<Rope>,
     redo_stack: VecDeque<Rope>,
 }
@@ -71,12 +74,14 @@ pub fn compute_input_edit(
 impl TextBuffer {
     pub fn new(initial_text: &str) -> Self {
         let rope = Rope::from_str(initial_text);
+        let max_line_len = initial_text.lines().map(|l| l.len()).max().unwrap_or(0);
         Self {
             rope,
             cursor: (0, 0),
             selection_anchor: None,
             is_modified: false,
             last_edit: None,
+            max_line_len,
             undo_stack: VecDeque::new(),
             redo_stack: VecDeque::new(),
         }
@@ -162,6 +167,58 @@ impl TextBuffer {
         }
     }
 
+    /// Returns the character indices of all grapheme cluster boundaries on `line_idx`.
+    /// E.g. for "Cafe\u{0301}", returns `vec![0, 1, 2, 3, 5]`.
+    pub fn line_grapheme_boundaries(&self, line_idx: usize) -> Vec<usize> {
+        let Some(line_text) = self.line_text(line_idx) else {
+            return vec![0];
+        };
+        let mut boundaries = vec![0];
+        let mut char_count = 0;
+        for g in line_text.graphemes(true) {
+            char_count += g.chars().count();
+            boundaries.push(char_count);
+        }
+        boundaries
+    }
+
+    /// Snaps `col` to the nearest valid grapheme boundary on `line_idx`.
+    pub fn snap_to_grapheme_boundary(&self, line_idx: usize, col: usize) -> usize {
+        let boundaries = self.line_grapheme_boundaries(line_idx);
+        if col == 0 {
+            return 0;
+        }
+        let max_col = *boundaries.last().unwrap_or(&0);
+        if col >= max_col {
+            return max_col;
+        }
+        match boundaries.binary_search(&col) {
+            Ok(idx) => boundaries[idx],
+            Err(idx) => {
+                let prev = boundaries[idx.saturating_sub(1)];
+                let next = boundaries[idx];
+                if col - prev < next - col {
+                    prev
+                } else {
+                    next
+                }
+            }
+        }
+    }
+
+    /// Finds the previous grapheme boundary before `col` on `line_idx`, or 0 if at start.
+    pub fn prev_grapheme_boundary(&self, line_idx: usize, col: usize) -> usize {
+        let boundaries = self.line_grapheme_boundaries(line_idx);
+        boundaries.into_iter().rev().find(|&b| b < col).unwrap_or(0)
+    }
+
+    /// Finds the next grapheme boundary after `col` on `line_idx`, or line length if at end.
+    pub fn next_grapheme_boundary(&self, line_idx: usize, col: usize) -> usize {
+        let boundaries = self.line_grapheme_boundaries(line_idx);
+        let max_col = *boundaries.last().unwrap_or(&0);
+        boundaries.into_iter().find(|&b| b > col).unwrap_or(max_col)
+    }
+
     pub fn clamp_cursor(&mut self) {
         let line_count = self.rope.len_lines();
         if line_count == 0 {
@@ -171,7 +228,9 @@ impl TextBuffer {
         self.cursor.0 = self.cursor.0.min(line_count - 1);
         let line_chars = self.line_char_count(self.cursor.0);
         self.cursor.1 = self.cursor.1.min(line_chars);
+        self.cursor.1 = self.snap_to_grapheme_boundary(self.cursor.0, self.cursor.1);
     }
+
 
     pub fn line_char_count(&self, line: usize) -> usize {
         if line >= self.rope.len_lines() {
@@ -223,9 +282,13 @@ impl TextBuffer {
             self.cursor.0 = start_line + lines_added;
             let last_line = s.split('\n').next_back().unwrap_or("");
             self.cursor.1 = last_line.chars().count();
+            let added_max = s.lines().map(|l| l.len()).max().unwrap_or(0);
+            self.max_line_len = self.max_line_len.max(added_max + 100);
         } else {
             self.cursor.0 = start_line;
             self.cursor.1 = start_col + s.chars().count();
+            let cur_line_len = self.rope.line(start_line).len_bytes();
+            self.max_line_len = self.max_line_len.max(cur_line_len);
         }
         self.selection_anchor = None;
     }
@@ -235,16 +298,25 @@ impl TextBuffer {
             return;
         }
 
-        let char_idx = self.char_index(self.cursor.0, self.cursor.1);
-        if char_idx > 0 {
-            self.push_undo();
-            let edit = compute_input_edit(&self.rope, char_idx - 1, char_idx, "");
-            self.rope.remove(char_idx - 1..char_idx);
-            self.last_edit = Some(edit);
+        if self.cursor.1 > 0 {
+            let prev_col = self.prev_grapheme_boundary(self.cursor.0, self.cursor.1);
+            let start_idx = self.char_index(self.cursor.0, prev_col);
+            let end_idx = self.char_index(self.cursor.0, self.cursor.1);
+            if start_idx < end_idx {
+                self.push_undo();
+                let edit = compute_input_edit(&self.rope, start_idx, end_idx, "");
+                self.rope.remove(start_idx..end_idx);
+                self.last_edit = Some(edit);
+                self.cursor.1 = prev_col;
+            }
+        } else if self.cursor.0 > 0 {
+            let char_idx = self.char_index(self.cursor.0, self.cursor.1);
+            if char_idx > 0 {
+                self.push_undo();
+                let edit = compute_input_edit(&self.rope, char_idx - 1, char_idx, "");
+                self.rope.remove(char_idx - 1..char_idx);
+                self.last_edit = Some(edit);
 
-            if self.cursor.1 > 0 {
-                self.cursor.1 -= 1;
-            } else if self.cursor.0 > 0 {
                 self.cursor.0 -= 1;
                 self.cursor.1 = self.line_char_count(self.cursor.0);
             }
@@ -256,12 +328,25 @@ impl TextBuffer {
             return;
         }
 
-        let char_idx = self.char_index(self.cursor.0, self.cursor.1);
-        if char_idx < self.rope.len_chars() {
-            self.push_undo();
-            let edit = compute_input_edit(&self.rope, char_idx, char_idx + 1, "");
-            self.rope.remove(char_idx..char_idx + 1);
-            self.last_edit = Some(edit);
+        let line_len = self.line_char_count(self.cursor.0);
+        if self.cursor.1 < line_len {
+            let next_col = self.next_grapheme_boundary(self.cursor.0, self.cursor.1);
+            let start_idx = self.char_index(self.cursor.0, self.cursor.1);
+            let end_idx = self.char_index(self.cursor.0, next_col);
+            if start_idx < end_idx {
+                self.push_undo();
+                let edit = compute_input_edit(&self.rope, start_idx, end_idx, "");
+                self.rope.remove(start_idx..end_idx);
+                self.last_edit = Some(edit);
+            }
+        } else {
+            let char_idx = self.char_index(self.cursor.0, self.cursor.1);
+            if char_idx < self.rope.len_chars() {
+                self.push_undo();
+                let edit = compute_input_edit(&self.rope, char_idx, char_idx + 1, "");
+                self.rope.remove(char_idx..char_idx + 1);
+                self.last_edit = Some(edit);
+            }
         }
     }
 
@@ -304,7 +389,7 @@ impl TextBuffer {
         }
 
         if self.cursor.1 > 0 {
-            self.cursor.1 -= 1;
+            self.cursor.1 = self.prev_grapheme_boundary(self.cursor.0, self.cursor.1);
         } else if self.cursor.0 > 0 {
             self.cursor.0 -= 1;
             self.cursor.1 = self.line_char_count(self.cursor.0);
@@ -320,7 +405,7 @@ impl TextBuffer {
 
         let line_len = self.line_char_count(self.cursor.0);
         if self.cursor.1 < line_len {
-            self.cursor.1 += 1;
+            self.cursor.1 = self.next_grapheme_boundary(self.cursor.0, self.cursor.1);
         } else if self.cursor.0 + 1 < self.rope.len_lines() {
             self.cursor.0 += 1;
             self.cursor.1 = 0;
@@ -337,7 +422,8 @@ impl TextBuffer {
         if self.cursor.0 > 0 {
             self.cursor.0 -= 1;
             let line_len = self.line_char_count(self.cursor.0);
-            self.cursor.1 = self.cursor.1.min(line_len);
+            let col = self.cursor.1.min(line_len);
+            self.cursor.1 = self.snap_to_grapheme_boundary(self.cursor.0, col);
         }
     }
 
@@ -351,7 +437,8 @@ impl TextBuffer {
         if self.cursor.0 + 1 < self.rope.len_lines() {
             self.cursor.0 += 1;
             let line_len = self.line_char_count(self.cursor.0);
-            self.cursor.1 = self.cursor.1.min(line_len);
+            let col = self.cursor.1.min(line_len);
+            self.cursor.1 = self.snap_to_grapheme_boundary(self.cursor.0, col);
         }
     }
 
@@ -451,7 +538,7 @@ impl TextBuffer {
                 col -= 1;
             }
         }
-        self.cursor.1 = col;
+        self.cursor.1 = self.snap_to_grapheme_boundary(self.cursor.0, col);
     }
 
     pub fn move_word_right(&mut self, select: bool) {
@@ -496,7 +583,7 @@ impl TextBuffer {
         while col < chars.len() && chars[col].is_whitespace() {
             col += 1;
         }
-        self.cursor.1 = col;
+        self.cursor.1 = self.snap_to_grapheme_boundary(self.cursor.0, col);
     }
 
     pub fn delete_line(&mut self) {

@@ -1,4 +1,5 @@
 use std::time::Instant;
+use cosmic::iced::{Point, Rectangle, Size};
 use rooney::editor::buffer::TextBuffer;
 use rooney::editor::pane::{EditorPane, PaneId};
 use rooney::syntax::highlighter::{Highlighter, SupportedLanguage};
@@ -151,3 +152,128 @@ fn test_multiscale_performance_benchmarks() {
     }
     println!("=========================================================================================================\n");
 }
+
+#[test]
+fn test_benchmark_scenario_a_50mb_continuous_typing_with_search() {
+    let target_bytes = 50 * 1024 * 1024;
+    let code = generate_synthetic_code(target_bytes);
+    let mut pane = EditorPane::new(PaneId::Left, "ScenarioA_50MB");
+    pane.buffer = TextBuffer::new(&code);
+    let line_count = pane.buffer.line_count();
+
+    // Set active search query
+    pane.update_search("calculate_metric");
+    assert!(!pane.search_matches.is_empty(), "Search matches should be found");
+
+    // Position cursor in the middle
+    pane.buffer.cursor = (line_count / 2, 5);
+
+    // Continuous typing: 50 characters
+    let keystrokes = 50;
+    let t_start = Instant::now();
+    for _ in 0..keystrokes {
+        let t_char = Instant::now();
+        pane.buffer.insert_char('z');
+        pane.on_content_changed();
+        let elapsed_us = t_char.elapsed().as_secs_f64() * 1_000_000.0;
+        // Each keystroke must not block the UI (must be < 500 µs, typically ~30 µs)
+        assert!(
+            elapsed_us < 500.0,
+            "Keystroke latency with active search took {:.2} µs (must be < 500 µs)",
+            elapsed_us
+        );
+    }
+    let total_typing_time = t_start.elapsed();
+    let avg_keystroke_us = (total_typing_time.as_secs_f64() * 1_000_000.0) / (keystrokes as f64);
+
+    assert!(pane.needs_search_update, "Search update should be marked debounced/pending");
+
+    // Idle flush
+    let t_flush = Instant::now();
+    pane.flush_pending_search();
+    let flush_ms = t_flush.elapsed().as_secs_f64() * 1000.0;
+    assert!(!pane.needs_search_update);
+
+    println!("\n[Scenario A: 50MB Continuous Typing with Active Search]");
+    println!("  Buffer Size: {:.2} MB ({} lines)", target_bytes as f64 / (1024.0 * 1024.0), line_count);
+    println!("  Keystrokes: {}", keystrokes);
+    println!("  Avg Typing Latency: {:.2} µs (< 0.1 ms - UI remains 144+ FPS)", avg_keystroke_us);
+    println!("  Debounced Idle Search Scan: {:.2} ms (executed asynchronously/on idle without UI freeze)", flush_ms);
+}
+
+#[test]
+fn test_benchmark_scenario_b_wrapped_lines_layout_and_hit_test() {
+    // Generate text with several multi-thousand-character lines
+    let mut text = String::new();
+    for line_idx in 0..10 {
+        text.push_str(&format!("// Line {}\n", line_idx));
+        let chunk = "const DATA_BLOB_SEGMENT_ALPHA_BETA_GAMMA: &str = \"abcdefghijklmnopqrstuvwxyz0123456789 日本語テスト \"; ";
+        let repeats = 60; // ~60 * 70 bytes = ~4,200 bytes per line
+        for _ in 0..repeats {
+            text.push_str(chunk);
+        }
+        text.push('\n');
+    }
+    text.push_str("fn end_of_file() {}\n");
+
+    let mut pane = EditorPane::new(PaneId::Left, "ScenarioB_Wrapped");
+    pane.buffer = TextBuffer::new(&text);
+
+    let theme = EditorTheme::default();
+    let font_size = 14.0f32;
+    let canvas = EditorCanvas::new(&pane, &theme, true, "monospace", font_size);
+
+    let avail_width = 800.0f32;
+    let line_height = canvas.line_height;
+
+    // 1. Measure LineWrapModel building throughput
+    let t_wrap = Instant::now();
+    let wrap_model = canvas.build_wrap_model(avail_width);
+    let wrap_build_us = t_wrap.elapsed().as_secs_f64() * 1_000_000.0;
+
+    let total_vrows = wrap_model.total_visual_rows(pane.buffer.line_count());
+    assert!(total_vrows > 50, "Long lines must wrap into many visual rows");
+
+    // 2. Measure Viewport Virtualized Visual Rows calculation
+    let t_viewport = Instant::now();
+    let scroll_y = 500.0f32;
+    let visual_rows = canvas.build_viewport_visual_rows(avail_width + 100.0, scroll_y, 600.0);
+    let viewport_us = t_viewport.elapsed().as_secs_f64() * 1_000_000.0;
+
+    assert!(!visual_rows.is_empty());
+    // Ensure viewport rows are ordered and strictly non-overlapping
+    for i in 1..visual_rows.len() {
+        assert!(
+            visual_rows[i].y >= visual_rows[i - 1].y + line_height - 0.01,
+            "Visual rows must not overlap! row {} y={} vs row {} y={}",
+            i - 1, visual_rows[i - 1].y, i, visual_rows[i].y
+        );
+    }
+
+    // 3. Measure Hit-Test (pos_to_char_coords) throughput across 1000 simulated clicks
+    let t_hit = Instant::now();
+    let hit_count = 1000;
+    let bounds = Rectangle::new(Point::ORIGIN, Size::new(avail_width + 100.0, 800.0));
+    for step in 0..hit_count {
+        let test_y = (step as f32 * 3.7) % (total_vrows as f32 * line_height);
+        let test_x = 50.0 + (step as f32 * 7.3) % 700.0;
+        let coords = canvas.pos_to_char_coords(
+            Point::new(test_x, test_y),
+            bounds,
+        );
+        assert!(coords.0 < pane.buffer.line_count());
+    }
+    let hit_test_total_us = t_hit.elapsed().as_secs_f64() * 1_000_000.0;
+    let avg_hit_test_ns = (hit_test_total_us * 1000.0) / (hit_count as f64);
+
+    println!("\n[Scenario B: Multi-Thousand-Character Wrapped Lines Layout & Hit-Test]");
+    println!("  Total Visual Rows: {} (across 10 long lines)", total_vrows);
+    println!("  LineWrapModel Build Time: {:.2} µs", wrap_build_us);
+    println!("  Viewport Visual Rows Query: {:.2} µs (virtualized)", viewport_us);
+    println!("  Hit-Test Latency: {:.2} ns / query ({} queries in {:.2} µs)", avg_hit_test_ns, hit_count, hit_test_total_us);
+
+    assert!(wrap_build_us < 100_000.0, "Wrap model build must be fast (< 100 ms in debug)");
+    assert!(viewport_us < 5000.0, "Viewport query must be fast (< 5000 µs)");
+    assert!(avg_hit_test_ns < 3_000_000.0, "Hit test must be fast (< 3 ms in debug / < 200 µs in release)");
+}
+

@@ -88,6 +88,27 @@ impl SupportedLanguage {
         }
     }
 
+    pub fn tree_sitter_language(&self) -> Option<tree_sitter::Language> {
+        match self {
+            SupportedLanguage::Rust => Some(tree_sitter_rust::LANGUAGE.into()),
+            SupportedLanguage::Python => Some(tree_sitter_python::LANGUAGE.into()),
+            SupportedLanguage::JavaScript => Some(tree_sitter_javascript::LANGUAGE.into()),
+            SupportedLanguage::TypeScript => {
+                Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
+            }
+            SupportedLanguage::C => Some(tree_sitter_c::LANGUAGE.into()),
+            SupportedLanguage::Cpp => Some(tree_sitter_cpp::LANGUAGE.into()),
+            SupportedLanguage::Bash => Some(tree_sitter_bash::LANGUAGE.into()),
+            SupportedLanguage::Fish => Some(tree_sitter_fish::language()),
+            SupportedLanguage::Toml => Some(tree_sitter_toml_ng::LANGUAGE.into()),
+            SupportedLanguage::Yaml => Some(tree_sitter_yaml::LANGUAGE.into()),
+            SupportedLanguage::Json => Some(tree_sitter_json::LANGUAGE.into()),
+            SupportedLanguage::Ini
+            | SupportedLanguage::Markdown
+            | SupportedLanguage::PlainText => None,
+        }
+    }
+
     pub fn line_comment_prefix(&self) -> Option<&'static str> {
         match self {
             SupportedLanguage::Rust
@@ -139,7 +160,7 @@ impl TokenType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HighlightSpan {
     pub start_col: usize,
     pub end_col: usize,
@@ -160,63 +181,63 @@ pub struct ByteCharMapper<'a> {
 
 impl<'a> ByteCharMapper<'a> {
     pub fn new(text: &'a str) -> Self {
-        if text.is_ascii() {
+        let is_ascii = text.bytes().all(|b| b < 128);
+        if is_ascii {
             Self {
                 text,
                 char_byte_offsets: None,
                 total_chars: text.len(),
             }
         } else {
-            let offsets: Vec<usize> = text.char_indices().map(|(b, _)| b).collect();
-            let total_chars = offsets.len();
+            let mut offsets = Vec::with_capacity(text.len() / 2);
+            for (char_idx, (byte_idx, _)) in text.char_indices().enumerate() {
+                offsets.push(byte_idx);
+                let _ = char_idx;
+            }
+            offsets.push(text.len()); // sentinel for text end
+            let total = offsets.len() - 1;
             Self {
                 text,
                 char_byte_offsets: Some(offsets),
-                total_chars,
+                total_chars: total,
             }
         }
     }
 
-    #[inline]
     pub fn total_chars(&self) -> usize {
         self.total_chars
     }
 
-    #[inline]
     pub fn byte_to_char(&self, byte_offset: usize) -> usize {
-        if byte_offset == 0 {
-            return 0;
-        }
         if byte_offset >= self.text.len() {
             return self.total_chars;
         }
         match &self.char_byte_offsets {
-            None => byte_offset.min(self.total_chars),
-            Some(offsets) => match offsets.binary_search(&byte_offset) {
-                Ok(idx) => idx,
-                Err(idx) => idx,
-            },
+            None => byte_offset, // pure ASCII: byte offset == char index
+            Some(offsets) => {
+                // Binary search for exact byte position
+                match offsets.binary_search(&byte_offset) {
+                    Ok(idx) => idx,
+                    Err(idx) => idx.saturating_sub(1),
+                }
+            }
         }
     }
 }
 
-/// Standalone convenience function to convert a byte offset to character index.
-#[inline]
+/// Standalone fallback function for one-off byte-to-char mapping.
 pub fn byte_to_char_idx(line_text: &str, byte_offset: usize) -> usize {
-    if byte_offset == 0 {
-        return 0;
-    }
     if byte_offset >= line_text.len() {
         return line_text.chars().count();
     }
-    if line_text.is_ascii() {
-        return byte_offset;
+    let mut char_count = 0;
+    for (b_idx, _) in line_text.char_indices() {
+        if b_idx >= byte_offset {
+            return char_count;
+        }
+        char_count += 1;
     }
-    let mut safe_offset = byte_offset;
-    while !line_text.is_char_boundary(safe_offset) && safe_offset > 0 {
-        safe_offset -= 1;
-    }
-    line_text[..safe_offset].chars().count()
+    char_count
 }
 
 #[derive(Debug, Clone)]
@@ -237,26 +258,7 @@ impl Highlighter {
     pub fn new(lang: SupportedLanguage) -> Self {
         let mut parser = None;
 
-        let ts_lang = match lang {
-            SupportedLanguage::Rust => Some(tree_sitter_rust::LANGUAGE.into()),
-            SupportedLanguage::Python => Some(tree_sitter_python::LANGUAGE.into()),
-            SupportedLanguage::JavaScript => Some(tree_sitter_javascript::LANGUAGE.into()),
-            SupportedLanguage::TypeScript => {
-                Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
-            }
-            SupportedLanguage::C => Some(tree_sitter_c::LANGUAGE.into()),
-            SupportedLanguage::Cpp => Some(tree_sitter_cpp::LANGUAGE.into()),
-            SupportedLanguage::Bash => Some(tree_sitter_bash::LANGUAGE.into()),
-            SupportedLanguage::Fish => Some(tree_sitter_fish::language()),
-            SupportedLanguage::Toml => Some(tree_sitter_toml_ng::LANGUAGE.into()),
-            SupportedLanguage::Yaml => Some(tree_sitter_yaml::LANGUAGE.into()),
-            SupportedLanguage::Json => Some(tree_sitter_json::LANGUAGE.into()),
-            SupportedLanguage::Ini
-            | SupportedLanguage::Markdown
-            | SupportedLanguage::PlainText => None,
-        };
-
-        if let Some(l) = ts_lang {
+        if let Some(l) = lang.tree_sitter_language() {
             let mut p = Parser::new();
             if p.set_language(&l).is_ok() {
                 parser = Some(p);
@@ -270,6 +272,14 @@ impl Highlighter {
             has_pending_edit: false,
             cache: RefCell::new(HashMap::new()),
         }
+    }
+
+    /// Safely updates the syntax tree from an asynchronous background parsing task,
+    /// resetting pending edits and clearing line highlight caches.
+    pub fn set_tree(&mut self, tree: Tree) {
+        self.tree = Some(tree);
+        self.has_pending_edit = false;
+        self.cache.borrow_mut().clear();
     }
 
     /// Applies a localized text edit to the existing syntax tree before reparsing.
@@ -322,6 +332,10 @@ impl Highlighter {
         self.cache.borrow_mut().clear();
     }
 
+    /// Returns the number of cached highlighted lines currently held in memory.
+    pub fn cached_line_count(&self) -> usize {
+        self.cache.borrow().len()
+    }
 
     pub fn highlight_line(&self, line_text: &str, line_idx: usize) -> Vec<HighlightSpan> {
         if line_text.is_empty() {

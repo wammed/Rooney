@@ -120,4 +120,12 @@ pub enum Message {
     AttachFileToAiChat,
     InsertAiResponseAtCursor(String),
     CopyAiResponse(String),
+
+    // Background Async Syntax Parsing
+    HighlightParseCompleted {
+        pane_id: PaneId,
+        tab_id: usize,
+        tree: Option<tree_sitter::Tree>,
+        edit_time: std::time::Instant,
+    },
 }

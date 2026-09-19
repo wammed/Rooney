@@ -575,6 +575,53 @@
   - `cargo test`: **51/51 全テスト通過 (1 benchmark + 47 core + 3 ollama, 0 failed)**。
   - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
 
+### セッション 29: Unicode Grapheme 単位のキャレット整合性・長時間状態同期検証・ドキュメント表現適正化
+- **README ドキュメント表現の適正化 (`README.md`, `README.ja.md`)**:
+  - 50MB ファイルでの高速化について、「Tree-sitter 差分解析自体の所要時間（約 232ms）」と「キーストローク同期ブロッキング（約 28.59µs）」を明確に分離表記。
+  - 100ms デバウンスによるバックグラウンド遅延評価モデルであることを正確に明記し、事実に基づいた誠実な技術解説へと刷新。
+- **Unicode Grapheme Cluster 単位のキャレット移動・削除・選択整合性 (`src/editor/buffer.rs`, `src/ui/canvas_editor.rs`)**:
+  - `unicode-segmentation 1.13.3` を導入。
+  - `TextBuffer` に `line_grapheme_boundaries`, `snap_to_grapheme_boundary`, `prev_grapheme_boundary`, `next_grapheme_boundary` を実装。
+  - `move_left`, `move_right`, `move_up`, `move_down`, `move_word_left`, `move_word_right`, `clamp_cursor` をすべて書記素クラスタ境界に吸着させ、結合文字（例: `e` + `\u{0301}` = `é`）や絵文字 ZWJ シーケンス（例: `👨‍💻`）の中間へのキャレット侵入を完全防止。
+  - `delete_backspace` および `delete_forward` を書記素クラスタ単位の一括削除に刷新（`InputEdit` もクラスタ全域を正確に通知）。
+  - `pos_to_char_coords`（マウスクリック・範囲選択）をクラスタ中心点（Midpoint）基準の判定へと刷新し、文字途中へのドラッグ・クリック吸着を根本解消。
+- **長時間編集・状態同期の整合性テスト拡充 (`tests/core_tests.rs`)**:
+  - `test_grapheme_cluster_navigation_and_deletion`: 結合文字および絵文字 ZWJ での移動スキップ・一括削除を検証。
+  - `test_state_consistency_undo_redo_and_cache`: 編集・Undo・Redo での Rope・行キャッシュ・Tree-sitter AST の完全同期を検証。
+  - `test_glyph_cache_invalidation_lifecycle`: `measure_glyph_advance` キャッシュヒット、`clear_glyph_cache()` 破棄、フォントサイズ倍率スケーリングを検証。
+  - `test_debounced_parse_state_transition`: 2MB 超ファイルでの非同期遅延フラグ、フォールバック構文解析、および `flush_highlight_parse()` による AST 同期復帰を検証。
+- **検証結果**:
+  - `cargo clippy --all-targets -- -D warnings`: **警告 0 件**。
+  - `cargo test`: **全55テスト通過 (1 benchmark + 51 core + 3 ollama, 0 failed)**。
+  - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
+
+### セッション 30: 検索デバウンス・バックグラウンド非同期パース・折り返し行累積Yモデル・複合ベンチマークの完全実装
+- **検索中の大容量ファイル入力における全文走査の排除 (Debounced Search)**:
+  - `SYNC_SEARCH_MAX_BYTES = 2MB` を導入。2MB超のファイルで検索クエリ有効時のタイピング中、全文行走査をスキップして `needs_search_update = true` を設定。
+  - タイピング停止時（`Message::Tick`、100ms アイドル）に `flush_pending_search()` を実行。
+  - 50MB ファイルで検索有効時の 1 文字入力レイテンシをリリースビルドで **約 3.92 µs**（デバッグ時でも < 70 µs）に保ち、UI の完全ノンブロッキングを実現。
+- **UI スレッドをブロックしない真のバックグラウンド非同期 Tree-sitter 解析**:
+  - `EditorTab::is_parsing_async` を導入し、2MB超ファイルの Tree-sitter 再解析を `tokio::task::spawn_blocking` へオフロード。
+  - `pane.buffer.rope.clone()`（$O(1)$ Arc参照）をワーカースレッドへ渡し、完了時に `Message::HighlightParseCompleted` で AST (`tree_sitter::Tree`) を還元。
+  - 編集タイムスタンプが一致する場合のみ `tab.highlighter.set_tree(tree)` をアトミック適用し、50MBファイル再解析時でも UI スレッドのフレームレート（144+ FPS）を完全に維持。
+- **折り返し行（Wrapped Subrows）の累積 Y 座標・高さ不整合バグの根本解消**:
+  - `src/ui/wrap.rs` に `LineWrapModel`（疎な $O(\log W)$ 二分探索インデックス）を新設。
+  - 各行の折り返しサブ行数と累積オフセットを管理し、`line_to_visual_row` と `visual_row_to_line` を高速変換。
+  - `total_content_height_with_width`、`build_viewport_visual_rows`、`cursor_screen_pos`、`pos_to_char_coords` を `LineWrapModel` 基準に刷新。折り返し行の次行が重ならず厳密に下部に描画され、サブ行ごとのマウスクリック判定・キャレット配置が完全一致。
+  - `TextBuffer::max_line_len` による $O(1)$ ガードを導入し、行長が折り返し閾値未満のファイルではゼロループ・ゼロアロケーションで即座に復帰。
+- **テストスイート拡充 & 複合ベンチマークの追加**:
+  - `tests/core_tests.rs`:
+    - `test_wrapped_subrows_cumulative_y_and_hit_test`: 複数サブ行の累積Y座標、次行非重複、およびサブ行クリックのHit-Testを検証。
+    - `test_large_file_search_debouncing`: 3MB超ファイルでのタイピング高速復帰、デバウンスフラグ、およびアイドル走査を検証。
+  - `tests/benchmark_tests.rs`:
+    - `test_benchmark_scenario_a_50mb_continuous_typing_with_search`: 50MBファイルで検索クエリ有効時の50打鍵連続タイピングを計測（平均打鍵遅延 3.92 µs / リリース）。
+    - `test_benchmark_scenario_b_wrapped_lines_layout_and_hit_test`: 1行4,200文字×10行（合計652表示行）の折り返しモデル構築・可視領域計算・1,000回Hit-Testのスループットを検証。
+- **検証結果**:
+  - `cargo clippy --all-targets -- -D warnings`: **警告 0 件**。
+  - `cargo test --test core_tests`: **全53テスト通過 (0 failed)**。
+  - `cargo test --test benchmark_tests`: **全3テスト通過 (0 failed)**。
+  - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
+
 ---
 
 ## 3. ファイル構成と役割

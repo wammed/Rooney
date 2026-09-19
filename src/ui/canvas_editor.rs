@@ -13,6 +13,7 @@ use cosmic::iced::event::Event;
 use cosmic::iced::mouse;
 use cosmic::iced::{Color, Element, Font, Length, Pixels, Point, Rectangle, Size, Vector};
 use unicode_width::UnicodeWidthChar;
+use crate::ui::wrap::{compute_line_subrows, LineWrapModel};
 
 fn intern_font_name(name: &str) -> &'static str {
     use std::collections::HashSet;
@@ -72,7 +73,7 @@ pub fn clear_glyph_cache() {
     }
 }
 
-fn measure_glyph_advance(c: char, font_size: f32, font_name: &str) -> f32 {
+pub fn measure_glyph_advance(c: char, font_size: f32, font_name: &str) -> f32 {
     if c == '\t' {
         return font_size * 0.60 * 4.0;
     }
@@ -80,12 +81,23 @@ fn measure_glyph_advance(c: char, font_size: f32, font_name: &str) -> f32 {
     if (' '..='~').contains(&c) {
         return font_size * 0.60;
     }
+    if c == '\t' {
+        return 4.0 * font_size * 0.60;
+    }
+    // Fast path: standard CJK Ideographs and Kana have 1.0 * font_size in monospace
+    if c.width_cjk().unwrap_or(1) == 2 {
+        return font_size * 1.0;
+    }
 
     use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping};
     use std::collections::HashMap;
     use std::sync::RwLock;
 
-    let interned_name = intern_font_name(font_name);
+    let interned_name = match font_name {
+        "monospace" => "monospace",
+        "JetBrainsMono Nerd Font" => "JetBrainsMono Nerd Font",
+        _ => intern_font_name(font_name),
+    };
     let key = (c, font_size.to_bits(), interned_name);
 
     let cache = METRICS_CACHE.get_or_init(|| RwLock::new(HashMap::new()));
@@ -216,10 +228,33 @@ impl<'a> EditorCanvas<'a> {
         &text[start_byte..end_byte]
     }
 
+    pub fn build_wrap_model(&self, avail_width: f32) -> LineWrapModel {
+        let key = avail_width.to_bits();
+        if let Ok(guard) = self.pane.active_tab().cached_wrap_model.read() {
+            if let Some((cached_key, ref model)) = *guard {
+                if cached_key == key {
+                    return model.clone();
+                }
+            }
+        }
+        let model = LineWrapModel::build(&self.pane.buffer, avail_width, |c| self.glyph_advance(c));
+        if let Ok(mut guard) = self.pane.active_tab().cached_wrap_model.write() {
+            *guard = Some((key, model.clone()));
+        }
+        model
+    }
+
+    #[inline]
+    pub fn total_content_height_with_width(&self, bounds_width: f32) -> f32 {
+        let gutter = self.gutter_width();
+        let avail_width = (bounds_width - gutter - 24.0).max(120.0);
+        let wrap_model = self.build_wrap_model(avail_width);
+        (wrap_model.total_visual_rows(self.pane.buffer.line_count()) as f32) * self.line_height
+    }
+
     #[inline]
     pub fn total_content_height(&self) -> f32 {
-        let total_lines = self.pane.buffer.line_count();
-        (total_lines as f32) * self.line_height
+        self.total_content_height_with_width(1200.0)
     }
 
     pub fn build_viewport_visual_rows(
@@ -233,19 +268,28 @@ impl<'a> EditorCanvas<'a> {
             return Vec::new();
         }
 
-        let first_visible_line = (scroll_y / self.line_height).floor().max(0.0) as usize;
-        let visible_count = (bounds_height / self.line_height).ceil().max(1.0) as usize;
-        let margin = 5;
-        let start_line = first_visible_line.saturating_sub(margin).min(total_lines.saturating_sub(1));
-        let end_line = (first_visible_line + visible_count + margin).min(total_lines);
-
         let gutter = self.gutter_width();
         let avail_width = (bounds_width - gutter - 24.0).max(120.0);
+        let wrap_model = self.build_wrap_model(avail_width);
+        let total_vrows = wrap_model.total_visual_rows(total_lines);
+        if total_vrows == 0 {
+            return Vec::new();
+        }
+
+        let first_vrow = (scroll_y / self.line_height).floor().max(0.0) as usize;
+        let visible_vcount = (bounds_height / self.line_height).ceil().max(1.0) as usize;
+        let margin = 5;
+        let start_vrow = first_vrow.saturating_sub(margin).min(total_vrows.saturating_sub(1));
+        let end_vrow = (first_vrow + visible_vcount + margin).min(total_vrows);
+
+        let (start_line, _) = wrap_model.visual_row_to_line(start_vrow);
+        let (end_line, _) = wrap_model.visual_row_to_line(end_vrow.saturating_sub(1));
+        let end_line = (end_line + 1).min(total_lines);
 
         let mut visual_rows = Vec::new();
 
         for line_idx in start_line..end_line {
-            let line_base_y = (line_idx as f32) * self.line_height;
+            let line_vrow_start = wrap_model.line_to_visual_row(line_idx);
             let line_text = self.pane.buffer.line_text(line_idx).unwrap_or_default();
 
             if line_text.is_empty() {
@@ -254,43 +298,26 @@ impl<'a> EditorCanvas<'a> {
                     char_start: 0,
                     char_end: 0,
                     is_first_subrow: true,
-                    y: line_base_y,
+                    y: (line_vrow_start as f32) * self.line_height,
                 });
                 continue;
             }
 
-            let mut start = 0;
-            let mut cur_row_w = 0.0;
-            let mut is_first = true;
-            let mut total_chars = 0;
-            let mut subrow_idx = 0;
-
-            for (i, c) in line_text.chars().enumerate() {
-                total_chars = i + 1;
-                let w = self.glyph_advance(c);
-                if cur_row_w + w > avail_width && i > start {
-                    visual_rows.push(VisualRow {
-                        line_idx,
-                        char_start: start,
-                        char_end: i,
-                        is_first_subrow: is_first,
-                        y: line_base_y + (subrow_idx as f32) * self.line_height,
-                    });
-                    start = i;
-                    cur_row_w = 0.0;
-                    is_first = false;
-                    subrow_idx += 1;
-                }
-                cur_row_w += w;
+            let subrows = if wrap_model.subrow_count(line_idx) == 1 {
+                vec![(0, line_text.chars().count())]
+            } else {
+                compute_line_subrows(&line_text, avail_width, |c| self.glyph_advance(c))
+            };
+            for (subrow_idx, (start, end)) in subrows.into_iter().enumerate() {
+                let vrow = line_vrow_start + subrow_idx;
+                visual_rows.push(VisualRow {
+                    line_idx,
+                    char_start: start,
+                    char_end: end,
+                    is_first_subrow: subrow_idx == 0,
+                    y: (vrow as f32) * self.line_height,
+                });
             }
-
-            visual_rows.push(VisualRow {
-                line_idx,
-                char_start: start,
-                char_end: total_chars,
-                is_first_subrow: is_first,
-                y: line_base_y + (subrow_idx as f32) * self.line_height,
-            });
         }
 
         visual_rows
@@ -306,35 +333,26 @@ impl<'a> EditorCanvas<'a> {
         let cursor = self.pane.buffer.cursor;
         let line_text = self.pane.buffer.line_text(cursor.0).unwrap_or_default();
         let avail_width = (bounds.width - gutter - 24.0).max(120.0);
+        let wrap_model = self.build_wrap_model(avail_width);
+        let line_vrow_start = wrap_model.line_to_visual_row(cursor.0);
 
-        let mut start = 0;
-        let mut cur_row_w = 0.0;
-        let mut subrow_idx = 0;
-        let mut target_subrow_start = 0;
+        let subrows = compute_line_subrows(&line_text, avail_width, |c| self.glyph_advance(c));
         let mut target_subrow_idx = 0;
+        let mut target_subrow_start = 0;
 
-        let chars: Vec<char> = line_text.chars().collect();
-        for (i, &c) in chars.iter().enumerate() {
-            let w = self.glyph_advance(c);
-            if cur_row_w + w > avail_width && i > start {
-                if cursor.1 >= start && cursor.1 <= i {
-                    target_subrow_start = start;
-                    target_subrow_idx = subrow_idx;
-                    break;
-                }
-                start = i;
-                cur_row_w = 0.0;
-                subrow_idx += 1;
+        for (subrow_idx, (start, end)) in subrows.iter().enumerate() {
+            if cursor.1 >= *start && (cursor.1 <= *end || subrow_idx == subrows.len() - 1) {
+                target_subrow_idx = subrow_idx;
+                target_subrow_start = *start;
+                break;
             }
-            cur_row_w += w;
-        }
-        if cursor.1 >= start {
-            target_subrow_start = start;
-            target_subrow_idx = subrow_idx;
         }
 
-        let y = ((cursor.0 + target_subrow_idx) as f32) * self.line_height - self.pane.scroll_y.get();
+        let actual_vrow = line_vrow_start + target_subrow_idx;
+        let y = (actual_vrow as f32) * self.line_height - self.pane.scroll_y.get();
+
         let mut pixel_offset = 0.0;
+        let chars: Vec<char> = line_text.chars().collect();
         if cursor.1 > target_subrow_start {
             for &ch in chars.iter().skip(target_subrow_start).take(cursor.1.saturating_sub(target_subrow_start)) {
                 pixel_offset += self.glyph_advance(ch);
@@ -352,47 +370,50 @@ impl<'a> EditorCanvas<'a> {
             return (0, 0);
         }
 
-        let clicked_line = ((pos.y + self.pane.scroll_y.get()) / self.line_height).floor().max(0.0) as usize;
-        let clicked_line = clicked_line.min(total_lines - 1);
-        let line_text = self.pane.buffer.line_text(clicked_line).unwrap_or_default();
         let avail_width = (bounds.width - gutter - 24.0).max(120.0);
+        let wrap_model = self.build_wrap_model(avail_width);
+        let total_vrows = wrap_model.total_visual_rows(total_lines);
+        if total_vrows == 0 {
+            return (0, 0);
+        }
 
+        let clicked_vrow = ((pos.y + self.pane.scroll_y.get()) / self.line_height).floor().max(0.0) as usize;
+        let clicked_vrow = clicked_vrow.min(total_vrows.saturating_sub(1));
+
+        let (clicked_line, subrow_idx) = wrap_model.visual_row_to_line(clicked_vrow);
+        let line_text = self.pane.buffer.line_text(clicked_line).unwrap_or_default();
         let chars: Vec<char> = line_text.chars().collect();
         if chars.is_empty() {
             return (clicked_line, 0);
         }
 
-        let rel_x = (pos.x - gutter - 10.0 + self.pane.scroll_x.get()).max(0.0);
-
-        let mut subrows = Vec::new();
-        let mut start = 0;
-        let mut cur_row_w = 0.0;
-        for (i, &c) in chars.iter().enumerate() {
-            let w = self.glyph_advance(c);
-            if cur_row_w + w > avail_width && i > start {
-                subrows.push((start, i));
-                start = i;
-                cur_row_w = 0.0;
-            }
-            cur_row_w += w;
-        }
-        subrows.push((start, chars.len()));
-
-        let line_top_y = (clicked_line as f32) * self.line_height - self.pane.scroll_y.get();
-        let subrow_idx = (((pos.y - line_top_y) / self.line_height).floor().max(0.0) as usize).min(subrows.len() - 1);
-
+        let subrows = compute_line_subrows(&line_text, avail_width, |c| self.glyph_advance(c));
+        let subrow_idx = subrow_idx.min(subrows.len().saturating_sub(1));
         let (sub_start, sub_end) = subrows[subrow_idx];
+
+        let rel_x = (pos.x - gutter - 10.0 + self.pane.scroll_x.get()).max(0.0);
+        let boundaries = self.pane.buffer.line_grapheme_boundaries(clicked_line);
+        let sub_boundaries: Vec<usize> = boundaries
+            .into_iter()
+            .filter(|&b| b >= sub_start && b <= sub_end)
+            .collect();
+
         let mut acc_width = 0.0;
         let mut chosen_col = sub_start;
 
-        if sub_end > sub_start {
-            for (idx_offset, &ch) in chars[sub_start..sub_end].iter().enumerate() {
-                let char_pixel_w = self.glyph_advance(ch);
-                if acc_width + char_pixel_w / 2.0 >= rel_x {
+        if sub_boundaries.len() >= 2 {
+            for window in sub_boundaries.windows(2) {
+                let (c_start, c_end) = (window[0], window[1]);
+                let mut cluster_w = 0.0;
+                for &ch in &chars[c_start..c_end] {
+                    cluster_w += self.glyph_advance(ch);
+                }
+                if acc_width + cluster_w / 2.0 >= rel_x {
+                    chosen_col = c_start;
                     break;
                 }
-                acc_width += char_pixel_w;
-                chosen_col = sub_start + idx_offset + 1;
+                acc_width += cluster_w;
+                chosen_col = c_end;
             }
         }
         (clicked_line, chosen_col)
@@ -439,13 +460,16 @@ impl<'a> EditorCanvas<'a> {
         let text_size = Pixels(self.font_size);
 
         // 3. Viewport virtualized visual rows
-        let total_content_height = self.total_content_height();
+        let total_content_height = self.total_content_height_with_width(bounds.width);
         let max_scroll = (total_content_height - bounds.height).max(0.0);
 
         // 3.1 Auto-scrolling to keep cursor visible if requested
         if self.pane.needs_scroll_to_cursor.get() {
+            let avail_width = (bounds.width - gutter - 24.0).max(120.0);
+            let wrap_model = self.build_wrap_model(avail_width);
             let cursor = buffer.cursor;
-            let cursor_top = (cursor.0 as f32) * self.line_height;
+            let cursor_vrow = wrap_model.line_to_visual_row(cursor.0);
+            let cursor_top = (cursor_vrow as f32) * self.line_height;
             let cursor_bottom = cursor_top + self.line_height;
             let margin = (2.0 * self.line_height).min(bounds.height * 0.25).max(0.0);
 
@@ -930,7 +954,7 @@ impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if let Some(pos) = cursor.position_in(bounds) {
-                    let total_content_height = self.total_content_height();
+                    let total_content_height = self.total_content_height_with_width(bounds.width);
                     let max_scroll = (total_content_height - bounds.height).max(0.0);
 
                     if total_content_height > bounds.height && pos.x >= bounds.width - 14.0 {
@@ -976,7 +1000,7 @@ impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
                 if state.is_dragging_scrollbar {
                     if let Some(global_pos) = cursor.position() {
                         let rel_y = global_pos.y - bounds.y;
-                        let total_content_height = self.total_content_height();
+                        let total_content_height = self.total_content_height_with_width(bounds.width);
                         let max_scroll = (total_content_height - bounds.height).max(0.0);
                         if total_content_height > bounds.height && max_scroll > 0.0 {
                             let thumb_height = ((bounds.height / total_content_height) * bounds.height)
