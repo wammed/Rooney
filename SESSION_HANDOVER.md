@@ -480,11 +480,35 @@
   5. **テストスイート拡充 (`tests/core_tests.rs`)**:
      - `test_cli_flags_and_path_resolution`: `file:///...`、`file://localhost/...`、スペース含む `%20`、日本語 `%E3%83%86%E3%82%B9%E3%83%88`、絶対パス、相対パス、ドット正規化、空文字列、フラグスキップの全パターンを網羅検証。
      - `test_editor_pane_open_file_welcome_tab_reuse_and_non_existent`: Welcome タブの自動再利用、未実在ファイルパスのタブ初期化、複数タブ展開、既存タブへのスイッチを検証。
+### セッション 25: 外部レビュー対応（Unicode 座標補正・レンダリング性能改善・README適正化・Roadmap新設）
+- **外部コードレビュー（総合評価 8.3/10）への対応**:
+  1. **Tree-sitter Byte Offset ↔ Char Index 厳密変換の実装 (`src/syntax/highlighter.rs`)**:
+     - `ByteCharMapper` および `byte_to_char_idx` を新設。
+     - Tree-sitter の `Point.column`（UTF-8 バイトオフセット）を描画側の文字インデックス（Char Index）へ正確に変換。
+     - ASCII 行は $O(1)$ かつメモリ確保ゼロでバイトオフセットをそのまま処理し、マルチバイト文字（日本語・全角記号・絵文字）を含む行では `char_indices` に基づくバイナリサーチで厳密にマッピング。
+     - 同一行内で日本語文字列リテラルの後に続くコード（例: `let s = "こんにちは世界 🚀"; let count = 100;`）でも、後続トークンのハイライトが手前・奥へ一切ずれないことを保証。
+     - 複数行にまたがるブロックコメントや複数行文字列についても、行境界で正しくクリッピングして各行にハイライトを適用。
+     - `fallback_lexical_highlight`、`highlight_markdown_line`、`highlight_ini_line` 内のバイト長と文字数の混同を解消。
+  2. **描画ループの `Vec<char>` アロケーション完全排除 (`src/ui/canvas_editor.rs`)**:
+     - 従来毎フレーム大量に呼び出されていた `chars().collect::<Vec<char>>()` を以下の 6 箇所すべてで完全排除：
+       1. `build_visual_rows`: `chars().enumerate()` の直接走査へ移行。
+       2. `cursor_screen_pos`: `skip().take()` による直接文字幅加算へ移行。
+       3. `pos_to_char_coords`: `skip().take().enumerate()` による直接走査へ移行。
+       4. 選択範囲ハイライト描画: イテレータ直接走査へ移行。
+       5. 検索一致ハイライト描画: イテレータ直接走査へ移行。
+       6. テキスト描画ループ: `slice_by_char_indices` を導入し、行全体の `Vec<char>` を生成せず必要なトークン文字列スライスのみを抽出。
+  3. **README の記述適正化 & Roadmap セクション新設 (`README.md`, `README.ja.md`)**:
+     - 日英完全同期を維持しつつ、過度な主張（「ゼロコピー」「鉄壁のセキュリティ」「0ms瞬時起動」「0バイト破損根絶」）を実装実態に即した表現へトーンダウン。
+     - 冒頭タグラインでスタック構成の強み（COSMIC/Wayland × Ropey × Tree-sitter × 日本語 IME × Ollama）を明瞭化。
+     - 「Features（現在利用可能な機能）」と「Roadmap（今後の最適化・拡張予定）」を明確に分離（ビューポート仮想スクロール、`cosmic-text` 実グリフメトリクス連携、File Watcher、インライン Markdown AST、Undo/Redo 差分化）。
+  4. **テストスイート拡充 (`tests/core_tests.rs`)**:
+     - `test_treesitter_multibyte_and_emoji_highlight_coordinates`: 日本語・絵文字混在環境でのトークン範囲と文字スライスの厳密一致を検証。
+     - `test_byte_char_mapper_and_slice_by_char_indices`: 各種マルチバイト文字・絵文字境界でのマッピングとスライスの正確性を検証。
+     - `test_multiline_block_comment_highlighting`: 複数行コメントの各行ハイライト適用を検証。
 - **検証結果**:
   - `cargo clippy --all-targets -- -D warnings`: 警告 0 件。
-  - `cargo test`: **45/45 全テスト通過 (42 core + 3 ollama, 0 failed)**。
+  - `cargo test`: **48/48 全テスト通過 (45 core + 3 ollama, 0 failed)**。
   - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
-  - `/home/susie/.local/bin/rooney --version` および `--help` の正常動作を確認。
 
 ---
 
@@ -597,9 +621,12 @@ Rooney/
 ## 5. 現在のビルドおよびテスト状態
 
 - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings** (完全クリーン)
-- `cargo test`: **45/45 全テスト通過 (42 core + 3 ollama, 0 failed)**
-  - `test_cli_flags_and_path_resolution` ... ok (新規追加: file:// URI, %20, 日本語%E3%83%86..., 相対/絶対パス, 正規化検証)
-  - `test_editor_pane_open_file_welcome_tab_reuse_and_non_existent` ... ok (新規追加: Welcomeタブ再利用, 新規未実在ファイルタブ初期化検証)
+- `cargo test`: **48/48 全テスト通過 (45 core + 3 ollama, 0 failed)**
+  - `test_treesitter_multibyte_and_emoji_highlight_coordinates` ... ok (新規追加: 日本語・絵文字混在環境でのTree-sitterトークン文字範囲厳密一致検証)
+  - `test_byte_char_mapper_and_slice_by_char_indices` ... ok (新規追加: ByteCharMapper & slice_by_char_indices 各種境界検証)
+  - `test_multiline_block_comment_highlighting` ... ok (新規追加: 複数行ブロックコメントの行境界クリッピング・ハイライト検証)
+  - `test_cli_flags_and_path_resolution` ... ok (file:// URI, %20, 日本語%E3%83%86..., 相対/絶対パス, 正規化検証)
+  - `test_editor_pane_open_file_welcome_tab_reuse_and_non_existent` ... ok (Welcomeタブ再利用, 新規未実在ファイルタブ初期化検証)
   - `test_editor_auto_scroll_flag_and_coordinates` ... ok (needs_scroll_to_cursor フラグ動作とカーソル追従検証)
   - `test_scrollbar_proportions_and_thumb_mapping` ... ok (つまみプロポーショナル計算、位置マッピング、マージン自動スクロール計算、最小高さクランプ検証)
   - `test_undo_redo_stack_depth_and_performance` ... ok (VecDeque 100件FIFO上限 & LIFOアンドゥ検証)

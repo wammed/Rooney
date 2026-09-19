@@ -143,6 +143,79 @@ pub struct HighlightSpan {
     pub token_type: TokenType,
 }
 
+/// Helper to map UTF-8 byte offsets to 0-based character indices within a line.
+///
+/// Tree-sitter coordinates (`Point.column`) are byte offsets, whereas Rooney's
+/// visual layout and rendering use character indices. This mapper bridges the two
+/// accurately and without allocation for pure ASCII lines.
+#[derive(Debug, Clone)]
+pub struct ByteCharMapper<'a> {
+    pub text: &'a str,
+    char_byte_offsets: Option<Vec<usize>>,
+    total_chars: usize,
+}
+
+impl<'a> ByteCharMapper<'a> {
+    pub fn new(text: &'a str) -> Self {
+        if text.is_ascii() {
+            Self {
+                text,
+                char_byte_offsets: None,
+                total_chars: text.len(),
+            }
+        } else {
+            let offsets: Vec<usize> = text.char_indices().map(|(b, _)| b).collect();
+            let total_chars = offsets.len();
+            Self {
+                text,
+                char_byte_offsets: Some(offsets),
+                total_chars,
+            }
+        }
+    }
+
+    #[inline]
+    pub fn total_chars(&self) -> usize {
+        self.total_chars
+    }
+
+    #[inline]
+    pub fn byte_to_char(&self, byte_offset: usize) -> usize {
+        if byte_offset == 0 {
+            return 0;
+        }
+        if byte_offset >= self.text.len() {
+            return self.total_chars;
+        }
+        match &self.char_byte_offsets {
+            None => byte_offset.min(self.total_chars),
+            Some(offsets) => match offsets.binary_search(&byte_offset) {
+                Ok(idx) => idx,
+                Err(idx) => idx,
+            },
+        }
+    }
+}
+
+/// Standalone convenience function to convert a byte offset to character index.
+#[inline]
+pub fn byte_to_char_idx(line_text: &str, byte_offset: usize) -> usize {
+    if byte_offset == 0 {
+        return 0;
+    }
+    if byte_offset >= line_text.len() {
+        return line_text.chars().count();
+    }
+    if line_text.is_ascii() {
+        return byte_offset;
+    }
+    let mut safe_offset = byte_offset;
+    while !line_text.is_char_boundary(safe_offset) && safe_offset > 0 {
+        safe_offset -= 1;
+    }
+    line_text[..safe_offset].chars().count()
+}
+
 pub struct Highlighter {
     pub lang: SupportedLanguage,
     parser: Option<Parser>,
@@ -236,12 +309,12 @@ impl Highlighter {
         out: &mut Vec<HighlightSpan>,
     ) {
         let root = tree.root_node();
-        let total_chars = line_text.chars().count();
+        let mapper = ByteCharMapper::new(line_text);
 
         fn visit_node(
             node: Node,
             target_line: usize,
-            line_len: usize,
+            mapper: &ByteCharMapper,
             lang: SupportedLanguage,
             out: &mut Vec<HighlightSpan>,
         ) {
@@ -255,10 +328,24 @@ impl Highlighter {
             let token_type = classify_node(lang, &node);
 
             if let Some(tt) = token_type {
-                if start.row == target_line && end.row == target_line {
+                let start_byte = if start.row == target_line {
+                    start.column
+                } else {
+                    0
+                };
+                let end_byte = if end.row == target_line {
+                    end.column
+                } else {
+                    mapper.text.len()
+                };
+
+                let start_col = mapper.byte_to_char(start_byte);
+                let end_col = mapper.byte_to_char(end_byte);
+
+                if start_col < end_col {
                     out.push(HighlightSpan {
-                        start_col: start.column.min(line_len),
-                        end_col: end.column.min(line_len),
+                        start_col,
+                        end_col,
                         token_type: tt,
                     });
                 }
@@ -266,27 +353,34 @@ impl Highlighter {
 
             let is_leaf_like = matches!(
                 token_type,
-                Some(TokenType::Comment | TokenType::NumberLit | TokenType::Keyword)
+                Some(
+                    TokenType::Comment
+                        | TokenType::NumberLit
+                        | TokenType::Keyword
+                        | TokenType::StringLit
+                )
             );
 
             if !is_leaf_like {
                 let mut cursor = node.walk();
                 for child in node.children(&mut cursor) {
-                    visit_node(child, target_line, line_len, lang, out);
+                    visit_node(child, target_line, mapper, lang, out);
                 }
             }
         }
 
-        visit_node(root, line_idx, total_chars, self.lang, out);
+        visit_node(root, line_idx, &mapper, self.lang, out);
         out.sort_by_key(|s| s.start_col);
     }
 
     fn fallback_lexical_highlight(&self, line: &str, out: &mut Vec<HighlightSpan>) {
+        let mapper = ByteCharMapper::new(line);
         let trimmed = line.trim_start();
         if trimmed.starts_with("//") || trimmed.starts_with('#') {
+            let leading_bytes = line.len() - trimmed.len();
             out.push(HighlightSpan {
-                start_col: line.len() - trimmed.len(),
-                end_col: line.chars().count(),
+                start_col: mapper.byte_to_char(leading_bytes),
+                end_col: mapper.total_chars(),
                 token_type: TokenType::Comment,
             });
             return;
@@ -321,54 +415,56 @@ impl Highlighter {
         ];
 
         let mut in_quote = false;
-        let mut quote_start = 0;
+        let mut quote_start_char = 0;
 
-        for (i, c) in line.char_indices() {
+        for (char_idx, c) in line.chars().enumerate() {
             if c == '"' || c == '\'' {
                 if in_quote {
                     out.push(HighlightSpan {
-                        start_col: quote_start,
-                        end_col: i + 1,
+                        start_col: quote_start_char,
+                        end_col: char_idx + 1,
                         token_type: TokenType::StringLit,
                     });
                     in_quote = false;
                 } else {
                     in_quote = true;
-                    quote_start = i;
+                    quote_start_char = char_idx;
                 }
             }
         }
 
         if in_quote {
             out.push(HighlightSpan {
-                start_col: quote_start,
-                end_col: line.len(),
+                start_col: quote_start_char,
+                end_col: mapper.total_chars(),
                 token_type: TokenType::StringLit,
             });
         }
 
         for (word, tt) in words {
-            let mut start = 0;
-            while let Some(pos) = line[start..].find(word) {
-                let actual_pos = start + pos;
-                let before = if actual_pos > 0 {
-                    line.chars().nth(actual_pos - 1)
+            let mut start_byte = 0;
+            while let Some(pos) = line[start_byte..].find(word) {
+                let actual_byte = start_byte + pos;
+                let before = if actual_byte > 0 {
+                    line[..actual_byte].chars().next_back()
                 } else {
                     None
                 };
-                let after = line.chars().nth(actual_pos + word.len());
+                let after = line[actual_byte + word.len()..].chars().next();
 
                 let is_boundary = before.is_none_or(|c| !c.is_alphanumeric() && c != '_')
                     && after.is_none_or(|c| !c.is_alphanumeric() && c != '_');
 
                 if is_boundary {
+                    let start_col = mapper.byte_to_char(actual_byte);
+                    let end_col = mapper.byte_to_char(actual_byte + word.len());
                     out.push(HighlightSpan {
-                        start_col: actual_pos,
-                        end_col: actual_pos + word.len(),
+                        start_col,
+                        end_col,
                         token_type: tt,
                     });
                 }
-                start = actual_pos + word.len();
+                start_byte = actual_byte + word.len();
             }
         }
 
@@ -376,17 +472,22 @@ impl Highlighter {
     }
 
     fn highlight_markdown_line(&self, line: &str, out: &mut Vec<HighlightSpan>) {
+        let mapper = ByteCharMapper::new(line);
         let trimmed = line.trim_start();
+        let leading_bytes = line.len() - trimmed.len();
+        let leading_col = mapper.byte_to_char(leading_bytes);
+        let total_chars = mapper.total_chars();
+
         if trimmed.starts_with('#') {
             out.push(HighlightSpan {
-                start_col: line.len() - trimmed.len(),
-                end_col: line.chars().count(),
+                start_col: leading_col,
+                end_col: total_chars,
                 token_type: TokenType::Heading,
             });
         } else if trimmed.starts_with("```") {
             out.push(HighlightSpan {
                 start_col: 0,
-                end_col: line.chars().count(),
+                end_col: total_chars,
                 token_type: TokenType::Keyword,
             });
         } else if trimmed.starts_with("- ")
@@ -394,30 +495,32 @@ impl Highlighter {
             || trimmed.starts_with("> ")
         {
             out.push(HighlightSpan {
-                start_col: line.len() - trimmed.len(),
-                end_col: line.len() - trimmed.len() + 2,
+                start_col: leading_col,
+                end_col: (leading_col + 2).min(total_chars),
                 token_type: TokenType::Operator,
             });
         }
     }
 
     fn highlight_ini_line(&self, line: &str, out: &mut Vec<HighlightSpan>) {
+        let mapper = ByteCharMapper::new(line);
         let trimmed = line.trim();
         if trimmed.starts_with('#') || trimmed.starts_with(';') {
+            let leading_bytes = line.len() - line.trim_start().len();
             out.push(HighlightSpan {
-                start_col: line.len() - line.trim_start().len(),
-                end_col: line.chars().count(),
+                start_col: mapper.byte_to_char(leading_bytes),
+                end_col: mapper.total_chars(),
                 token_type: TokenType::Comment,
             });
             return;
         }
 
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            let start = line.find('[').unwrap_or(0);
-            let end = line.rfind(']').map_or(line.len(), |p| p + 1);
+            let start_byte = line.find('[').unwrap_or(0);
+            let end_byte = line.rfind(']').map_or(line.len(), |p| p + 1);
             out.push(HighlightSpan {
-                start_col: start,
-                end_col: end,
+                start_col: mapper.byte_to_char(start_byte),
+                end_col: mapper.byte_to_char(end_byte),
                 token_type: TokenType::Heading,
             });
             return;
@@ -425,25 +528,27 @@ impl Highlighter {
 
         if let Some((k, v)) = line.split_once('=') {
             let k_trim = k.trim_start();
-            let k_indent = k.len() - k_trim.len();
-            let k_len = k_indent + k_trim.trim_end().chars().count();
+            let k_indent_bytes = k.len() - k_trim.len();
+            let k_indent_col = mapper.byte_to_char(k_indent_bytes);
+            let k_end_bytes = k_indent_bytes + k_trim.trim_end().len();
+            let k_end_col = mapper.byte_to_char(k_end_bytes);
             out.push(HighlightSpan {
-                start_col: k_indent,
-                end_col: k_len,
+                start_col: k_indent_col,
+                end_col: k_end_col,
                 token_type: TokenType::Variable,
             });
 
-            let eq_pos = k.len();
+            let eq_pos_bytes = k.len();
             out.push(HighlightSpan {
-                start_col: eq_pos,
-                end_col: eq_pos + 1,
+                start_col: mapper.byte_to_char(eq_pos_bytes),
+                end_col: mapper.byte_to_char(eq_pos_bytes + 1),
                 token_type: TokenType::Operator,
             });
 
             let val_trimmed = v.trim();
             if !val_trimmed.is_empty() {
-                let v_start = eq_pos + 1 + (v.len() - v.trim_start().len());
-                let v_end = v_start + val_trimmed.chars().count();
+                let v_start_bytes = eq_pos_bytes + 1 + (v.len() - v.trim_start().len());
+                let v_end_bytes = v_start_bytes + val_trimmed.len();
                 let tt = if val_trimmed.starts_with('"') || val_trimmed.starts_with('\'') {
                     TokenType::StringLit
                 } else if val_trimmed.chars().all(|c| c.is_numeric() || c == '.')
@@ -455,8 +560,8 @@ impl Highlighter {
                     TokenType::StringLit
                 };
                 out.push(HighlightSpan {
-                    start_col: v_start,
-                    end_col: v_end,
+                    start_col: mapper.byte_to_char(v_start_bytes),
+                    end_col: mapper.byte_to_char(v_end_bytes),
                     token_type: tt,
                 });
             }
@@ -513,7 +618,7 @@ fn classify_node(lang: SupportedLanguage, node: &Node) -> Option<TokenType> {
             | "type" | "const" | "static" | "trait" | "async" | "await" | "unsafe" => {
                 Some(TokenType::Keyword)
             }
-            "function_item" | "identifier"
+            "identifier"
                 if node
                     .parent()
                     .is_some_and(|p| p.kind() == "call_expression" || p.kind() == "function_item") =>

@@ -1437,3 +1437,159 @@ fn test_editor_pane_open_file_welcome_tab_reuse_and_non_existent() {
     assert_eq!(pane.active_tab_idx, 0, "Should switch to existing tab");
 }
 
+#[test]
+fn test_treesitter_multibyte_and_emoji_highlight_coordinates() {
+    use rooney::syntax::highlighter::{Highlighter, SupportedLanguage, TokenType};
+
+    // 1. Rust code with Japanese string literal and subsequent code on the same line
+    let code = "let greeting = \"こんにちは世界 🚀\"; let count = 100;";
+    let mut highlighter = Highlighter::new(SupportedLanguage::Rust);
+    highlighter.update_source(code);
+
+    let spans = highlighter.highlight_line(code, 0);
+    assert!(!spans.is_empty(), "Should produce spans for Rust code");
+
+    // Convert code to chars vector to index by character
+    let chars: Vec<char> = code.chars().collect();
+
+    // Verify all spans map to valid character boundaries and correct text segments
+    for span in &spans {
+        assert!(
+            span.start_col <= span.end_col,
+            "start_col {} must be <= end_col {}",
+            span.start_col,
+            span.end_col
+        );
+        assert!(
+            span.end_col <= chars.len(),
+            "end_col {} exceeds char length {}",
+            span.end_col,
+            chars.len()
+        );
+    }
+
+    // Verify first "let" keyword
+    let first_let = spans.iter().find(|s| s.token_type == TokenType::Keyword && s.start_col == 0);
+    assert!(first_let.is_some(), "First let keyword not found");
+    assert_eq!(first_let.unwrap().end_col, 3);
+    let seg1: String = chars[first_let.unwrap().start_col..first_let.unwrap().end_col].iter().collect();
+    assert_eq!(seg1, "let");
+
+    // Verify string literal containing Japanese and emoji
+    let string_span = spans.iter().find(|s| s.token_type == TokenType::StringLit);
+    assert!(string_span.is_some(), "String literal span not found");
+    let s_span = string_span.unwrap();
+    let str_content: String = chars[s_span.start_col..s_span.end_col].iter().collect();
+    assert_eq!(str_content, "\"こんにちは世界 🚀\"");
+
+    // Verify the second "let" keyword following the multi-byte string
+    let second_let = spans
+        .iter()
+        .find(|s| s.token_type == TokenType::Keyword && s.start_col > s_span.end_col);
+    assert!(
+        second_let.is_some(),
+        "Second let keyword after Japanese/emoji string not found. Spans: {spans:?}"
+    );
+    let let2 = second_let.unwrap();
+    let seg2: String = chars[let2.start_col..let2.end_col].iter().collect();
+    assert_eq!(
+        seg2, "let",
+        "Second let should accurately match chars, got '{seg2}'"
+    );
+
+    // Verify the number literal "100"
+    let num_span = spans.iter().find(|s| s.token_type == TokenType::NumberLit);
+    assert!(num_span.is_some(), "Number literal 100 not found");
+    let n = num_span.unwrap();
+    let seg_num: String = chars[n.start_col..n.end_col].iter().collect();
+    assert_eq!(seg_num, "100");
+}
+
+#[test]
+fn test_byte_char_mapper_and_slice_by_char_indices() {
+    use rooney::syntax::highlighter::{byte_to_char_idx, ByteCharMapper};
+    use rooney::ui::canvas_editor::EditorCanvas;
+
+    let text = "Rust 言語 🦀 と 🚀 絵文字!";
+    // Chars:
+    // 'R'(0), 'u'(1), 's'(2), 't'(3), ' '(4),
+    // '言'(5, bytes 5..8), '語'(6, bytes 8..11), ' '(7, byte 11),
+    // '🦀'(8, bytes 12..16), ' '(9, byte 16),
+    // 'と'(10, bytes 17..20), ' '(11, byte 20),
+    // '🚀'(12, bytes 21..25), ' '(13, byte 25),
+    // '絵'(14, bytes 26..29), '文'(15, bytes 29..32), '字'(16, bytes 32..35), '!'(17, byte 35)
+    // Total chars = 18.
+    let mapper = ByteCharMapper::new(text);
+    assert_eq!(mapper.total_chars(), 18);
+
+    // Start of string
+    assert_eq!(mapper.byte_to_char(0), 0);
+    assert_eq!(byte_to_char_idx(text, 0), 0);
+
+    // '言' start byte (5)
+    assert_eq!(mapper.byte_to_char(5), 5);
+    assert_eq!(byte_to_char_idx(text, 5), 5);
+
+    // '語' start byte (8)
+    assert_eq!(mapper.byte_to_char(8), 6);
+    assert_eq!(byte_to_char_idx(text, 8), 6);
+
+    // '🦀' start byte (12)
+    assert_eq!(mapper.byte_to_char(12), 8);
+    assert_eq!(byte_to_char_idx(text, 12), 8);
+
+    // '🚀' start byte (21)
+    assert_eq!(mapper.byte_to_char(21), 12);
+    assert_eq!(byte_to_char_idx(text, 21), 12);
+
+    // Beyond text
+    assert_eq!(mapper.byte_to_char(100), 18);
+    assert_eq!(byte_to_char_idx(text, 100), 18);
+
+    // Slice by char indices verification
+    assert_eq!(EditorCanvas::slice_by_char_indices(text, 0, 4), "Rust");
+    assert_eq!(EditorCanvas::slice_by_char_indices(text, 5, 7), "言語");
+    assert_eq!(EditorCanvas::slice_by_char_indices(text, 8, 9), "🦀");
+    assert_eq!(EditorCanvas::slice_by_char_indices(text, 12, 13), "🚀");
+    assert_eq!(EditorCanvas::slice_by_char_indices(text, 14, 17), "絵文字");
+    assert_eq!(EditorCanvas::slice_by_char_indices(text, 17, 18), "!");
+    assert_eq!(EditorCanvas::slice_by_char_indices(text, 20, 25), "");
+}
+
+#[test]
+fn test_multiline_block_comment_highlighting() {
+    use rooney::syntax::highlighter::{Highlighter, SupportedLanguage, TokenType};
+
+    let code = "/* 日本語コメント行１\n   中間行\n   終了行 */\nlet z = 1;";
+    let mut highlighter = Highlighter::new(SupportedLanguage::Rust);
+    highlighter.update_source(code);
+
+    let lines: Vec<&str> = code.lines().collect();
+
+    // Line 0
+    let spans0 = highlighter.highlight_line(lines[0], 0);
+    assert!(!spans0.is_empty());
+    assert_eq!(spans0[0].token_type, TokenType::Comment);
+    assert_eq!(spans0[0].start_col, 0);
+    assert_eq!(spans0[0].end_col, lines[0].chars().count());
+
+    // Line 1
+    let spans1 = highlighter.highlight_line(lines[1], 1);
+    assert!(!spans1.is_empty(), "Middle line of block comment should be highlighted");
+    assert_eq!(spans1[0].token_type, TokenType::Comment);
+    assert_eq!(spans1[0].start_col, 0);
+    assert_eq!(spans1[0].end_col, lines[1].chars().count());
+
+    // Line 2
+    let spans2 = highlighter.highlight_line(lines[2], 2);
+    assert!(!spans2.is_empty(), "End line of block comment should be highlighted");
+    assert_eq!(spans2[0].token_type, TokenType::Comment);
+
+    // Line 3 (code line)
+    let spans3 = highlighter.highlight_line(lines[3], 3);
+    assert!(!spans3.is_empty());
+    let let_span = spans3.iter().find(|s| s.token_type == TokenType::Keyword).unwrap();
+    assert_eq!(let_span.start_col, 0);
+    assert_eq!(let_span.end_col, 3);
+}
+

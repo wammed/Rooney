@@ -14,8 +14,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 
 <p align="center">
-  <strong>High-Performance Piece-Tree Rope × Tree-sitter In-Process Highlighting × 100% Local AI (Ollama) × Wayland IME Native</strong><br>
-  A blazing-fast, private, and aesthetic lightweight code & markdown editor built natively for Pop!_OS COSMIC Desktop and Linux Wayland.
+  <strong>COSMIC / Wayland Native × Piece-Tree Rope Buffer × Tree-sitter Highlighting × Japanese IME Native × 100% Local AI (Ollama)</strong><br>
+  A fast, privacy-respecting, and aesthetic lightweight code & markdown editor built natively for Pop!_OS COSMIC Desktop and Linux Wayland.
 </p>
 
 <p align="center">
@@ -26,18 +26,18 @@
 
 ---
 
-## 💡 Highlights
+## 💡 Features
 
-- ⚡ **COSMIC & Wayland-Native Core**: Pure Rust `libcosmic` desktop integration with custom matte icon, Wayland client-side decorations, seamless dark/light theme integration, and 0ms instant startup without heavy child processes or LSP daemon overhead.
+- ⚡ **COSMIC & Wayland-Native Core**: Pure Rust `libcosmic` desktop integration with custom matte icon, Wayland client-side decorations, seamless dark/light theme integration, and fast startup without heavy external language server daemons.
 - 🤖 **100% Local AI Intelligence**: Real-time Fill-in-the-Middle (FIM) ghost suggestions (`Ctrl + I` / `Alt + Enter`), streaming token-by-token interactive chat panel (`Ctrl + Shift + A`) with cancellation and model switching powered completely offline by Ollama.
-- 📜 **High-Performance Piece-Tree Rope**: Powered by `ropey`, handling large files with zero copy lag and instantaneous buffer operations.
-- 🌳 **In-Process Tree-sitter Highlighting**: AST-based syntax highlighting for 12+ languages (Rust, Python, JS, TS, C, C++, Bash, Fish, JSON, TOML, YAML, Markdown) with zero external daemon overhead.
+- 📜 **Piece-Tree Rope Buffer**: Powered by `ropey`, enabling efficient character and line manipulations across documents without large-scale contiguous memory copies.
+- 🌳 **In-Process Tree-sitter Highlighting**: AST-based syntax highlighting for 12+ languages (Rust, Python, JS, TS, C, C++, Bash, Fish, JSON, TOML, YAML, Markdown) with exact UTF-8 byte-to-character coordinate mapping for multilingual and emoji text.
 - 🪟 **Dual-Pane Split Editing & Live Markdown Preview**: Side-by-side editing (`Ctrl + \`), independent multi-tabs, synchronized editing, and live Markdown preview (`Ctrl + M`) with dynamic specification switching between **GFM** (GitHub Flavored Markdown: tables, task lists, alerts, strikethrough, autolinks, `breaks: false`) and standard **CommonMark**.
-- 🧭 **Smooth Auto-Scrolling & Dual Interactive Scrollbars**: Cursor-following auto-scroll keeps the editing cursor visible at top/bottom margins with zero jitter during typing and navigation. Each pane features an independent, proportional right-edge scrollbar supporting smooth dragging, mouse wheel disengagement, and track jumping.
-- 🇯🇵 **Pixel-Perfect Japanese IME Support**: Full Wayland text-input protocol support (Fcitx5 / Mozc / IBus), live pre-edit underline preview, and sub-pixel advance calculations preventing cursor drift.
-- 📂 **Rich File Tree Explorer**: Real-time workspace navigation, Nerd Font file icons, right-click context menu (New File, New Folder, Rename, Safe Delete) with scroll position retention and smart screen-boundary clamping, and XDG Desktop Portal integration.
+- 🧭 **Smooth Auto-Scrolling & Dual Interactive Scrollbars**: Cursor-following auto-scroll keeps the editing cursor visible at top/bottom margins during typing and navigation. Each pane features an independent, proportional right-edge scrollbar supporting smooth dragging, mouse wheel disengagement, and track jumping.
+- 🇯🇵 **Pixel-Accurate Japanese IME Support**: Full Wayland text-input protocol support (Fcitx5 / Mozc / IBus), live pre-edit underline preview, and sub-pixel advance calculations preventing cursor drift.
+- 📂 **Rich File Tree Explorer**: Workspace navigation, Nerd Font file icons, right-click context menu (New File, New Folder, Rename, Safe Delete) with scroll position retention and screen-boundary clamping, and XDG Desktop Portal integration.
 - 🎨 **20 Premium Classic & Neon Themes**: Tokyo Night, Catppuccin, Gruvbox, Synthwave '84, Cyberpunk Neon, and more, with independent opacity controls for editor window, file tree, and title bar, plus background dimming unified in the `󰒓 Aesthetics & Preferences` modal.
-- 🔒 **Ironclad Local Security**: Atomic file replacement (`.{file}.tmp.{pid}`), 50MB file size limits, path traversal sanitization, and automatic AI shielding for sensitive files (`.env*`, `id_rsa`, `*.pem`).
+- 🔒 **Security & File Integrity**: Atomic file replacement (`.{file}.tmp.{pid}`) to reduce partial write risks on sudden failures, pattern-based exclusion of known sensitive files (`.env*`, `id_rsa`, `*.pem`) from AI context, 50MB file size limits, and path traversal guards.
 
 ---
 
@@ -135,10 +135,23 @@ Rooney automatically preserves all settings—theme, font, font size, independen
 
 Rooney operates under a strict **100% offline, local-first** model:
 - **Zero Cloud Leakage**: No telemetry, external cloud APIs, or tracking; all AI prompts and code streams remain strictly local via Ollama.
-- **Sensitive File AI Shield**: Automatically detects and blocks AI completion requests on sensitive files (`.env*`, `id_rsa`, `id_ed25519`, `credentials`, `*.pem`, `*.key`, `*.keystore`, `*.jks`, `.npmrc`, `.pypirc`, `kubeconfig`, `*.token`, `*secret*`, `.aws/credentials`, `.kube/config`).
-- **Atomic Crash-Safe Writing**: Saves editor files and `config.toml` via sibling temporary files (`.{filename}.tmp.{pid}`) with `sync_all` and atomic rename, eliminating zero-byte corruption on unexpected shutdowns or power loss.
+- **Pattern-Based Sensitive File AI Guard**: Automatically detects known sensitive file patterns (`.env*`, `id_rsa`, `id_ed25519`, `credentials`, `*.pem`, `*.key`, `*.keystore`, `*.jks`, `.npmrc`, `.pypirc`, `kubeconfig`, `*.token`, `*secret*`, `.aws/credentials`, `.kube/config`) and excludes them from AI completion requests to prevent accidental exposure.
+- **Atomic Crash-Resistant Writing**: Saves editor files and `config.toml` via sibling temporary files (`.{filename}.tmp.{pid}`) with `sync_all` and atomic rename, reducing the risk of partial or zero-byte writes during unexpected system crashes.
 - **Path Traversal & Boundary Protection**: Sanitizes file/directory creation and renaming to prevent directory escape (`..`, `/`), while safeguarding root (`/`) and home directories against accidental recursive deletion. Safe home directory resolution via `directories::BaseDirs`.
-- **Resource Protection & High Performance**: 50MB file size ceiling to prevent OOM freezes, 1MB streaming buffer cap, bounded $O(1)$ ring-buffer Undo/Redo stack (`VecDeque`), and incremental Tree-sitter parsing.
+- **Resource Limits & Bounded Memory**: 50MB file size ceiling to prevent OOM freezes, 1MB streaming buffer cap, bounded $O(1)$ ring-buffer Undo/Redo stack (`VecDeque`), and heap-efficient direct iterator traversal during rendering.
+
+---
+
+## 🗺️ Roadmap
+
+The following architectural optimizations and feature enhancements are planned for upcoming milestones:
+
+- 🏎️ **Viewport-Based Virtualization**: Layout and visual row computation limited strictly to the visible viewport, significantly boosting rendering speed on massive documents.
+- 📐 **Direct Glyph Metrics Integration**: Integrating real layout measurements from `cosmic-text` to further refine proportional and CJK character advances beyond fixed metric approximations.
+- ⚡ **Incremental Syntax Highlighting & Line Cache**: AST delta parsing and per-line highlight token caching to minimize Tree-sitter reparsing overhead on single-line edits.
+- 👁️ **Filesystem Change Monitoring (Watcher)**: Asynchronous workspace directory notifications to automatically refresh the file tree and notify users of external file modifications.
+- 📝 **Rich Inline Markdown Rendering**: Direct in-canvas styling of inline Markdown elements (bold, italic, inline code, and clickable links).
+- 💾 **Undo/Redo Delta Compression**: Transitioning from Rope snapshot checkpoints to compact delta-based action logs for memory efficiency on huge edit sessions.
 
 ---
 

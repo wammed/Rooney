@@ -93,6 +93,36 @@ impl<'a> EditorCanvas<'a> {
         (digits as f32) * self.char_width + 24.0
     }
 
+    /// Safely slices a string slice by character (Unicode scalar value) indices.
+    /// Returns an empty slice if out of bounds. Pure ASCII strings are sliced in O(1).
+    pub fn slice_by_char_indices(text: &str, start_char: usize, end_char: usize) -> &str {
+        if start_char >= end_char {
+            return "";
+        }
+        if text.is_ascii() {
+            let s = start_char.min(text.len());
+            let e = end_char.min(text.len());
+            return &text[s..e];
+        }
+        let mut start_byte = text.len();
+        let mut end_byte = text.len();
+        let mut cur_char = 0;
+        for (b, _) in text.char_indices() {
+            if cur_char == start_char {
+                start_byte = b;
+            }
+            if cur_char == end_char {
+                end_byte = b;
+                break;
+            }
+            cur_char += 1;
+        }
+        if start_char >= cur_char {
+            return "";
+        }
+        &text[start_byte..end_byte]
+    }
+
     fn build_visual_rows(&self, bounds_width: f32) -> Vec<VisualRow> {
         let gutter = self.gutter_width();
         let avail_width = (bounds_width - gutter - 24.0).max(120.0);
@@ -102,9 +132,8 @@ impl<'a> EditorCanvas<'a> {
 
         for line_idx in 0..total_lines {
             let line_text = self.pane.buffer.line_text(line_idx).unwrap_or_default();
-            let chars: Vec<char> = line_text.chars().collect();
 
-            if chars.is_empty() {
+            if line_text.is_empty() {
                 visual_rows.push(VisualRow {
                     line_idx,
                     char_start: 0,
@@ -117,8 +146,10 @@ impl<'a> EditorCanvas<'a> {
             let mut start = 0;
             let mut cur_row_w = 0.0;
             let mut is_first = true;
+            let mut total_chars = 0;
 
-            for (i, &c) in chars.iter().enumerate() {
+            for (i, c) in line_text.chars().enumerate() {
+                total_chars = i + 1;
                 let w = Self::char_advance(c, self.font_size);
                 if cur_row_w + w > avail_width && i > start {
                     visual_rows.push(VisualRow {
@@ -137,7 +168,7 @@ impl<'a> EditorCanvas<'a> {
             visual_rows.push(VisualRow {
                 line_idx,
                 char_start: start,
-                char_end: chars.len(),
+                char_end: total_chars,
                 is_first_subrow: is_first,
             });
         }
@@ -154,11 +185,12 @@ impl<'a> EditorCanvas<'a> {
             if row.line_idx == cursor.0 && cursor.1 >= row.char_start && cursor.1 <= row.char_end {
                 let y = (v_idx as f32) * self.line_height - self.pane.scroll_y.get();
                 let line_text = self.pane.buffer.line_text(cursor.0).unwrap_or_default();
-                let chars: Vec<char> = line_text.chars().collect();
 
                 let mut pixel_offset = 0.0;
-                for &ch in &chars[row.char_start..cursor.1.min(chars.len())] {
-                    pixel_offset += Self::char_advance(ch, self.font_size);
+                if cursor.1 > row.char_start {
+                    for ch in line_text.chars().skip(row.char_start).take(cursor.1 - row.char_start) {
+                        pixel_offset += Self::char_advance(ch, self.font_size);
+                    }
                 }
 
                 let x = gutter + 10.0 + pixel_offset - self.pane.scroll_x.get();
@@ -177,19 +209,20 @@ impl<'a> EditorCanvas<'a> {
 
         if let Some(row) = visual_rows.get(clicked_v_idx) {
             let line_text = self.pane.buffer.line_text(row.line_idx).unwrap_or_default();
-            let chars: Vec<char> = line_text.chars().collect();
             let rel_x = (pos.x - gutter - 10.0 + self.pane.scroll_x.get()).max(0.0);
 
             let mut acc_width = 0.0;
             let mut chosen_col = row.char_start;
 
-            for (idx_offset, &ch) in chars[row.char_start..row.char_end.min(chars.len())].iter().enumerate() {
-                let char_pixel_w = Self::char_advance(ch, self.font_size);
-                if acc_width + char_pixel_w / 2.0 >= rel_x {
-                    break;
+            if row.char_end > row.char_start {
+                for (idx_offset, ch) in line_text.chars().skip(row.char_start).take(row.char_end - row.char_start).enumerate() {
+                    let char_pixel_w = Self::char_advance(ch, self.font_size);
+                    if acc_width + char_pixel_w / 2.0 >= rel_x {
+                        break;
+                    }
+                    acc_width += char_pixel_w;
+                    chosen_col = row.char_start + idx_offset + 1;
                 }
-                acc_width += char_pixel_w;
-                chosen_col = row.char_start + idx_offset + 1;
             }
             (row.line_idx, chosen_col)
         } else if let Some(last) = visual_rows.last() {
@@ -306,7 +339,6 @@ impl<'a> EditorCanvas<'a> {
 
                     if row.line_idx >= sel_start.0 && row.line_idx <= sel_end.0 {
                         let line_text = buffer.line_text(row.line_idx).unwrap_or_default();
-                        let chars: Vec<char> = line_text.chars().collect();
 
                         let line_sel_start = if row.line_idx == sel_start.0 {
                             sel_start.1.max(row.char_start)
@@ -322,12 +354,14 @@ impl<'a> EditorCanvas<'a> {
 
                         if line_sel_start < line_sel_end {
                             let mut start_x_offset = 0.0;
-                            for &ch in &chars[row.char_start..line_sel_start.min(chars.len())] {
-                                start_x_offset += Self::char_advance(ch, self.font_size);
+                            if line_sel_start > row.char_start {
+                                for ch in line_text.chars().skip(row.char_start).take(line_sel_start - row.char_start) {
+                                    start_x_offset += Self::char_advance(ch, self.font_size);
+                                }
                             }
 
                             let mut sel_w = 0.0;
-                            for &ch in &chars[line_sel_start..line_sel_end.min(chars.len())] {
+                            for ch in line_text.chars().skip(line_sel_start).take(line_sel_end - line_sel_start) {
                                 sel_w += Self::char_advance(ch, self.font_size);
                             }
 
@@ -363,15 +397,16 @@ impl<'a> EditorCanvas<'a> {
 
                         if match_vis_start < match_vis_end {
                             let line_text = buffer.line_text(row.line_idx).unwrap_or_default();
-                            let chars: Vec<char> = line_text.chars().collect();
 
                             let mut x_offset = 0.0;
-                            for &ch in &chars[row.char_start..match_vis_start.min(chars.len())] {
-                                x_offset += Self::char_advance(ch, self.font_size);
+                            if match_vis_start > row.char_start {
+                                for ch in line_text.chars().skip(row.char_start).take(match_vis_start - row.char_start) {
+                                    x_offset += Self::char_advance(ch, self.font_size);
+                                }
                             }
 
                             let mut match_w = 0.0;
-                            for &ch in &chars[match_vis_start..match_vis_end.min(chars.len())] {
+                            for ch in line_text.chars().skip(match_vis_start).take(match_vis_end - match_vis_start) {
                                 match_w += Self::char_advance(ch, self.font_size);
                             }
 
@@ -435,9 +470,8 @@ impl<'a> EditorCanvas<'a> {
             }
 
             if let Some(line_text) = buffer.line_text(row.line_idx) {
-                let chars: Vec<char> = line_text.chars().collect();
-                if row.char_start < chars.len() {
-                    let sub_end = row.char_end.min(chars.len());
+                if row.char_start < row.char_end {
+                    let sub_end = row.char_end;
                     let spans = self.pane.highlighter.highlight_line(&line_text, row.line_idx);
 
                     let mut cur_col = row.char_start;
@@ -457,14 +491,14 @@ impl<'a> EditorCanvas<'a> {
                             (next_start, self.theme.config.fg)
                         };
 
-                        let segment: String = chars[cur_col..token_end].iter().collect();
+                        let segment = Self::slice_by_char_indices(&line_text, cur_col, token_end);
                         let mut seg_w = 0.0;
-                        for ch in chars[cur_col..token_end].iter() {
-                            seg_w += Self::char_advance(*ch, self.font_size);
+                        for ch in segment.chars() {
+                            seg_w += Self::char_advance(ch, self.font_size);
                         }
 
                         frame.fill_text(Text {
-                            content: segment,
+                            content: segment.to_string(),
                             position: Point::new(cur_pixel_x, y + 2.0),
                             color: token_color,
                             size: text_size,
