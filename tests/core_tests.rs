@@ -75,7 +75,9 @@ fn test_markdown_parsing() {
 
     assert!(!doc.blocks.is_empty());
     let has_heading = doc.blocks.iter().any(|b| match b {
-        rooney::markdown::renderer::MarkdownBlock::Heading { level: 1, text } => text == "Title 1",
+        rooney::markdown::renderer::MarkdownBlock::Heading { level: 1, spans } => {
+            rooney::markdown::renderer::spans_plain_text(spans) == "Title 1"
+        }
         _ => false,
     });
     assert!(has_heading, "Heading 1 parsed properly");
@@ -84,7 +86,7 @@ fn test_markdown_parsing() {
 #[test]
 fn test_markdown_spec_commonmark_vs_gfm() {
     use rooney::config::MarkdownSpec;
-    use rooney::markdown::renderer::{AlertKind, MarkdownBlock};
+    use rooney::markdown::renderer::{AlertKind, InlineSpan, MarkdownBlock, spans_plain_text};
 
     // 1. Tables
     let table_md = "| Col 1 | Col 2 |\n| :--- | ---: |\n| Val A | Val B |";
@@ -138,15 +140,14 @@ fn test_markdown_spec_commonmark_vs_gfm() {
     let doc_gfm_strike = MarkdownDocument::parse(strike_md, MarkdownSpec::Gfm);
     let doc_cm_strike = MarkdownDocument::parse(strike_md, MarkdownSpec::CommonMark);
 
-    let gfm_strike_text = doc_gfm_strike.blocks.iter().find_map(|b| match b {
-        MarkdownBlock::Paragraph(t) => Some(t.clone()),
-        _ => None,
-    }).unwrap_or_default();
-    assert!(gfm_strike_text.contains('\u{0336}'), "GFM renders strikethrough with combining strike marks");
-    assert!(!gfm_strike_text.contains("~~"), "GFM strips ~~ delimiter");
+    let gfm_has_strikethrough = doc_gfm_strike.blocks.iter().any(|b| match b {
+        MarkdownBlock::Paragraph(spans) => spans.iter().any(|s| matches!(s, InlineSpan::Strikethrough(t) if t == "deleted")),
+        _ => false,
+    });
+    assert!(gfm_has_strikethrough, "GFM parses strikethrough into InlineSpan::Strikethrough");
 
     let cm_strike_text = doc_cm_strike.blocks.iter().find_map(|b| match b {
-        MarkdownBlock::Paragraph(t) => Some(t.clone()),
+        MarkdownBlock::Paragraph(spans) => Some(spans_plain_text(spans)),
         _ => None,
     }).unwrap_or_default();
     assert_eq!(cm_strike_text, "This is ~~deleted~~ text.");
@@ -157,17 +158,79 @@ fn test_markdown_spec_commonmark_vs_gfm() {
     let doc_cm_break = MarkdownDocument::parse(break_md, MarkdownSpec::CommonMark);
 
     let gfm_break_text = doc_gfm_break.blocks.iter().find_map(|b| match b {
-        MarkdownBlock::Paragraph(t) => Some(t.clone()),
+        MarkdownBlock::Paragraph(spans) => Some(spans_plain_text(spans)),
         _ => None,
     }).unwrap_or_default();
     let cm_break_text = doc_cm_break.blocks.iter().find_map(|b| match b {
-        MarkdownBlock::Paragraph(t) => Some(t.clone()),
+        MarkdownBlock::Paragraph(spans) => Some(spans_plain_text(spans)),
         _ => None,
     }).unwrap_or_default();
 
     assert_eq!(gfm_break_text, "First line Second line");
     assert_eq!(cm_break_text, "First line Second line");
 }
+
+#[test]
+fn test_gfm_rich_inline_elements_and_image_fallback() {
+    use rooney::config::MarkdownSpec;
+    use rooney::markdown::renderer::{InlineSpan, MarkdownBlock};
+
+    let md = "Here is **bold**, *italic*, `inline code`, [a link](https://example.com), and ![Rooney Logo](https://example.com/logo.png).";
+    let doc = MarkdownDocument::parse(md, MarkdownSpec::Gfm);
+
+    assert_eq!(doc.blocks.len(), 1);
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert!(spans.iter().any(|s| matches!(s, InlineSpan::Bold(t) if t == "bold")));
+            assert!(spans.iter().any(|s| matches!(s, InlineSpan::Italic(t) if t == "italic")));
+            assert!(spans.iter().any(|s| matches!(s, InlineSpan::Code(t) if t == "inline code")));
+            assert!(spans.iter().any(|s| matches!(s, InlineSpan::Link { text, url } if text == "a link" && url == "https://example.com")));
+            assert!(spans.iter().any(|s| matches!(s, InlineSpan::ImageFallback { alt, url } if alt == "Rooney Logo" && url == "https://example.com/logo.png")));
+        }
+        _ => panic!("Expected Paragraph block"),
+    }
+}
+
+#[test]
+fn test_markdown_html_stripping_and_br_fallback() {
+    use rooney::config::MarkdownSpec;
+    use rooney::markdown::renderer::{InlineSpan, MarkdownBlock};
+
+    let md = "<div align=\"center\">\n  <h1>Rooney Editor</h1>\n  <p>First line<br/>Second line</p>\n  <img src=\"banner.png\" alt=\"Banner Image\" />\n</div>";
+    let doc = MarkdownDocument::parse(md, MarkdownSpec::Gfm);
+
+    let full_text: String = doc.blocks.iter().map(|b| b.plain_text()).collect::<Vec<_>>().join(" ");
+    assert!(full_text.contains("Rooney Editor"), "Stripped HTML retains header text");
+    assert!(full_text.contains("First line\nSecond line"), "<br/> converted to newline");
+    let has_img_fallback = doc.blocks.iter().any(|b| match b {
+        MarkdownBlock::Paragraph(spans) => spans.iter().any(|s| matches!(s, InlineSpan::ImageFallback { alt, url } if alt == "Banner Image" && url == "banner.png")),
+        _ => false,
+    });
+    assert!(has_img_fallback, "HTML <img> tags safely convert to ImageFallback");
+}
+
+#[test]
+fn test_gfm_footnotes_parsing() {
+    use rooney::config::MarkdownSpec;
+    use rooney::markdown::renderer::{MarkdownBlock, spans_plain_text};
+
+    let md = "Here is a statement with a footnote[^1].\n\nAnother paragraph.\n\n[^1]: Footnote details here.";
+    let doc = MarkdownDocument::parse(md, MarkdownSpec::Gfm);
+
+    let has_footnote_ref = doc.blocks.iter().any(|b| match b {
+        MarkdownBlock::Paragraph(spans) => spans_plain_text(spans).contains("[^1]"),
+        _ => false,
+    });
+    assert!(has_footnote_ref, "Document contains footnote reference");
+
+    let footnote_block = doc.blocks.iter().find(|b| matches!(b, MarkdownBlock::Footnote { .. }));
+    assert!(footnote_block.is_some(), "Footnote block is retained at document end");
+    if let Some(MarkdownBlock::Footnote { label, spans }) = footnote_block {
+        assert_eq!(label, "1");
+        assert_eq!(spans_plain_text(spans), "Footnote details here.");
+    }
+}
+
 
 #[test]
 fn test_markdown_spec_config_persistence() {
@@ -2505,9 +2568,4 @@ fn test_treesitter_stale_completion_preserves_is_parsing_async() {
         "needs_highlight_parse must be cleared on successful parse application"
     );
 }
-
-
-
-
-
 
