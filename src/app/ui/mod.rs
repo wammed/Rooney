@@ -32,12 +32,20 @@ impl App {
                 } else {
                     "Markdown document empty"
                 };
+                let bg_color = theme.background_with_alpha();
                 container(
                     text(msg)
                         .class(cosmic::theme::Text::Color(theme.config.fg)),
                 )
+                .padding(20)
                 .width(Length::Fill)
                 .height(Length::Fill)
+                .class(cosmic::theme::Container::Custom(Box::new(move |_| {
+                    container::Style {
+                        background: Some(bg_color.into()),
+                        ..Default::default()
+                    }
+                })))
                 .into()
             }
         } else {
@@ -82,12 +90,20 @@ impl App {
                     } else {
                         "Markdown document empty"
                     };
+                    let bg_color = theme.background_with_alpha();
                     container(
                         text(msg)
                             .class(cosmic::theme::Text::Color(theme.config.fg)),
                     )
+                    .padding(20)
                     .width(Length::Fill)
                     .height(Length::Fill)
+                    .class(cosmic::theme::Container::Custom(Box::new(move |_| {
+                        container::Style {
+                            background: Some(bg_color.into()),
+                            ..Default::default()
+                        }
+                    })))
                     .into()
                 }
             } else {

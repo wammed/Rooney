@@ -1121,6 +1121,10 @@ fn test_independent_opacity_settings() {
     assert_eq!(config.file_tree_opacity, 0.6);
     assert_eq!(config.title_bar_opacity, 0.7);
 
+    theme.opacity = 0.85;
+    let bg_color = theme.background_with_alpha();
+    assert!((bg_color.a - 0.85).abs() < 0.001);
+
     // Test backward compatibility when file_tree_opacity & title_bar_opacity are omitted
     let toml_str_legacy = r#"
         theme = "TokyoNight"
@@ -1137,6 +1141,34 @@ fn test_independent_opacity_settings() {
         toml::from_str(toml_str_legacy).expect("Valid legacy config TOML");
     assert_eq!(legacy_config.file_tree_opacity, 1.0);
     assert_eq!(legacy_config.title_bar_opacity, 1.0);
+}
+
+#[test]
+fn test_markdown_preview_opacity_and_background() {
+    let mut theme = EditorTheme::default();
+    theme.dimming = 0.0;
+    theme.opacity = 0.70;
+
+    let bg_undimmed = theme.background_with_alpha();
+    assert!((bg_undimmed.a - 0.70).abs() < 0.001);
+    assert!((bg_undimmed.r - theme.config.bg.r).abs() < 0.001);
+    assert!((bg_undimmed.g - theme.config.bg.g).abs() < 0.001);
+    assert!((bg_undimmed.b - theme.config.bg.b).abs() < 0.001);
+
+    // When dimming is enabled, opacity is strictly preserved, and RGB is darkened
+    theme.dimming = 0.5;
+    let bg_dimmed = theme.background_with_alpha();
+    assert!((bg_dimmed.a - 0.70).abs() < 0.001);
+    assert!(bg_dimmed.r < bg_undimmed.r);
+    assert!(bg_dimmed.g < bg_undimmed.g);
+    assert!(bg_dimmed.b < bg_undimmed.b);
+
+    // MarkdownDocument preview rendering should produce a styled container with alpha
+    let doc = MarkdownDocument::parse(
+        "# Heading\n\nPreview body with **bold** text.",
+        rooney::config::MarkdownSpec::CommonMark,
+    );
+    let _el: cosmic::Element<'_, ()> = rooney::ui::markdown_view::view_markdown(&doc, &theme, "JetBrainsMono Nerd Font");
 }
 
 #[test]

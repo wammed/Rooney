@@ -775,6 +775,12 @@ impl EditorTheme {
 
     pub fn background_with_alpha(&self) -> Color {
         let mut c = self.config.bg;
+        if self.dimming > 0.0 {
+            let dim_factor = 1.0 - (self.dimming * 0.8).clamp(0.0, 1.0);
+            c.r *= dim_factor;
+            c.g *= dim_factor;
+            c.b *= dim_factor;
+        }
         c.a = self.opacity;
         c
     }

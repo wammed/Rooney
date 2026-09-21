@@ -433,17 +433,9 @@ impl<'a> EditorCanvas<'a> {
         let gutter = self.gutter_width();
         let buffer = &self.pane.buffer;
 
-        // 1. Background (with Wayland alpha)
+        // 1. Background (with Wayland alpha & dimming)
         let bg_color = self.theme.background_with_alpha();
         frame.fill_rectangle(Point::ORIGIN, bounds.size(), bg_color);
-
-        if self.theme.dimming > 0.0 {
-            frame.fill_rectangle(
-                Point::ORIGIN,
-                bounds.size(),
-                Color::from_rgba(0.0, 0.0, 0.0, self.theme.dimming * 0.8),
-            );
-        }
 
         // 2. Gutter Background
         let gutter_rect = Rectangle {

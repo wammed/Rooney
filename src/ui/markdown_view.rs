@@ -521,9 +521,16 @@ pub fn view_markdown<'a, Message: 'static + Clone>(
         .width(Length::Fill)
         .height(Length::Fill);
 
+    let bg_color = theme.background_with_alpha();
     container(scroll)
         .width(Length::Fill)
         .height(Length::Fill)
+        .class(cosmic::theme::Container::Custom(Box::new(move |_| {
+            container::Style {
+                background: Some(bg_color.into()),
+                ..Default::default()
+            }
+        })))
         .into()
 }
 
