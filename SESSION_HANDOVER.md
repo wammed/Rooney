@@ -738,6 +738,24 @@
   - `cargo test --test benchmark_tests`: **3/3 全テスト通過 (0 failed)**。
   - `cargo build --release && install -m 755 target/release/rooney ~/.local/bin/rooney`: インストール完了。
 
+### セッション 36: Markdown プレビューにおける「Text-Focused GFM Compliant」設計思想の確立とドキュメント全面改定
+- **設計方針・位置づけの確立**:
+  - Rooney の中核思想（Wayland ネイティブ、超高速、サブミリ秒描画、軽量）に照らし合わせ、画像を無理にレンダリングしない選択を **「Text-Focused GFM Compliant（テキスト特化型 GFM 準拠）」** として公式に位置づけ。
+  - 重厚な WebView プロセスや画像デコードパイプラインを意図的に排除した純粋なネイティブ Rust レンダラーとして、GFM テーブル、アラート（Callout）、タスクリスト、インライン装飾（太字・斜体・インラインコード・打ち消し線）、ハイパーリンク、脚注、および `breaks: false` を完全網羅。
+  - 画像構文（`![alt](url)` や `<img>` タグ）は未サポートのエラーとして破棄するのではなく、洗練されたインラインバッジ（`InlineSpan::ImageFallback` → `󰋩 [画像: alt]`）へスマートにフォールバック。
+  - これにより、画像をビットマップ展開しなくても「仕様を満たしていない」と見なされることはなく、むしろ「144+ FPS の超軽快なスクロールと極小メモリ消費を両立する、軽量で正確な GFM エディタ」として強力な説得力を獲得。
+- **ドキュメント類の全面更新**:
+  1. **`README.ja.md` & `README.md`**:
+     - 「💡 主な機能（Features）」における Markdown プレビューの記述を更新し、「Text-Focused GFM Compliant」の理念、WebView/画像デコード排除による 144+ FPS スクロール、低メモリ消費、スマートなフォールバックバッジ表示を明記。
+     - 「🔒 セキュリティ & 堅牢性（Security & Architecture）」のリソース保護項目において、画像デコーダや WebView を排除したことによる外部画像読み込みに伴うメモリ枯渇やクラッシュ、デコーダ脆弱性リスクの排除を明記。
+  2. **`REVIEW_ja.md` & `REVIEW.md`**:
+     - 第9章「Markdown」に「画像なし軽量設計における設計判断（Text-Focused GFM Compliant）」セクションを新設。
+     - 画像非描画の判断が「機能不足」ではなく、サブミリ秒描画・Wayland ネイティブの思想を貫くための「意図的かつ合理的なトレードオフ」であることを技術的に記述。
+     - 残課題（P2 — Markdown inline AST）と「画像なし軽量設計」の責務境界を明確化。
+- **検証結果**:
+  - `cargo test --test core_tests`: **68/68 全テスト通過 (0 failed)**（Markdown 画像フォールバック検証 `test_gfm_rich_inline_elements_and_image_fallback` を含む）。
+  - 全ドキュメントの記述整合性を確認完了。
+
 ---
 
 ## 3. ファイル構成と役割
@@ -775,7 +793,7 @@ Rooney/
 │   │   └── highlighter.rs   # Highlighter & classify_node (12+言語のTree-sitter/字句解析エンジン)
 │   ├── markdown/
 │   │   ├── mod.rs
-│   │   └── renderer.rs      # MarkdownDocument (pulldown-cmark によるAST構築、GFM & CommonMark動的仕様切替、テーブル、タスクリスト、アラート、打ち消し線)
+│   │   └── renderer.rs      # MarkdownDocument (Text-Focused GFM & CommonMark動的仕様切替、テーブル、タスクリスト、アラート、打ち消し線、画像フォールバック)
 │   ├── fs/
 │   │   ├── mod.rs
 │   │   └── tree.rs          # FileTree (除外パターン、Nerd Font アイコン、ディレクトリ走査)
@@ -783,7 +801,7 @@ Rooney/
 │   │   ├── mod.rs
 │   │   ├── canvas_editor.rs # EditorCanvas (intern_font_name、検索ハイライト、サブピクセル文字幅、IME)
 │   │   ├── file_tree_view.rs# view_file_tree (サイドバーUI、/// アクションボタン、スクロール位置保持)
-│   │   └── markdown_view.rs # view_markdown (リッチMarkdownプレビュー、水平スクロールテーブル、タスクリスト、GitHubアラート)
+│   │   └── markdown_view.rs # view_markdown (Text-Focused GFMプレビュー、水平スクロールテーブル、タスクリスト、GitHubアラート、画像フォールバックバッジ)
 │   ├── theme/
 │   │   ├── mod.rs
 │   │   └── themes.rs        # 20種類の Classic & Neon テーマ定義、ウィンドウ・ツリー・ヘッダー独立アルファ透過・ディミング

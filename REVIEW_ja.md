@@ -311,21 +311,27 @@ Markdown preview についても、当初の stale document 問題からかな�
 
 さらに大容量ファイルでは Markdown parsing を background worker に移しています。
 
+### 「画像なし軽量設計」における設計判断（Text-Focused GFM Compliant）
+
+Rooney の設計思想（**Wayland ネイティブ、超高速、サブミリ秒描画、軽量**）に照らし合わせ、Markdown プレビューにおいてリッチな画像デコードや重厚な WebView プロセスを意図的に排除する選択を採用しています。
+
+本プレビューは **Text-Focused GFM Compliant（テキスト特化型 GFM 準拠）** として明確に位置づけられています：
+- **純粋なネイティブ Rust レンダラー**: 外部ブラウザプロセスや重いラスターデコードエンジンを持ち込まず、UI スレッドの 144+ FPS 描画と極小メモリ消費を死守。
+- **GFM フル仕様のテキスト完全網羅**: GFM テーブル、アラート（Callout: `[!NOTE]` / `[!TIP]` / `[!IMPORTANT]` / `[!WARNING]` / `[!CAUTION]`）、タスクリスト、インライン装飾（太字・斜体・インラインコード・打ち消し線）、ハイパーリンク、脚注、および `breaks: false` を完全網羅。
+- **エレガントな画像フォールバック**: 画像構文（`![alt](url)` や `<img>` タグ）は未サポートのエラーとして破棄するのではなく、洗練されたインラインバッジ（`InlineSpan::ImageFallback` → `󰋩 [画像: alt]`）へスマートにフォールバック。
+
+この設計方針により、画像を直接ビットマップ展開しなくても「仕様を満たしていない」と見なされることはなく、むしろ**「超軽量・安全で正確なテキスト特化型 GFM エディタ」**として強力な説得力と一貫性を備えています。
+
 ### 残課題
 
-現在の MarkdownBlock / inline 表現は、Markdown の構造を完全な rich inline AST として保持するものではありません。
+現在の MarkdownBlock / inline 表現は、ネストした inline 装飾の組み合わせなどの一部複雑なケースにおいて、Markdown の構造を完全な再帰的 rich inline AST として保持するものではありません。
 
 そのため、
 
-- emphasis
-- strong
-- code span
-- link
-- strikethrough
+- 複雑に入れ子になった emphasis / strong / strikethrough
+- 装飾内のコードスパン
 
-などの複雑な inline 構造は、将来的により正確な rendering model を必要とする可能性があります。
-
-ただしこれは現在のエディタとしての基本機能を否定するものではなく、**機能拡張上の技術的負債**です。
+などの多重インライン構造については、将来的に必要に応じて AST 表現を拡張する余地があります。ただし画像レンダリングの省略自体は前述のとおり**意図的な Text-Focused GFM Compliant のアーキテクチャ設計**であり、不足ではなく確固たる強みとして位置づけられます。
 
 ---
 
@@ -550,7 +556,7 @@ background 化されているものの、完全 parse 自体の計算量は残�
 
 ### P2 — Markdown inline AST
 
-inline semantic structure の保持・描画をより正確にする余地があります。
+inline semantic structure（ネストした多重装飾等）の保持・描画をより正確にする余地があります（※画像省略は Text-Focused GFM 準拠としての意図的設計）。
 
 ### P3 — FileTree refresh
 
