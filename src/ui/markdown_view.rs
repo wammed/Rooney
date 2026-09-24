@@ -77,6 +77,32 @@ fn render_spans_with_width<'a, Message: 'static + Clone>(
                 .size(base_size)
                 .color(theme.config.comment)
                 .strikethrough(true),
+            InlineSpan::Styled { text: s, style } => {
+                let weight = if style.bold {
+                    cosmic::iced::font::Weight::Bold
+                } else {
+                    cosmic::iced::font::Weight::Normal
+                };
+                let font_style = if style.italic {
+                    cosmic::iced::font::Style::Italic
+                } else {
+                    cosmic::iced::font::Style::Normal
+                };
+                let color = if style.strike {
+                    theme.config.comment
+                } else {
+                    default_color
+                };
+                Span::new(s.as_str())
+                    .size(base_size)
+                    .color(color)
+                    .font(Font {
+                        weight,
+                        style: font_style,
+                        ..Font::DEFAULT
+                    })
+                    .strikethrough(style.strike)
+            }
             InlineSpan::Link {
                 text: link_text,
                 url,
@@ -336,14 +362,22 @@ pub fn view_markdown<'a, Message: 'static + Clone>(
                 if num_cols > 0 {
                     let mut col_widths: Vec<f32> = vec![80.0; num_cols];
                     for (c, header) in table.headers.iter().enumerate() {
-                        let char_len = spans_plain_text(header).chars().count() as f32;
-                        col_widths[c] = col_widths[c].max(char_len * 9.5 + 24.0);
+                        let header_text = spans_plain_text(header);
+                        let cell_w: f32 = header_text
+                            .chars()
+                            .map(|ch| crate::ui::canvas_editor::measure_glyph_advance(ch, 12.5, "monospace"))
+                            .sum();
+                        col_widths[c] = col_widths[c].max(cell_w + 24.0);
                     }
                     for row_data in &table.rows {
                         for (c, cell) in row_data.iter().enumerate() {
                             if c < num_cols {
-                                let char_len = spans_plain_text(cell).chars().count() as f32;
-                                col_widths[c] = col_widths[c].max(char_len * 9.0 + 24.0);
+                                let cell_text = spans_plain_text(cell);
+                                let cell_w: f32 = cell_text
+                                    .chars()
+                                    .map(|ch| crate::ui::canvas_editor::measure_glyph_advance(ch, 12.0, "monospace"))
+                                    .sum();
+                                col_widths[c] = col_widths[c].max(cell_w + 24.0);
                             }
                         }
                     }
