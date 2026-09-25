@@ -20,7 +20,8 @@ pub enum SplitLayout {
 }
 
 pub type WrapCacheKey = (u32, u32, &'static str);
-pub type CachedWrapModel = std::sync::RwLock<Option<(WrapCacheKey, crate::ui::wrap::LineWrapModel)>>;
+pub type CachedWrapModel =
+    std::sync::RwLock<Option<(WrapCacheKey, crate::ui::wrap::LineWrapModel)>>;
 
 pub struct EditorTab {
     pub id: usize,
@@ -86,7 +87,6 @@ impl EditorTab {
             cached_wrap_model: std::sync::RwLock::new(None),
         }
     }
-
 
     pub fn load_file(&mut self, path: &Path) -> std::io::Result<()> {
         let metadata = std::fs::metadata(path)?;
@@ -291,7 +291,6 @@ impl EditorTab {
             }
         }
     }
-
 
     pub fn invalidate_wrap_cache(&self) {
         if let Ok(mut guard) = self.cached_wrap_model.write() {

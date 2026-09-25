@@ -1,5 +1,5 @@
 use rooney::editor::buffer::TextBuffer;
-use rooney::fs::tree::{FileTypeIcon, FileTree};
+use rooney::fs::tree::{FileTree, FileTypeIcon};
 use rooney::markdown::renderer::MarkdownDocument;
 use rooney::theme::themes::{EditorTheme, ThemeConfig, ThemeId};
 use std::path::Path;
@@ -70,7 +70,8 @@ fn test_theme_system_20_themes() {
 
 #[test]
 fn test_markdown_parsing() {
-    let md = "# Title 1\n\nThis is a paragraph.\n\n- Item 1\n- Item 2\n\n```rust\nfn test() {}\n```";
+    let md =
+        "# Title 1\n\nThis is a paragraph.\n\n- Item 1\n- Item 2\n\n```rust\nfn test() {}\n```";
     let doc = MarkdownDocument::parse(md, rooney::config::MarkdownSpec::Gfm);
 
     assert!(!doc.blocks.is_empty());
@@ -86,18 +87,27 @@ fn test_markdown_parsing() {
 #[test]
 fn test_markdown_spec_commonmark_vs_gfm() {
     use rooney::config::MarkdownSpec;
-    use rooney::markdown::renderer::{AlertKind, InlineSpan, MarkdownBlock, spans_plain_text};
+    use rooney::markdown::renderer::{spans_plain_text, AlertKind, InlineSpan, MarkdownBlock};
 
     // 1. Tables
     let table_md = "| Col 1 | Col 2 |\n| :--- | ---: |\n| Val A | Val B |";
     let doc_gfm = MarkdownDocument::parse(table_md, MarkdownSpec::Gfm);
     let doc_cm = MarkdownDocument::parse(table_md, MarkdownSpec::CommonMark);
 
-    let gfm_has_table = doc_gfm.blocks.iter().any(|b| matches!(b, MarkdownBlock::Table(_)));
+    let gfm_has_table = doc_gfm
+        .blocks
+        .iter()
+        .any(|b| matches!(b, MarkdownBlock::Table(_)));
     assert!(gfm_has_table, "GFM must parse table into Table block");
 
-    let cm_has_table = doc_cm.blocks.iter().any(|b| matches!(b, MarkdownBlock::Table(_)));
-    assert!(!cm_has_table, "CommonMark must NOT parse table into Table block");
+    let cm_has_table = doc_cm
+        .blocks
+        .iter()
+        .any(|b| matches!(b, MarkdownBlock::Table(_)));
+    assert!(
+        !cm_has_table,
+        "CommonMark must NOT parse table into Table block"
+    );
 
     // 2. Task Lists
     let task_md = "- [ ] Todo item\n- [x] Done item";
@@ -129,11 +139,25 @@ fn test_markdown_spec_commonmark_vs_gfm() {
     let doc_gfm_alert = MarkdownDocument::parse(alert_md, MarkdownSpec::Gfm);
     let doc_cm_alert = MarkdownDocument::parse(alert_md, MarkdownSpec::CommonMark);
 
-    let gfm_has_alert = doc_gfm_alert.blocks.iter().any(|b| matches!(b, MarkdownBlock::Alert { kind: AlertKind::Note, .. }));
+    let gfm_has_alert = doc_gfm_alert.blocks.iter().any(|b| {
+        matches!(
+            b,
+            MarkdownBlock::Alert {
+                kind: AlertKind::Note,
+                ..
+            }
+        )
+    });
     assert!(gfm_has_alert, "GFM should parse [!NOTE] as Alert");
 
-    let cm_has_alert = doc_cm_alert.blocks.iter().any(|b| matches!(b, MarkdownBlock::Alert { .. }));
-    assert!(!cm_has_alert, "CommonMark should treat [!NOTE] as standard BlockQuote");
+    let cm_has_alert = doc_cm_alert
+        .blocks
+        .iter()
+        .any(|b| matches!(b, MarkdownBlock::Alert { .. }));
+    assert!(
+        !cm_has_alert,
+        "CommonMark should treat [!NOTE] as standard BlockQuote"
+    );
 
     // 4. Strikethrough
     let strike_md = "This is ~~deleted~~ text.";
@@ -141,15 +165,24 @@ fn test_markdown_spec_commonmark_vs_gfm() {
     let doc_cm_strike = MarkdownDocument::parse(strike_md, MarkdownSpec::CommonMark);
 
     let gfm_has_strikethrough = doc_gfm_strike.blocks.iter().any(|b| match b {
-        MarkdownBlock::Paragraph(spans) => spans.iter().any(|s| matches!(s, InlineSpan::Strikethrough(t) if t == "deleted")),
+        MarkdownBlock::Paragraph(spans) => spans
+            .iter()
+            .any(|s| matches!(s, InlineSpan::Strikethrough(t) if t == "deleted")),
         _ => false,
     });
-    assert!(gfm_has_strikethrough, "GFM parses strikethrough into InlineSpan::Strikethrough");
+    assert!(
+        gfm_has_strikethrough,
+        "GFM parses strikethrough into InlineSpan::Strikethrough"
+    );
 
-    let cm_strike_text = doc_cm_strike.blocks.iter().find_map(|b| match b {
-        MarkdownBlock::Paragraph(spans) => Some(spans_plain_text(spans)),
-        _ => None,
-    }).unwrap_or_default();
+    let cm_strike_text = doc_cm_strike
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            MarkdownBlock::Paragraph(spans) => Some(spans_plain_text(spans)),
+            _ => None,
+        })
+        .unwrap_or_default();
     assert_eq!(cm_strike_text, "This is ~~deleted~~ text.");
 
     // 5. breaks: false (soft line breaks do not form <br>)
@@ -157,14 +190,22 @@ fn test_markdown_spec_commonmark_vs_gfm() {
     let doc_gfm_break = MarkdownDocument::parse(break_md, MarkdownSpec::Gfm);
     let doc_cm_break = MarkdownDocument::parse(break_md, MarkdownSpec::CommonMark);
 
-    let gfm_break_text = doc_gfm_break.blocks.iter().find_map(|b| match b {
-        MarkdownBlock::Paragraph(spans) => Some(spans_plain_text(spans)),
-        _ => None,
-    }).unwrap_or_default();
-    let cm_break_text = doc_cm_break.blocks.iter().find_map(|b| match b {
-        MarkdownBlock::Paragraph(spans) => Some(spans_plain_text(spans)),
-        _ => None,
-    }).unwrap_or_default();
+    let gfm_break_text = doc_gfm_break
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            MarkdownBlock::Paragraph(spans) => Some(spans_plain_text(spans)),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let cm_break_text = doc_cm_break
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            MarkdownBlock::Paragraph(spans) => Some(spans_plain_text(spans)),
+            _ => None,
+        })
+        .unwrap_or_default();
 
     assert_eq!(gfm_break_text, "First line Second line");
     assert_eq!(cm_break_text, "First line Second line");
@@ -181,10 +222,16 @@ fn test_gfm_rich_inline_elements_and_image_fallback() {
     assert_eq!(doc.blocks.len(), 1);
     match &doc.blocks[0] {
         MarkdownBlock::Paragraph(spans) => {
-            assert!(spans.iter().any(|s| matches!(s, InlineSpan::Bold(t) if t == "bold")));
-            assert!(spans.iter().any(|s| matches!(s, InlineSpan::Italic(t) if t == "italic")));
-            assert!(spans.iter().any(|s| matches!(s, InlineSpan::Code(t) if t == "inline code")));
-            assert!(spans.iter().any(|s| matches!(s, InlineSpan::Link { text, url } if text == "a link" && url == "https://example.com")));
+            assert!(spans
+                .iter()
+                .any(|s| matches!(s, InlineSpan::Bold(t) if t == "bold")));
+            assert!(spans
+                .iter()
+                .any(|s| matches!(s, InlineSpan::Italic(t) if t == "italic")));
+            assert!(spans
+                .iter()
+                .any(|s| matches!(s, InlineSpan::Code(t) if t == "inline code")));
+            assert!(spans.iter().any(|s| matches!(s, InlineSpan::Link { children, url } if rooney::markdown::inline::spans_plain_text(children) == "a link" && url == "https://example.com")));
             assert!(spans.iter().any(|s| matches!(s, InlineSpan::ImageFallback { alt, url } if alt == "Rooney Logo" && url == "https://example.com/logo.png")));
         }
         _ => panic!("Expected Paragraph block"),
@@ -199,20 +246,34 @@ fn test_markdown_html_stripping_and_br_fallback() {
     let md = "<div align=\"center\">\n  <h1>Rooney Editor</h1>\n  <p>First line<br/>Second line</p>\n  <img src=\"banner.png\" alt=\"Banner Image\" />\n</div>";
     let doc = MarkdownDocument::parse(md, MarkdownSpec::Gfm);
 
-    let full_text: String = doc.blocks.iter().map(|b| b.plain_text()).collect::<Vec<_>>().join(" ");
-    assert!(full_text.contains("Rooney Editor"), "Stripped HTML retains header text");
-    assert!(full_text.contains("First line\nSecond line"), "<br/> converted to newline");
+    let full_text: String = doc
+        .blocks
+        .iter()
+        .map(|b| b.plain_text())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        full_text.contains("Rooney Editor"),
+        "Stripped HTML retains header text"
+    );
+    assert!(
+        full_text.contains("First line\nSecond line"),
+        "<br/> converted to newline"
+    );
     let has_img_fallback = doc.blocks.iter().any(|b| match b {
         MarkdownBlock::Paragraph(spans) => spans.iter().any(|s| matches!(s, InlineSpan::ImageFallback { alt, url } if alt == "Banner Image" && url == "banner.png")),
         _ => false,
     });
-    assert!(has_img_fallback, "HTML <img> tags safely convert to ImageFallback");
+    assert!(
+        has_img_fallback,
+        "HTML <img> tags safely convert to ImageFallback"
+    );
 }
 
 #[test]
 fn test_gfm_footnotes_parsing() {
     use rooney::config::MarkdownSpec;
-    use rooney::markdown::renderer::{MarkdownBlock, spans_plain_text};
+    use rooney::markdown::renderer::{spans_plain_text, MarkdownBlock};
 
     let md = "Here is a statement with a footnote[^1].\n\nAnother paragraph.\n\n[^1]: Footnote details here.";
     let doc = MarkdownDocument::parse(md, MarkdownSpec::Gfm);
@@ -223,14 +284,19 @@ fn test_gfm_footnotes_parsing() {
     });
     assert!(has_footnote_ref, "Document contains footnote reference");
 
-    let footnote_block = doc.blocks.iter().find(|b| matches!(b, MarkdownBlock::Footnote { .. }));
-    assert!(footnote_block.is_some(), "Footnote block is retained at document end");
+    let footnote_block = doc
+        .blocks
+        .iter()
+        .find(|b| matches!(b, MarkdownBlock::Footnote { .. }));
+    assert!(
+        footnote_block.is_some(),
+        "Footnote block is retained at document end"
+    );
     if let Some(MarkdownBlock::Footnote { label, spans }) = footnote_block {
         assert_eq!(label, "1");
         assert_eq!(spans_plain_text(spans), "Footnote details here.");
     }
 }
-
 
 #[test]
 fn test_markdown_spec_config_persistence() {
@@ -248,7 +314,8 @@ fn test_markdown_spec_config_persistence() {
 
     // Test lowercase alias deserialization
     let alias_toml = toml_str.replace("markdown_spec = \"GFM\"", "markdown_spec = \"common_mark\"");
-    let restored_alias: AppConfig = toml::from_str(&alias_toml).expect("Must deserialize AppConfig alias");
+    let restored_alias: AppConfig =
+        toml::from_str(&alias_toml).expect("Must deserialize AppConfig alias");
     assert_eq!(restored_alias.markdown_spec, MarkdownSpec::CommonMark);
 }
 
@@ -293,7 +360,10 @@ fn test_japanese_text_and_width() {
     // Insert Japanese text into buffer
     buf.cursor = (0, 5); // after "こんにちは"
     buf.insert_str("、素晴らしき");
-    assert_eq!(buf.line_text(0), Some("こんにちは、素晴らしき世界！".to_string()));
+    assert_eq!(
+        buf.line_text(0),
+        Some("こんにちは、素晴らしき世界！".to_string())
+    );
 
     // Undo Japanese insertion
     buf.undo();
@@ -301,7 +371,10 @@ fn test_japanese_text_and_width() {
 
     // Redo Japanese insertion
     buf.redo();
-    assert_eq!(buf.line_text(0), Some("こんにちは、素晴らしき世界！".to_string()));
+    assert_eq!(
+        buf.line_text(0),
+        Some("こんにちは、素晴らしき世界！".to_string())
+    );
 }
 
 #[test]
@@ -330,7 +403,10 @@ fn test_editor_pane_saving() {
     assert!(pane.save_file().is_ok());
 
     let updated_content = fs::read_to_string(&test_file).unwrap();
-    assert_eq!(updated_content, "fn test() { println!(\"saved\"); }\n// Added comment");
+    assert_eq!(
+        updated_content,
+        "fn test() { println!(\"saved\"); }\n// Added comment"
+    );
 
     // Clean up
     let _ = fs::remove_dir_all(&temp_dir);
@@ -406,7 +482,7 @@ fn test_char_advance_ascii_and_cjk() {
 #[test]
 fn test_buffer_selection_and_deletion() {
     let mut buf = TextBuffer::new("Hello Beautiful World");
-    
+
     // Select "Beautiful "
     buf.selection_anchor = Some((0, 6));
     buf.cursor = (0, 16);
@@ -522,17 +598,47 @@ fn test_tree_sitter_highlighting_all_languages() {
 
     let snippets = [
         (SupportedLanguage::Rust, "fn main() { let x = 42; }"),
-        (SupportedLanguage::Python, "def greet(name):\n    return f'hello {name}'"),
-        (SupportedLanguage::JavaScript, "const add = (a, b) => { return a + b; };"),
-        (SupportedLanguage::TypeScript, "function add(a: number, b: number): number { return a + b; }"),
-        (SupportedLanguage::C, "int main(int argc, char** argv) { return 0; }"),
-        (SupportedLanguage::Cpp, "class App { public: virtual ~App() = default; };"),
-        (SupportedLanguage::Bash, "if [ -f $file ]; then\n  echo \"found\"\nfi"),
-        (SupportedLanguage::Fish, "function greet\n  echo \"hello $argv\"\nend"),
-        (SupportedLanguage::Toml, "[package]\nname = \"rooney\"\nversion = 1"),
+        (
+            SupportedLanguage::Python,
+            "def greet(name):\n    return f'hello {name}'",
+        ),
+        (
+            SupportedLanguage::JavaScript,
+            "const add = (a, b) => { return a + b; };",
+        ),
+        (
+            SupportedLanguage::TypeScript,
+            "function add(a: number, b: number): number { return a + b; }",
+        ),
+        (
+            SupportedLanguage::C,
+            "int main(int argc, char** argv) { return 0; }",
+        ),
+        (
+            SupportedLanguage::Cpp,
+            "class App { public: virtual ~App() = default; };",
+        ),
+        (
+            SupportedLanguage::Bash,
+            "if [ -f $file ]; then\n  echo \"found\"\nfi",
+        ),
+        (
+            SupportedLanguage::Fish,
+            "function greet\n  echo \"hello $argv\"\nend",
+        ),
+        (
+            SupportedLanguage::Toml,
+            "[package]\nname = \"rooney\"\nversion = 1",
+        ),
         (SupportedLanguage::Yaml, "name: rooney\nversion: 1.0"),
-        (SupportedLanguage::Json, "{\n  \"name\": \"rooney\",\n  \"count\": 42\n}"),
-        (SupportedLanguage::Ini, "[core]\n  repositoryformatversion = 0"),
+        (
+            SupportedLanguage::Json,
+            "{\n  \"name\": \"rooney\",\n  \"count\": 42\n}",
+        ),
+        (
+            SupportedLanguage::Ini,
+            "[core]\n  repositoryformatversion = 0",
+        ),
     ];
 
     for (lang, code) in snippets {
@@ -585,7 +691,10 @@ fn test_word_navigation_and_line_operations() {
     buf.cursor = (0, 2);
     buf.duplicate_line();
     assert_eq!(buf.line_count(), 3);
-    assert_eq!(buf.line_text(1), Some("hello world from rooney".to_string()));
+    assert_eq!(
+        buf.line_text(1),
+        Some("hello world from rooney".to_string())
+    );
 
     // Line deletion
     buf.cursor = (1, 0);
@@ -596,10 +705,16 @@ fn test_word_navigation_and_line_operations() {
     // Comment toggle
     buf.cursor = (0, 0);
     buf.toggle_comment("//");
-    assert_eq!(buf.line_text(0), Some("// hello world from rooney".to_string()));
+    assert_eq!(
+        buf.line_text(0),
+        Some("// hello world from rooney".to_string())
+    );
 
     buf.toggle_comment("//");
-    assert_eq!(buf.line_text(0), Some("hello world from rooney".to_string()));
+    assert_eq!(
+        buf.line_text(0),
+        Some("hello world from rooney".to_string())
+    );
 }
 
 #[test]
@@ -1027,7 +1142,6 @@ fn test_sensitive_file_ai_protection() {
     assert!(!is_sensitive_file(Path::new("styles.css")));
 }
 
-
 #[test]
 fn test_atomic_save_and_file_size_limits() {
     use rooney::editor::pane::EditorPane;
@@ -1170,7 +1284,8 @@ fn test_markdown_preview_opacity_and_background() {
         "# Heading\n\nPreview body with **bold** text.",
         rooney::config::MarkdownSpec::CommonMark,
     );
-    let _el: cosmic::Element<'_, ()> = rooney::ui::markdown_view::view_markdown(&doc, &theme, "JetBrainsMono Nerd Font");
+    let _el: cosmic::Element<'_, ()> =
+        rooney::ui::markdown_view::view_markdown(&doc, &theme, "JetBrainsMono Nerd Font");
 }
 
 #[test]
@@ -1324,7 +1439,11 @@ fn test_atomic_config_save() {
     let entries = fs::read_dir(&temp_dir).unwrap();
     for entry in entries {
         let name = entry.unwrap().file_name().to_string_lossy().to_string();
-        assert!(!name.starts_with(".config.toml.tmp"), "Temp file was left behind: {}", name);
+        assert!(
+            !name.starts_with(".config.toml.tmp"),
+            "Temp file was left behind: {}",
+            name
+        );
     }
     let _ = fs::remove_dir_all(&temp_dir);
 }
@@ -1447,7 +1566,10 @@ fn test_cli_flags_and_path_resolution() {
     // 2. URI with percent-encoded spaces and characters
     let uri_space = "file:///tmp/My%20Documents/test%20file.txt";
     let parsed_space = parse_path_or_uri(uri_space).expect("Should parse percent-encoded URI");
-    assert_eq!(parsed_space, PathBuf::from("/tmp/My Documents/test file.txt"));
+    assert_eq!(
+        parsed_space,
+        PathBuf::from("/tmp/My Documents/test file.txt")
+    );
 
     // 3. URI with percent-encoded Japanese (UTF-8) characters
     let uri_cjk = "file:///tmp/%E3%83%86%E3%82%B9%E3%83%88.txt";
@@ -1456,7 +1578,8 @@ fn test_cli_flags_and_path_resolution() {
 
     // 4. URI with localhost authority
     let uri_localhost = "file://localhost/tmp/local_file.txt";
-    let parsed_localhost = parse_path_or_uri(uri_localhost).expect("Should parse file://localhost URI");
+    let parsed_localhost =
+        parse_path_or_uri(uri_localhost).expect("Should parse file://localhost URI");
     assert_eq!(parsed_localhost, PathBuf::from("/tmp/local_file.txt"));
 
     // 5. Absolute standard path
@@ -1566,10 +1689,14 @@ fn test_treesitter_multibyte_and_emoji_highlight_coordinates() {
     }
 
     // Verify first "let" keyword
-    let first_let = spans.iter().find(|s| s.token_type == TokenType::Keyword && s.start_col == 0);
+    let first_let = spans
+        .iter()
+        .find(|s| s.token_type == TokenType::Keyword && s.start_col == 0);
     assert!(first_let.is_some(), "First let keyword not found");
     assert_eq!(first_let.unwrap().end_col, 3);
-    let seg1: String = chars[first_let.unwrap().start_col..first_let.unwrap().end_col].iter().collect();
+    let seg1: String = chars[first_let.unwrap().start_col..first_let.unwrap().end_col]
+        .iter()
+        .collect();
     assert_eq!(seg1, "let");
 
     // Verify string literal containing Japanese and emoji
@@ -1672,20 +1799,29 @@ fn test_multiline_block_comment_highlighting() {
 
     // Line 1
     let spans1 = highlighter.highlight_line(lines[1], 1);
-    assert!(!spans1.is_empty(), "Middle line of block comment should be highlighted");
+    assert!(
+        !spans1.is_empty(),
+        "Middle line of block comment should be highlighted"
+    );
     assert_eq!(spans1[0].token_type, TokenType::Comment);
     assert_eq!(spans1[0].start_col, 0);
     assert_eq!(spans1[0].end_col, lines[1].chars().count());
 
     // Line 2
     let spans2 = highlighter.highlight_line(lines[2], 2);
-    assert!(!spans2.is_empty(), "End line of block comment should be highlighted");
+    assert!(
+        !spans2.is_empty(),
+        "End line of block comment should be highlighted"
+    );
     assert_eq!(spans2[0].token_type, TokenType::Comment);
 
     // Line 3 (code line)
     let spans3 = highlighter.highlight_line(lines[3], 3);
     assert!(!spans3.is_empty());
-    let let_span = spans3.iter().find(|s| s.token_type == TokenType::Keyword).unwrap();
+    let let_span = spans3
+        .iter()
+        .find(|s| s.token_type == TokenType::Keyword)
+        .unwrap();
     assert_eq!(let_span.start_col, 0);
     assert_eq!(let_span.end_col, 3);
 }
@@ -1752,7 +1888,10 @@ fn test_mixed_script_coordinates_and_roundtrip() {
 
     let test_cases = [
         // 1. Japanese punctuation & East Asian Ambiguous characters (quotes, dashes, ellipsis)
-        ("「正確に見せる」――この2方向で……（検証中）！", "Japanese Punctuation & Dashes"),
+        (
+            "「正確に見せる」――この2方向で……（検証中）！",
+            "Japanese Punctuation & Dashes",
+        ),
         // 2. Emojis with ZWJ and surrogate pairs
         ("🦀 Rust 🚀 and 👨‍💻 Hacker", "Emojis & ZWJ Sequence"),
         // 3. Combining characters (e + acute accent, kana dakuten)
@@ -1776,7 +1915,9 @@ fn test_mixed_script_coordinates_and_roundtrip() {
         for col in 0..=chars.len() {
             pane.buffer.cursor = (0, col);
             let canvas = EditorCanvas::new(&pane, &theme, true, font_name, font_size);
-            let pos = canvas.cursor_screen_pos(bounds).expect("cursor_screen_pos must be Some");
+            let pos = canvas
+                .cursor_screen_pos(bounds)
+                .expect("cursor_screen_pos must be Some");
             x_positions.push(pos.x);
         }
 
@@ -1799,8 +1940,14 @@ fn test_mixed_script_coordinates_and_roundtrip() {
 
             // Clicking right on the grapheme start should map to start_col
             let (hit_line, hit_col) = canvas.pos_to_char_coords(cursor_pos, bounds);
-            assert_eq!(hit_line, 0, "[{label}] Hit line mismatch at col {start_col}");
-            assert_eq!(hit_col, start_col, "[{label}] Round-trip hit col mismatch at col {start_col}");
+            assert_eq!(
+                hit_line, 0,
+                "[{label}] Hit line mismatch at col {start_col}"
+            );
+            assert_eq!(
+                hit_col, start_col,
+                "[{label}] Round-trip hit col mismatch at col {start_col}"
+            );
 
             pane.buffer.cursor = (0, next_boundary);
             let canvas_next = EditorCanvas::new(&pane, &theme, true, font_name, font_size);
@@ -1813,12 +1960,18 @@ fn test_mixed_script_coordinates_and_roundtrip() {
             // Clicking in the left half of grapheme cluster should still map to start_col
             let left_half_pt = Point::new(cursor_pos.x + cluster_w * 0.25, cursor_pos.y);
             let (_, left_col) = canvas.pos_to_char_coords(left_half_pt, bounds);
-            assert_eq!(left_col, start_col, "[{label}] Left half click mismatch at col {start_col}");
+            assert_eq!(
+                left_col, start_col,
+                "[{label}] Left half click mismatch at col {start_col}"
+            );
 
             // Clicking in the right half of grapheme cluster should advance to next_boundary
             let right_half_pt = Point::new(cursor_pos.x + cluster_w * 0.75, cursor_pos.y);
             let (_, right_col) = canvas.pos_to_char_coords(right_half_pt, bounds);
-            assert_eq!(right_col, next_boundary, "[{label}] Right half click mismatch at col {start_col}");
+            assert_eq!(
+                right_col, next_boundary,
+                "[{label}] Right half click mismatch at col {start_col}"
+            );
         }
     }
 }
@@ -1895,7 +2048,8 @@ fn test_state_consistency_undo_redo_and_cache() {
     let text = pane.buffer.full_text();
     highlighter.update_source(&text);
 
-    let hl_line0: Vec<HighlightSpan> = highlighter.highlight_line(&pane.buffer.line_text(0).unwrap(), 0);
+    let hl_line0: Vec<HighlightSpan> =
+        highlighter.highlight_line(&pane.buffer.line_text(0).unwrap(), 0);
     assert!(!hl_line0.is_empty());
     assert_eq!(highlighter.cached_line_count(), 1);
 
@@ -1922,7 +2076,10 @@ fn test_state_consistency_undo_redo_and_cache() {
 
     // Redo edit 1
     pane.buffer.redo();
-    assert_eq!(pane.buffer.full_text(), format!("// compute double\n{}", initial));
+    assert_eq!(
+        pane.buffer.full_text(),
+        format!("// compute double\n{}", initial)
+    );
     assert_eq!(pane.buffer.line_count(), 5);
     highlighter.update_source(&pane.buffer.full_text());
     let hl_redo0 = highlighter.highlight_line(&pane.buffer.line_text(0).unwrap(), 0);
@@ -1948,7 +2105,10 @@ fn test_glyph_cache_invalidation_lifecycle() {
 
     // Measure at font size 28.0
     let adv_28 = measure_glyph_advance('M', 28.0, "JetBrainsMono Nerd Font");
-    assert!(adv_28 > adv_14 * 1.5, "Adv at 28pt ({adv_28}) should be roughly double 14pt ({adv_14})");
+    assert!(
+        adv_28 > adv_14 * 1.5,
+        "Adv at 28pt ({adv_28}) should be roughly double 14pt ({adv_14})"
+    );
 
     clear_glyph_cache();
 }
@@ -1965,7 +2125,9 @@ fn test_debounced_parse_state_transition() {
     pane.highlighter = rooney::syntax::highlighter::Highlighter::new(SupportedLanguage::Rust);
 
     // Initial highlight pass
-    let hl_init = pane.highlighter.highlight_line(&pane.buffer.line_text(0).unwrap(), 0);
+    let hl_init = pane
+        .highlighter
+        .highlight_line(&pane.buffer.line_text(0).unwrap(), 0);
     assert!(!hl_init.is_empty());
     assert!(!pane.needs_highlight_parse);
 
@@ -1974,18 +2136,28 @@ fn test_debounced_parse_state_transition() {
     let large_line = "let a = 1;\n".repeat(200_000); // ~2.2 MB
     pane.buffer = TextBuffer::new(&large_line);
     pane.on_content_changed();
-    assert!(pane.needs_highlight_parse, "Needs highlight parse should be true for >2MB buffer");
+    assert!(
+        pane.needs_highlight_parse,
+        "Needs highlight parse should be true for >2MB buffer"
+    );
 
     // During debounce, line highlighting still works (via fallback lexical or cached tree)
-    let hl_debounced = pane.highlighter.highlight_line(&pane.buffer.line_text(0).unwrap(), 0);
+    let hl_debounced = pane
+        .highlighter
+        .highlight_line(&pane.buffer.line_text(0).unwrap(), 0);
     assert!(!hl_debounced.is_empty());
 
     // Flush debounced parse
     pane.flush_highlight_parse();
-    assert!(!pane.needs_highlight_parse, "Needs highlight parse must be false after flush");
+    assert!(
+        !pane.needs_highlight_parse,
+        "Needs highlight parse must be false after flush"
+    );
 
     // Highlight after flush works reliably
-    let hl_flushed = pane.highlighter.highlight_line(&pane.buffer.line_text(0).unwrap(), 0);
+    let hl_flushed = pane
+        .highlighter
+        .highlight_line(&pane.buffer.line_text(0).unwrap(), 0);
     assert!(!hl_flushed.is_empty());
 }
 
@@ -2017,7 +2189,11 @@ fn test_wrapped_subrows_cumulative_y_and_hit_test() {
     let wrap_model = canvas.build_wrap_model(avail_width);
 
     // Line 0 (75 chars) wraps into 3 subrows (30 chars, 30 chars, 15 chars)
-    assert_eq!(wrap_model.subrow_count(0), 3, "Line 0 must wrap into 3 subrows");
+    assert_eq!(
+        wrap_model.subrow_count(0),
+        3,
+        "Line 0 must wrap into 3 subrows"
+    );
     assert_eq!(wrap_model.subrow_count(1), 1, "Line 1 must be 1 row");
     assert_eq!(wrap_model.subrow_count(2), 1, "Line 2 must be 1 row");
 
@@ -2041,7 +2217,10 @@ fn test_wrapped_subrows_cumulative_y_and_hit_test() {
 
     // Verify total_content_height_with_width reflects total visual rows
     let expected_height = (total_vrows as f32) * line_height;
-    assert_eq!(canvas.total_content_height_with_width(bounds_width), expected_height);
+    assert_eq!(
+        canvas.total_content_height_with_width(bounds_width),
+        expected_height
+    );
 
     // Verify build_viewport_visual_rows non-overlapping Y coordinates
     let visual_rows = canvas.build_viewport_visual_rows(bounds_width, 0.0, 800.0);
@@ -2064,17 +2243,23 @@ fn test_wrapped_subrows_cumulative_y_and_hit_test() {
 
     // Verify pos_to_char_coords Y hit-testing on wrapped subrows
     // Clicking on Line 0 subrow 0 (y = 0.5 * line_height)
-    let (line, col) = canvas.pos_to_char_coords(Point::new(gutter + 15.0, 0.5 * line_height), bounds);
+    let (line, col) =
+        canvas.pos_to_char_coords(Point::new(gutter + 15.0, 0.5 * line_height), bounds);
     assert_eq!(line, 0);
     assert!(col < 30);
 
     // Clicking on Line 0 subrow 1 (y = 1.5 * line_height)
-    let (line, col) = canvas.pos_to_char_coords(Point::new(gutter + 15.0, 1.5 * line_height), bounds);
+    let (line, col) =
+        canvas.pos_to_char_coords(Point::new(gutter + 15.0, 1.5 * line_height), bounds);
     assert_eq!(line, 0);
-    assert!((30..60).contains(&col), "Must map to subrow 1 (col in 30..60), got {col}");
+    assert!(
+        (30..60).contains(&col),
+        "Must map to subrow 1 (col in 30..60), got {col}"
+    );
 
     // Clicking on Line 0 subrow 2 (y = 2.5 * line_height)
-    let (line, col) = canvas.pos_to_char_coords(Point::new(gutter + 15.0, 2.5 * line_height), bounds);
+    let (line, col) =
+        canvas.pos_to_char_coords(Point::new(gutter + 15.0, 2.5 * line_height), bounds);
     assert_eq!(line, 0);
     assert!(col >= 60, "Must map to subrow 2 (col >= 60), got {col}");
 
@@ -2116,11 +2301,17 @@ fn test_large_file_search_debouncing() {
         "Typing with search query on 3MB file took {:.2} µs (must be < 1000 µs)",
         typing_latency_us
     );
-    assert!(pane.needs_search_update, "needs_search_update must be set to true for > 2MB buffer");
+    assert!(
+        pane.needs_search_update,
+        "needs_search_update must be set to true for > 2MB buffer"
+    );
 
     // Simulate idle debounce flush
     pane.flush_pending_search();
-    assert!(!pane.needs_search_update, "needs_search_update must be reset to false after flush");
+    assert!(
+        !pane.needs_search_update,
+        "needs_search_update must be reset to false after flush"
+    );
     assert!(!pane.search_matches.is_empty());
 }
 
@@ -2155,7 +2346,10 @@ fn test_async_search_generation_and_stale_discard() {
     // Suppose an older background search worker for "beta" (gen 2) finishes now with 1 match:
     let stale_matches = vec![(0, 6, 10)];
     let applied = pane.apply_search_results(gen2, stale_matches);
-    assert!(!applied, "Stale search generation (2 vs 3) must be discarded");
+    assert!(
+        !applied,
+        "Stale search generation (2 vs 3) must be discarded"
+    );
 
     // Current background worker for "gamma" (gen 3) finishes with 1 match:
     let current_matches = vec![(0, 11, 16)];
@@ -2177,7 +2371,8 @@ fn test_large_markdown_async_preview_sync() {
 
     let mut pane = EditorPane::new(PaneId::Left, "large_doc.md");
     pane.is_markdown_preview = true;
-    pane.highlighter = rooney::syntax::highlighter::Highlighter::new(rooney::syntax::SupportedLanguage::Markdown);
+    pane.highlighter =
+        rooney::syntax::highlighter::Highlighter::new(rooney::syntax::SupportedLanguage::Markdown);
 
     let md_text = "# Header Title\n\n- [x] Completed Task\n- [ ] Pending Task\n\n| Col A | Col B |\n|---|---|\n| 1 | 2 |\n";
     pane.buffer = TextBuffer::new(md_text);
@@ -2195,7 +2390,10 @@ fn test_large_markdown_async_preview_sync() {
     assert!(applied);
     tab.needs_highlight_parse = false;
 
-    assert!(pane.markdown_doc.is_some(), "Markdown document must be updated on parse complete");
+    assert!(
+        pane.markdown_doc.is_some(),
+        "Markdown document must be updated on parse complete"
+    );
     let blocks = &pane.markdown_doc.as_ref().unwrap().blocks;
     assert_eq!(blocks.len(), 4);
 }
@@ -2221,12 +2419,20 @@ fn test_wrap_cache_invalidation_on_font_change() {
 
     // Invalidate wrap cache via pane method
     pane.invalidate_wrap_cache();
-    assert!(pane.active_tab().cached_wrap_model.read().unwrap().is_none());
+    assert!(pane
+        .active_tab()
+        .cached_wrap_model
+        .read()
+        .unwrap()
+        .is_none());
 
     // Font size 20.0: char width = 12.0px -> 60 chars = 720px > 300px -> wraps into >= 3 rows
     let canvas_large = EditorCanvas::new(&pane, &theme, true, "monospace", 20.0);
     let wrap_large = canvas_large.build_wrap_model(avail_width);
-    assert!(wrap_large.subrow_count(0) >= 3, "Larger font size must wrap into more subrows");
+    assert!(
+        wrap_large.subrow_count(0) >= 3,
+        "Larger font size must wrap into more subrows"
+    );
 
     // Also verify composite keying: even without explicit invalidate_wrap_cache,
     // canvas with different font_size misses the cached entry automatically!
@@ -2259,21 +2465,36 @@ fn test_search_generation_incremented_on_content_edit() {
     pane.on_content_changed();
 
     // search_generation must have incremented on content changed!
-    assert!(pane.search_generation > gen1, "Editing buffer during search must advance search_generation");
-    assert!(pane.needs_search_update, "Large file edit must flag needs_search_update");
+    assert!(
+        pane.search_generation > gen1,
+        "Editing buffer during search must advance search_generation"
+    );
+    assert!(
+        pane.needs_search_update,
+        "Large file edit must flag needs_search_update"
+    );
 
     // 3. In-flight worker for gen1 finishes and tries to apply results
     let stale_matches = vec![(0, 3, 16)];
     let tab = pane.active_tab_mut();
     let applied = tab.apply_search_results(gen1, stale_matches);
-    assert!(!applied, "apply_search_results must reject stale generation from before the edit");
-    assert!(tab.search_matches.is_empty(), "Stale matches must not be saved into tab");
+    assert!(
+        !applied,
+        "apply_search_results must reject stale generation from before the edit"
+    );
+    assert!(
+        tab.search_matches.is_empty(),
+        "Stale matches must not be saved into tab"
+    );
 
     // 4. Tick debounced search runs for current generation
     let current_gen = tab.search_generation;
     let fresh_matches = vec![(1, 3, 16)];
     let applied_fresh = tab.apply_search_results(current_gen, fresh_matches.clone());
-    assert!(applied_fresh, "apply_search_results must accept current generation");
+    assert!(
+        applied_fresh,
+        "apply_search_results must accept current generation"
+    );
     assert_eq!(tab.search_matches, fresh_matches);
 }
 
@@ -2296,7 +2517,10 @@ fn test_large_markdown_toggle_and_spec_change_async() {
     // In large file, refresh_markdown must not synchronously parse
     pane.markdown_doc = None;
     pane.refresh_markdown();
-    assert!(pane.markdown_doc.is_none(), "Large markdown files must not parse synchronously in refresh_markdown");
+    assert!(
+        pane.markdown_doc.is_none(),
+        "Large markdown files must not parse synchronously in refresh_markdown"
+    );
 
     // Background worker parses markdown asynchronously and produces MarkdownDocument
     let edit_time = pane.last_edit_time;
@@ -2307,7 +2531,10 @@ fn test_large_markdown_toggle_and_spec_change_async() {
     if tab.last_edit_time == edit_time {
         tab.markdown_doc = Some(doc);
     }
-    assert!(pane.markdown_doc.is_some(), "Markdown doc must be updated when background worker completes");
+    assert!(
+        pane.markdown_doc.is_some(),
+        "Markdown doc must be updated when background worker completes"
+    );
 }
 
 #[test]
@@ -2332,20 +2559,33 @@ fn test_markdown_spec_change_generation_race() {
     // User switches Spec to CommonMark before worker 1 returns:
     pane.set_markdown_spec(MarkdownSpec::CommonMark);
     let gen_cm = pane.markdown_generation;
-    assert!(gen_cm > gen_gfm, "Spec change must advance markdown_generation");
+    assert!(
+        gen_cm > gen_gfm,
+        "Spec change must advance markdown_generation"
+    );
 
     // Worker 1 (GFM) finishes and attempts to apply results:
     let gfm_doc = MarkdownDocument::parse("| A | B |\n|---|---|\n| 1 | 2 |", MarkdownSpec::Gfm);
     let tab = pane.active_tab_mut();
     let applied_stale = tab.apply_markdown_doc(gen_gfm, gfm_doc);
     assert!(!applied_stale, "Stale generation GFM doc must be discarded");
-    assert!(tab.markdown_doc.is_none(), "Markdown doc must not be set by stale worker");
+    assert!(
+        tab.markdown_doc.is_none(),
+        "Markdown doc must not be set by stale worker"
+    );
 
     // Worker 2 (CommonMark) finishes for current generation:
-    let cm_doc = MarkdownDocument::parse("| A | B |\n|---|---|\n| 1 | 2 |", MarkdownSpec::CommonMark);
+    let cm_doc =
+        MarkdownDocument::parse("| A | B |\n|---|---|\n| 1 | 2 |", MarkdownSpec::CommonMark);
     let applied_fresh = tab.apply_markdown_doc(gen_cm, cm_doc);
-    assert!(applied_fresh, "Matching generation CommonMark doc must be applied");
-    assert!(tab.markdown_doc.is_some(), "Markdown doc must be set by current worker");
+    assert!(
+        applied_fresh,
+        "Matching generation CommonMark doc must be applied"
+    );
+    assert!(
+        tab.markdown_doc.is_some(),
+        "Markdown doc must be set by current worker"
+    );
 }
 
 #[test]
@@ -2375,7 +2615,10 @@ fn test_markdown_preview_toggle_race() {
     let doc = MarkdownDocument::parse("# Title\n\nSome paragraph text.", MarkdownSpec::Gfm);
     let tab = pane.active_tab_mut();
     let applied = tab.apply_markdown_doc(gen_on, doc);
-    assert!(!applied, "Worker results must be discarded when preview was turned OFF and generation changed");
+    assert!(
+        !applied,
+        "Worker results must be discarded when preview was turned OFF and generation changed"
+    );
     assert!(tab.markdown_doc.is_none(), "Markdown doc must remain None");
 }
 
@@ -2410,13 +2653,19 @@ fn test_all_tabs_markdown_spec_sync() {
 
     // Verify Tab 1 (inactive) has updated spec and advanced generation
     assert_eq!(pane.tabs[1].markdown_spec, MarkdownSpec::CommonMark);
-    assert!(pane.tabs[1].markdown_generation > tab1_old_gen, "Inactive tab markdown_generation must be advanced");
+    assert!(
+        pane.tabs[1].markdown_generation > tab1_old_gen,
+        "Inactive tab markdown_generation must be advanced"
+    );
 
     // Simulate async worker for Tab 1 completing with Tab 1's new generation
     let tab1_new_gen = pane.tabs[1].markdown_generation;
     let cm_doc = MarkdownDocument::parse(&large_md[..500], MarkdownSpec::CommonMark);
     let applied = pane.tabs[1].apply_markdown_doc(tab1_new_gen, cm_doc);
-    assert!(applied, "Inactive tab must accept parsed doc for its matching generation");
+    assert!(
+        applied,
+        "Inactive tab must accept parsed doc for its matching generation"
+    );
     assert!(pane.tabs[1].markdown_doc.is_some());
 }
 
@@ -2446,11 +2695,19 @@ fn test_treesitter_file_switch_parse_generation_race() {
     // Before worker completes, user loads file_py into the same tab
     pane.active_tab_mut().load_file(&file_py).unwrap();
     let new_gen = pane.active_tab().parse_generation;
-    assert_ne!(initial_gen, new_gen, "load_file must increment parse_generation");
-    assert_eq!(pane.active_tab().highlighter.lang, SupportedLanguage::Python);
+    assert_ne!(
+        initial_gen, new_gen,
+        "load_file must increment parse_generation"
+    );
+    assert_eq!(
+        pane.active_tab().highlighter.lang,
+        SupportedLanguage::Python
+    );
 
     // Stale tree from file_rs returns with initial_gen
-    let applied = pane.active_tab_mut().apply_highlight_tree(initial_gen, tree_rs);
+    let applied = pane
+        .active_tab_mut()
+        .apply_highlight_tree(initial_gen, tree_rs);
     assert!(!applied, "Stale AST from old file must be rejected");
 
     // Fresh tree for file_py with new_gen arrives
@@ -2461,7 +2718,10 @@ fn test_treesitter_file_switch_parse_generation_race() {
 
     let applied_py = pane.active_tab_mut().apply_highlight_tree(new_gen, tree_py);
     assert!(applied_py, "Matching generation AST must be accepted");
-    assert!(pane.active_tab().highlighter.has_tree(), "Highlighter must now have the Python tree");
+    assert!(
+        pane.active_tab().highlighter.has_tree(),
+        "Highlighter must now have the Python tree"
+    );
 
     let _ = std::fs::remove_file(file_rs);
     let _ = std::fs::remove_file(file_py);
@@ -2487,11 +2747,19 @@ fn test_treesitter_save_as_language_change_race() {
     // User performs save_file_as to python file
     pane.active_tab_mut().save_file_as(&file_py).unwrap();
     let gen_after_save = pane.active_tab().parse_generation;
-    assert!(gen_after_save > gen_before_save, "save_file_as must increment parse_generation");
-    assert_eq!(pane.active_tab().highlighter.lang, SupportedLanguage::Python);
+    assert!(
+        gen_after_save > gen_before_save,
+        "save_file_as must increment parse_generation"
+    );
+    assert_eq!(
+        pane.active_tab().highlighter.lang,
+        SupportedLanguage::Python
+    );
 
     // Stale parse returns with gen_before_save
-    let applied = pane.active_tab_mut().apply_highlight_tree(gen_before_save, dummy_tree);
+    let applied = pane
+        .active_tab_mut()
+        .apply_highlight_tree(gen_before_save, dummy_tree);
     assert!(!applied, "Stale AST before save_as must be rejected");
 
     // Correct Python parse returns
@@ -2500,7 +2768,9 @@ fn test_treesitter_save_as_language_change_race() {
     py_parser.set_language(&py_lang).unwrap();
     let py_tree = py_parser.parse("print('hello')\n", None);
 
-    let applied_correct = pane.active_tab_mut().apply_highlight_tree(gen_after_save, py_tree);
+    let applied_correct = pane
+        .active_tab_mut()
+        .apply_highlight_tree(gen_after_save, py_tree);
     assert!(applied_correct, "Current generation AST must be applied");
 
     let _ = std::fs::remove_file(file_py);
@@ -2512,7 +2782,8 @@ fn test_treesitter_undo_redo_parse_generation_stale_discard() {
     use rooney::syntax::SupportedLanguage;
 
     let mut pane = EditorPane::new(PaneId::Left, "code.rs");
-    pane.active_tab_mut().highlighter = rooney::syntax::highlighter::Highlighter::new(SupportedLanguage::Rust);
+    pane.active_tab_mut().highlighter =
+        rooney::syntax::highlighter::Highlighter::new(SupportedLanguage::Rust);
     pane.active_tab_mut().buffer.insert_str("fn foo() {}");
     pane.active_tab_mut().on_content_changed();
     let gen_edit1 = pane.active_tab().parse_generation;
@@ -2527,27 +2798,45 @@ fn test_treesitter_undo_redo_parse_generation_stale_discard() {
     pane.active_tab_mut().undo();
     assert_eq!(pane.active_tab().buffer.full_text(), "");
     let gen_undo = pane.active_tab().parse_generation;
-    assert!(gen_undo > gen_edit1, "undo() must increment parse_generation");
+    assert!(
+        gen_undo > gen_edit1,
+        "undo() must increment parse_generation"
+    );
 
     // Worker for edit1 completes late
-    let applied_stale = pane.active_tab_mut().apply_highlight_tree(gen_edit1, tree_edit1);
-    assert!(!applied_stale, "Stale tree from before undo must be discarded");
+    let applied_stale = pane
+        .active_tab_mut()
+        .apply_highlight_tree(gen_edit1, tree_edit1);
+    assert!(
+        !applied_stale,
+        "Stale tree from before undo must be discarded"
+    );
 
     // Worker for undo state completes
     let tree_undo = parser.parse("", None);
-    let applied_undo = pane.active_tab_mut().apply_highlight_tree(gen_undo, tree_undo);
+    let applied_undo = pane
+        .active_tab_mut()
+        .apply_highlight_tree(gen_undo, tree_undo);
     assert!(applied_undo, "AST matching undo generation must be applied");
 
     // User redoes the change
     pane.active_tab_mut().redo();
     assert_eq!(pane.active_tab().buffer.full_text(), "fn foo() {}");
     let gen_redo = pane.active_tab().parse_generation;
-    assert!(gen_redo > gen_undo, "redo() must increment parse_generation");
+    assert!(
+        gen_redo > gen_undo,
+        "redo() must increment parse_generation"
+    );
 
     // Late tree for undo state should be discarded
     let late_undo_tree = parser.parse("", None);
-    let applied_late = pane.active_tab_mut().apply_highlight_tree(gen_undo, late_undo_tree);
-    assert!(!applied_late, "Stale tree from before redo must be discarded");
+    let applied_late = pane
+        .active_tab_mut()
+        .apply_highlight_tree(gen_undo, late_undo_tree);
+    assert!(
+        !applied_late,
+        "Stale tree from before redo must be discarded"
+    );
 }
 
 #[test]
@@ -2556,7 +2845,8 @@ fn test_treesitter_stale_completion_preserves_is_parsing_async() {
     use rooney::syntax::SupportedLanguage;
 
     let mut pane = EditorPane::new(PaneId::Left, "main.rs");
-    pane.active_tab_mut().highlighter = rooney::syntax::highlighter::Highlighter::new(SupportedLanguage::Rust);
+    pane.active_tab_mut().highlighter =
+        rooney::syntax::highlighter::Highlighter::new(SupportedLanguage::Rust);
     pane.active_tab_mut().buffer.insert_str("fn first() {}\n");
     pane.active_tab_mut().on_content_changed();
     let gen_worker_a = pane.active_tab().parse_generation;
@@ -2578,7 +2868,9 @@ fn test_treesitter_stale_completion_preserves_is_parsing_async() {
     pane.active_tab_mut().is_parsing_async = true;
 
     // Worker A finishes late (stale completion with gen_worker_a)
-    let applied_a = pane.active_tab_mut().apply_highlight_tree(gen_worker_a, tree_a);
+    let applied_a = pane
+        .active_tab_mut()
+        .apply_highlight_tree(gen_worker_a, tree_a);
     assert!(!applied_a, "Stale worker completion must return false");
     assert!(
         pane.active_tab().is_parsing_async,
@@ -2591,7 +2883,9 @@ fn test_treesitter_stale_completion_preserves_is_parsing_async() {
 
     // Worker B completes with matching generation
     let tree_b = parser.parse("xfn first() {}\n", None);
-    let applied_b = pane.active_tab_mut().apply_highlight_tree(gen_worker_b, tree_b);
+    let applied_b = pane
+        .active_tab_mut()
+        .apply_highlight_tree(gen_worker_b, tree_b);
     assert!(applied_b, "Current generation completion must be applied");
     assert!(
         !pane.active_tab().is_parsing_async,
@@ -2611,7 +2905,11 @@ fn test_nested_list_parent_child_retention() {
     // Test 1 — Parent + Child
     let md1 = "- Parent item\n  - Child item";
     let doc1 = MarkdownDocument::parse(md1, MarkdownSpec::Gfm);
-    assert_eq!(doc1.blocks.len(), 2, "Test 1: Must contain both parent and child items");
+    assert_eq!(
+        doc1.blocks.len(),
+        2,
+        "Test 1: Must contain both parent and child items"
+    );
     match &doc1.blocks[0] {
         MarkdownBlock::ListItem { depth, spans, .. } => {
             assert_eq!(*depth, 0);
@@ -2630,7 +2928,11 @@ fn test_nested_list_parent_child_retention() {
     // Test 2 — Deep nesting (3 levels)
     let md2 = "- Parent\n  - Child\n    - Grandchild";
     let doc2 = MarkdownDocument::parse(md2, MarkdownSpec::Gfm);
-    assert_eq!(doc2.blocks.len(), 3, "Test 2: All 3 nesting levels must be retained");
+    assert_eq!(
+        doc2.blocks.len(),
+        3,
+        "Test 2: All 3 nesting levels must be retained"
+    );
     match &doc2.blocks[0] {
         MarkdownBlock::ListItem { depth, spans, .. } => {
             assert_eq!(*depth, 0);
@@ -2656,7 +2958,11 @@ fn test_nested_list_parent_child_retention() {
     // Test 3 — Sibling children
     let md3 = "- Parent\n  - Child A\n  - Child B";
     let doc3 = MarkdownDocument::parse(md3, MarkdownSpec::Gfm);
-    assert_eq!(doc3.blocks.len(), 3, "Test 3: Parent and both sibling children must be retained");
+    assert_eq!(
+        doc3.blocks.len(),
+        3,
+        "Test 3: Parent and both sibling children must be retained"
+    );
     match &doc3.blocks[0] {
         MarkdownBlock::ListItem { depth, spans, .. } => {
             assert_eq!(*depth, 0);
@@ -2682,7 +2988,11 @@ fn test_nested_list_parent_child_retention() {
     // Test 4 — Parent siblings
     let md4 = "- Parent A\n  - Child\n- Parent B";
     let doc4 = MarkdownDocument::parse(md4, MarkdownSpec::Gfm);
-    assert_eq!(doc4.blocks.len(), 3, "Test 4: Parent A, Child, and Parent B must be retained");
+    assert_eq!(
+        doc4.blocks.len(),
+        3,
+        "Test 4: Parent A, Child, and Parent B must be retained"
+    );
     match &doc4.blocks[0] {
         MarkdownBlock::ListItem { depth, spans, .. } => {
             assert_eq!(*depth, 0);
@@ -2708,7 +3018,11 @@ fn test_nested_list_parent_child_retention() {
     // Test 5 — Inline formatting
     let md5 = "- **Parent**\n  - *Child*";
     let doc5 = MarkdownDocument::parse(md5, MarkdownSpec::Gfm);
-    assert_eq!(doc5.blocks.len(), 2, "Test 5: Both parent and child must retain inline formatting");
+    assert_eq!(
+        doc5.blocks.len(),
+        2,
+        "Test 5: Both parent and child must retain inline formatting"
+    );
     match &doc5.blocks[0] {
         MarkdownBlock::ListItem { depth, spans, .. } => {
             assert_eq!(*depth, 0);
@@ -2732,7 +3046,9 @@ fn test_nested_list_parent_child_retention() {
         .blocks
         .iter()
         .map(|b| match b {
-            MarkdownBlock::ListItem { depth, spans, .. } => (*depth, rooney::markdown::renderer::spans_plain_text(spans)),
+            MarkdownBlock::ListItem { depth, spans, .. } => {
+                (*depth, rooney::markdown::renderer::spans_plain_text(spans))
+            }
             _ => panic!("Expected ListItem"),
         })
         .collect();
@@ -2752,7 +3068,12 @@ fn test_nested_list_parent_child_retention() {
     let doc_tasks = MarkdownDocument::parse(md_tasks, MarkdownSpec::Gfm);
     assert_eq!(doc_tasks.blocks.len(), 2);
     match &doc_tasks.blocks[0] {
-        MarkdownBlock::ListItem { depth, task_status, spans } => {
+        MarkdownBlock::ListItem {
+            depth,
+            task_status,
+            spans,
+            ..
+        } => {
             assert_eq!(*depth, 0);
             assert_eq!(*task_status, Some(false));
             assert_eq!(spans, &[InlineSpan::Text("Parent task".to_string())]);
@@ -2760,7 +3081,12 @@ fn test_nested_list_parent_child_retention() {
         _ => panic!("Expected ListItem"),
     }
     match &doc_tasks.blocks[1] {
-        MarkdownBlock::ListItem { depth, task_status, spans } => {
+        MarkdownBlock::ListItem {
+            depth,
+            task_status,
+            spans,
+            ..
+        } => {
             assert_eq!(*depth, 1);
             assert_eq!(*task_status, Some(true));
             assert_eq!(spans, &[InlineSpan::Text("Child task".to_string())]);
@@ -2780,10 +3106,18 @@ fn test_gfm_nested_inline_formatting() {
     assert_eq!(doc_single.blocks.len(), 1);
     match &doc_single.blocks[0] {
         MarkdownBlock::Paragraph(spans) => {
-            assert!(spans.iter().any(|s| matches!(s, InlineSpan::Italic(t) if t == "italic")));
-            assert!(spans.iter().any(|s| matches!(s, InlineSpan::Bold(t) if t == "bold")));
-            assert!(spans.iter().any(|s| matches!(s, InlineSpan::Strikethrough(t) if t == "strike")));
-            assert!(spans.iter().any(|s| matches!(s, InlineSpan::Code(t) if t == "code")));
+            assert!(spans
+                .iter()
+                .any(|s| matches!(s, InlineSpan::Italic(t) if t == "italic")));
+            assert!(spans
+                .iter()
+                .any(|s| matches!(s, InlineSpan::Bold(t) if t == "bold")));
+            assert!(spans
+                .iter()
+                .any(|s| matches!(s, InlineSpan::Strikethrough(t) if t == "strike")));
+            assert!(spans
+                .iter()
+                .any(|s| matches!(s, InlineSpan::Code(t) if t == "code")));
         }
         _ => panic!("Expected Paragraph block"),
     }
@@ -2879,7 +3213,7 @@ fn test_gfm_nested_inline_formatting() {
             assert_eq!(
                 spans[0],
                 InlineSpan::Link {
-                    text: "bold link".to_string(),
+                    children: vec![InlineSpan::Bold("bold link".to_string())],
                     url: "https://example.com".to_string(),
                 }
             );
@@ -2901,7 +3235,7 @@ fn test_gfm_links_and_autolinks() {
             assert_eq!(
                 spans[0],
                 InlineSpan::Link {
-                    text: "Rooney".to_string(),
+                    children: vec![InlineSpan::Text("Rooney".to_string())],
                     url: "https://example.com".to_string(),
                 }
             );
@@ -2917,7 +3251,7 @@ fn test_gfm_links_and_autolinks() {
             assert_eq!(
                 spans[0],
                 InlineSpan::Link {
-                    text: "https://example.com".to_string(),
+                    children: vec![InlineSpan::Text("https://example.com".to_string())],
                     url: "https://example.com".to_string(),
                 }
             );
@@ -2934,7 +3268,7 @@ fn test_gfm_links_and_autolinks() {
             assert_eq!(
                 spans[1],
                 InlineSpan::Link {
-                    text: "https://example.com".to_string(),
+                    children: vec![InlineSpan::Text("https://example.com".to_string())],
                     url: "https://example.com".to_string(),
                 }
             );
@@ -2947,7 +3281,9 @@ fn test_gfm_links_and_autolinks() {
 #[test]
 fn test_gfm_comprehensive_representative_suite() {
     use rooney::config::MarkdownSpec;
-    use rooney::markdown::renderer::{ColumnAlignment, InlineSpan, MarkdownBlock, MarkdownDocument};
+    use rooney::markdown::renderer::{
+        ColumnAlignment, InlineSpan, MarkdownBlock, MarkdownDocument,
+    };
 
     // 1. Nested list
     let md_nested = "- one\n  - two\n    - three";
@@ -2961,7 +3297,8 @@ fn test_gfm_comprehensive_representative_suite() {
     }
 
     // 2. List + formatting
-    let md_list_fmt = "- **bold**\n- *italic*\n- ~~strike~~\n- `code`\n- [link](https://example.com)";
+    let md_list_fmt =
+        "- **bold**\n- *italic*\n- ~~strike~~\n- `code`\n- [link](https://example.com)";
     let doc_list_fmt = MarkdownDocument::parse(md_list_fmt, MarkdownSpec::Gfm);
     assert_eq!(doc_list_fmt.blocks.len(), 5);
     match &doc_list_fmt.blocks[0] {
@@ -2975,7 +3312,7 @@ fn test_gfm_comprehensive_representative_suite() {
             assert_eq!(
                 spans,
                 &[InlineSpan::Link {
-                    text: "link".to_string(),
+                    children: vec![InlineSpan::Text("link".to_string())],
                     url: "https://example.com".to_string(),
                 }]
             );
@@ -2986,44 +3323,98 @@ fn test_gfm_comprehensive_representative_suite() {
     // 3. List + CodeBlock
     let md_list_code = "- Example:\n\n  ```rust\n  fn main() {}\n  ```\n\n- Next item";
     let doc_list_code = MarkdownDocument::parse(md_list_code, MarkdownSpec::Gfm);
-    assert!(doc_list_code.blocks.len() >= 3);
-    assert!(matches!(&doc_list_code.blocks[0], MarkdownBlock::ListItem { .. }));
-    assert!(matches!(&doc_list_code.blocks[1], MarkdownBlock::CodeBlock { lang, .. } if lang == "rust"));
-    assert!(matches!(&doc_list_code.blocks[2], MarkdownBlock::ListItem { .. }));
+    assert_eq!(
+        doc_list_code.blocks.len(),
+        2,
+        "ListItem should structurally retain nested CodeBlock"
+    );
+    match &doc_list_code.blocks[0] {
+        MarkdownBlock::ListItem {
+            spans, children, ..
+        } => {
+            assert_eq!(spans, &[InlineSpan::Text("Example:".to_string())]);
+            assert_eq!(children.len(), 1);
+            assert!(
+                matches!(&children[0], MarkdownBlock::CodeBlock { lang, code } if lang == "rust" && code.contains("fn main()"))
+            );
+        }
+        _ => panic!("Expected ListItem for Example"),
+    }
+    match &doc_list_code.blocks[1] {
+        MarkdownBlock::ListItem { spans, .. } => {
+            assert_eq!(spans, &[InlineSpan::Text("Next item".to_string())]);
+        }
+        _ => panic!("Expected ListItem for Next item"),
+    }
 
     // 4. Blockquote with nested list and inline formatting
     let md_bq = "> **bold quote** and *italic*\n>\n> - nested\n> - list";
     let doc_bq = MarkdownDocument::parse(md_bq, MarkdownSpec::Gfm);
-    let has_bq = doc_bq.blocks.iter().any(|b| match b {
-        MarkdownBlock::BlockQuote(spans) => {
-            spans.iter().any(|s| matches!(s, InlineSpan::Bold(t) if t == "bold quote"))
-                && spans.iter().any(|s| matches!(s, InlineSpan::Italic(t) if t == "italic"))
+    assert_eq!(
+        doc_bq.blocks.len(),
+        1,
+        "BlockQuote should contain nested blocks"
+    );
+    match &doc_bq.blocks[0] {
+        MarkdownBlock::BlockQuote(inner_blocks) => {
+            assert_eq!(
+                inner_blocks.len(),
+                3,
+                "Paragraph + 2 ListItems inside BlockQuote"
+            );
+            match &inner_blocks[0] {
+                MarkdownBlock::Paragraph(spans) => {
+                    assert!(spans
+                        .iter()
+                        .any(|s| matches!(s, InlineSpan::Bold(t) if t == "bold quote")));
+                    assert!(spans
+                        .iter()
+                        .any(|s| matches!(s, InlineSpan::Italic(t) if t == "italic")));
+                }
+                _ => panic!("Expected Paragraph inside BlockQuote"),
+            }
+            assert!(
+                matches!(&inner_blocks[1], MarkdownBlock::ListItem { spans, .. } if spans == &[InlineSpan::Text("nested".to_string())])
+            );
+            assert!(
+                matches!(&inner_blocks[2], MarkdownBlock::ListItem { spans, .. } if spans == &[InlineSpan::Text("list".to_string())])
+            );
         }
-        _ => false,
-    });
-    let has_list_in_bq = doc_bq.blocks.iter().any(|b| matches!(b, MarkdownBlock::ListItem { .. }));
-    assert!(has_bq, "Should parse blockquote with inline formatting");
-    assert!(has_list_in_bq, "Should retain list items inside blockquote");
+        _ => panic!("Expected BlockQuote"),
+    }
 
     // 5. GFM Table with alignments and escaped pipe
     let md_table = "| Name | Value |\n|:-----|------:|\n| **A** | `100` |\n| *B* | ~~200~~ |\n| foo \\| bar | baz |";
     let doc_table = MarkdownDocument::parse(md_table, MarkdownSpec::Gfm);
-    let table_block = doc_table.blocks.iter().find(|b| matches!(b, MarkdownBlock::Table(_)));
+    let table_block = doc_table
+        .blocks
+        .iter()
+        .find(|b| matches!(b, MarkdownBlock::Table(_)));
     assert!(table_block.is_some(), "Must parse GFM table");
     if let Some(MarkdownBlock::Table(tb)) = table_block {
-        assert_eq!(tb.alignments, vec![ColumnAlignment::Left, ColumnAlignment::Right]);
+        assert_eq!(
+            tb.alignments,
+            vec![ColumnAlignment::Left, ColumnAlignment::Right]
+        );
         assert_eq!(tb.headers.len(), 2);
         assert_eq!(tb.rows.len(), 3);
         // Escaped pipe row check
         let escaped_pipe_cell = &tb.rows[2][0];
         let plain = rooney::markdown::renderer::spans_plain_text(escaped_pipe_cell);
-        assert!(plain.contains('|'), "Escaped pipe must be preserved inside cell");
+        assert!(
+            plain.contains('|'),
+            "Escaped pipe must be preserved inside cell"
+        );
     }
 
     // 6. GFM Table with Japanese / mixed-script
     let md_table_ja = "| 項目名 | 数値 |\n|:---|---:|\n| ルーニー Editor | 144 FPS |";
     let doc_table_ja = MarkdownDocument::parse(md_table_ja, MarkdownSpec::Gfm);
-    if let Some(MarkdownBlock::Table(tb)) = doc_table_ja.blocks.iter().find(|b| matches!(b, MarkdownBlock::Table(_))) {
+    if let Some(MarkdownBlock::Table(tb)) = doc_table_ja
+        .blocks
+        .iter()
+        .find(|b| matches!(b, MarkdownBlock::Table(_)))
+    {
         let plain_h = rooney::markdown::renderer::spans_plain_text(&tb.headers[0]);
         assert_eq!(plain_h, "項目名");
         let plain_v = rooney::markdown::renderer::spans_plain_text(&tb.rows[0][0]);
@@ -3035,14 +3426,18 @@ fn test_gfm_comprehensive_representative_suite() {
     let doc_task = MarkdownDocument::parse(md_task, MarkdownSpec::Gfm);
     assert_eq!(doc_task.blocks.len(), 2);
     match &doc_task.blocks[0] {
-        MarkdownBlock::ListItem { task_status, spans, .. } => {
+        MarkdownBlock::ListItem {
+            task_status, spans, ..
+        } => {
             assert_eq!(*task_status, Some(false));
             assert_eq!(spans, &[InlineSpan::Bold("Important".to_string())]);
         }
         _ => panic!("Expected ListItem"),
     }
     match &doc_task.blocks[1] {
-        MarkdownBlock::ListItem { task_status, spans, .. } => {
+        MarkdownBlock::ListItem {
+            task_status, spans, ..
+        } => {
             assert_eq!(*task_status, Some(true));
             assert_eq!(spans, &[InlineSpan::Strikethrough("Finished".to_string())]);
         }
@@ -3052,11 +3447,17 @@ fn test_gfm_comprehensive_representative_suite() {
     // 8. Multiple Footnotes with formatting
     let md_fn = "Text[^1] and second[^2].\n\n[^1]: **First** footnote.\n[^2]: Second footnote with [link](https://example.com).";
     let doc_fn = MarkdownDocument::parse(md_fn, MarkdownSpec::Gfm);
-    let footnotes: Vec<_> = doc_fn.blocks.iter().filter(|b| matches!(b, MarkdownBlock::Footnote { .. })).collect();
+    let footnotes: Vec<_> = doc_fn
+        .blocks
+        .iter()
+        .filter(|b| matches!(b, MarkdownBlock::Footnote { .. }))
+        .collect();
     assert_eq!(footnotes.len(), 2);
     if let MarkdownBlock::Footnote { label, spans } = &footnotes[0] {
         assert_eq!(label, "1");
-        assert!(spans.iter().any(|s| matches!(s, InlineSpan::Bold(t) if t == "First")));
+        assert!(spans
+            .iter()
+            .any(|s| matches!(s, InlineSpan::Bold(t) if t == "First")));
     }
     if let MarkdownBlock::Footnote { label, spans } = &footnotes[1] {
         assert_eq!(label, "2");
@@ -3083,12 +3484,1419 @@ fn test_gfm_comprehensive_representative_suite() {
     // 10. HTML safe fallback (no webview, safe text)
     let md_html = "<div>Hello</div>\n<img src=\"https://example.com/a.png\" alt=\"Logo\">";
     let doc_html = MarkdownDocument::parse(md_html, MarkdownSpec::Gfm);
-    let full_text: String = doc_html.blocks.iter().map(|b| b.plain_text()).collect::<Vec<_>>().join(" ");
-    assert!(full_text.contains("Hello"), "Safe HTML text must be retained");
+    let full_text: String = doc_html
+        .blocks
+        .iter()
+        .map(|b| b.plain_text())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        full_text.contains("Hello"),
+        "Safe HTML text must be retained"
+    );
     let has_img = doc_html.blocks.iter().any(|b| match b {
-        MarkdownBlock::Paragraph(spans) => spans.iter().any(|s| matches!(s, InlineSpan::ImageFallback { alt, .. } if alt == "Logo")),
+        MarkdownBlock::Paragraph(spans) => spans
+            .iter()
+            .any(|s| matches!(s, InlineSpan::ImageFallback { alt, .. } if alt == "Logo")),
         _ => false,
     });
     assert!(has_img, "HTML img tag safely converts to ImageFallback");
 }
 
+#[test]
+fn test_p1_nested_list_continuation_and_structural_ast() {
+    use rooney::config::MarkdownSpec;
+    use rooney::markdown::renderer::{
+        spans_plain_text, InlineSpan, MarkdownBlock, MarkdownDocument,
+    };
+
+    // ==========================================
+    // P1-1 Case 1 / P1-5 Case A: Parent -> Child -> continuation
+    // ==========================================
+    let md1 = "- Parent\n  - Child\n\n  continuation";
+    let doc1 = MarkdownDocument::parse(md1, MarkdownSpec::Gfm);
+    assert_eq!(
+        doc1.blocks.len(),
+        2,
+        "Parent should not be split; Child must be kept"
+    );
+    match &doc1.blocks[0] {
+        MarkdownBlock::ListItem { depth, spans, .. } => {
+            assert_eq!(*depth, 0);
+            let text = spans_plain_text(spans);
+            assert!(text.contains("Parent"), "Parent text must be preserved");
+            assert!(
+                text.contains("continuation"),
+                "Continuation text must be preserved in parent"
+            );
+        }
+        _ => panic!("Expected ListItem for parent at index 0"),
+    }
+    match &doc1.blocks[1] {
+        MarkdownBlock::ListItem { depth, spans, .. } => {
+            assert_eq!(*depth, 1);
+            assert_eq!(spans_plain_text(spans), "Child");
+        }
+        _ => panic!("Expected ListItem for child at index 1"),
+    }
+
+    // ==========================================
+    // P1-1 Case 2 / P1-5 Case D: Parent -> Child -> Grandchild -> continuation
+    // ==========================================
+    let md2 = "- Parent\n  - Child\n    - Grandchild\n\n  continuation";
+    let doc2 = MarkdownDocument::parse(md2, MarkdownSpec::Gfm);
+    assert_eq!(
+        doc2.blocks.len(),
+        3,
+        "Parent, Child, Grandchild must be distinct items"
+    );
+    match &doc2.blocks[0] {
+        MarkdownBlock::ListItem { depth, spans, .. } => {
+            assert_eq!(*depth, 0);
+            let text = spans_plain_text(spans);
+            assert!(text.contains("Parent") && text.contains("continuation"));
+        }
+        _ => panic!("Expected parent ListItem"),
+    }
+    match &doc2.blocks[1] {
+        MarkdownBlock::ListItem { depth, spans, .. } => {
+            assert_eq!(*depth, 1);
+            assert_eq!(spans_plain_text(spans), "Child");
+        }
+        _ => panic!("Expected child ListItem"),
+    }
+    match &doc2.blocks[2] {
+        MarkdownBlock::ListItem { depth, spans, .. } => {
+            assert_eq!(*depth, 2);
+            assert_eq!(spans_plain_text(spans), "Grandchild");
+        }
+        _ => panic!("Expected grandchild ListItem"),
+    }
+
+    // ==========================================
+    // P1-1 Case 3: Parent -> Child 1, Child 2 -> continuation
+    // ==========================================
+    let md3 = "- Parent\n  - Child 1\n  - Child 2\n\n  continuation";
+    let doc3 = MarkdownDocument::parse(md3, MarkdownSpec::Gfm);
+    assert_eq!(doc3.blocks.len(), 3, "Parent, Child 1, Child 2");
+    match &doc3.blocks[0] {
+        MarkdownBlock::ListItem { depth, spans, .. } => {
+            assert_eq!(*depth, 0);
+            let text = spans_plain_text(spans);
+            assert!(text.contains("Parent") && text.contains("continuation"));
+        }
+        _ => panic!("Expected parent ListItem"),
+    }
+    match &doc3.blocks[1] {
+        MarkdownBlock::ListItem { depth, spans, .. } => {
+            assert_eq!(*depth, 1);
+            assert_eq!(spans_plain_text(spans), "Child 1");
+        }
+        _ => panic!("Expected Child 1 ListItem"),
+    }
+    match &doc3.blocks[2] {
+        MarkdownBlock::ListItem { depth, spans, .. } => {
+            assert_eq!(*depth, 1);
+            assert_eq!(spans_plain_text(spans), "Child 2");
+        }
+        _ => panic!("Expected Child 2 ListItem"),
+    }
+
+    // ==========================================
+    // P1-1 Case 4: Sibling parent boundaries
+    // ==========================================
+    let md4 = "- Parent 1\n  - Child\n\n  continuation\n\n- Parent 2";
+    let doc4 = MarkdownDocument::parse(md4, MarkdownSpec::Gfm);
+    assert_eq!(doc4.blocks.len(), 3, "Parent 1, Child, Parent 2");
+    match &doc4.blocks[0] {
+        MarkdownBlock::ListItem { depth, spans, .. } => {
+            assert_eq!(*depth, 0);
+            let text = spans_plain_text(spans);
+            assert!(text.contains("Parent 1") && text.contains("continuation"));
+        }
+        _ => panic!("Expected Parent 1 ListItem"),
+    }
+    match &doc4.blocks[1] {
+        MarkdownBlock::ListItem { depth, spans, .. } => {
+            assert_eq!(*depth, 1);
+            assert_eq!(spans_plain_text(spans), "Child");
+        }
+        _ => panic!("Expected Child ListItem"),
+    }
+    match &doc4.blocks[2] {
+        MarkdownBlock::ListItem { depth, spans, .. } => {
+            assert_eq!(*depth, 0);
+            assert_eq!(spans_plain_text(spans), "Parent 2");
+        }
+        _ => panic!("Expected Parent 2 ListItem"),
+    }
+
+    // ==========================================
+    // P1-2 / P1-5 Case B: BlockQuote containing List
+    // ==========================================
+    let md_bq_list = "> **bold quote**\n>\n> - item 1\n> - item 2";
+    let doc_bq_list = MarkdownDocument::parse(md_bq_list, MarkdownSpec::Gfm);
+    assert_eq!(
+        doc_bq_list.blocks.len(),
+        1,
+        "Must contain exactly one BlockQuote root"
+    );
+    match &doc_bq_list.blocks[0] {
+        MarkdownBlock::BlockQuote(blocks) => {
+            assert_eq!(
+                blocks.len(),
+                3,
+                "BlockQuote must contain Paragraph + 2 ListItems"
+            );
+            match &blocks[0] {
+                MarkdownBlock::Paragraph(spans) => {
+                    assert_eq!(spans, &[InlineSpan::Bold("bold quote".to_string())]);
+                }
+                _ => panic!("Expected Paragraph as first block inside BlockQuote"),
+            }
+            match &blocks[1] {
+                MarkdownBlock::ListItem { depth, spans, .. } => {
+                    assert_eq!(*depth, 0);
+                    assert_eq!(spans, &[InlineSpan::Text("item 1".to_string())]);
+                }
+                _ => panic!("Expected ListItem item 1 inside BlockQuote"),
+            }
+            match &blocks[2] {
+                MarkdownBlock::ListItem { depth, spans, .. } => {
+                    assert_eq!(*depth, 0);
+                    assert_eq!(spans, &[InlineSpan::Text("item 2".to_string())]);
+                }
+                _ => panic!("Expected ListItem item 2 inside BlockQuote"),
+            }
+        }
+        _ => panic!("Expected BlockQuote block"),
+    }
+
+    // Nested list inside BlockQuote
+    let md_bq_nested = "> - item 1\n>   - nested item\n> - item 2";
+    let doc_bq_nested = MarkdownDocument::parse(md_bq_nested, MarkdownSpec::Gfm);
+    assert_eq!(doc_bq_nested.blocks.len(), 1);
+    match &doc_bq_nested.blocks[0] {
+        MarkdownBlock::BlockQuote(blocks) => {
+            assert_eq!(blocks.len(), 3, "3 items inside BlockQuote");
+            match &blocks[0] {
+                MarkdownBlock::ListItem { depth, spans, .. } => {
+                    assert_eq!(*depth, 0);
+                    assert_eq!(spans_plain_text(spans), "item 1");
+                }
+                _ => panic!("Expected item 1"),
+            }
+            match &blocks[1] {
+                MarkdownBlock::ListItem { depth, spans, .. } => {
+                    assert_eq!(*depth, 1);
+                    assert_eq!(spans_plain_text(spans), "nested item");
+                }
+                _ => panic!("Expected nested item"),
+            }
+            match &blocks[2] {
+                MarkdownBlock::ListItem { depth, spans, .. } => {
+                    assert_eq!(*depth, 0);
+                    assert_eq!(spans_plain_text(spans), "item 2");
+                }
+                _ => panic!("Expected item 2"),
+            }
+        }
+        _ => panic!("Expected BlockQuote"),
+    }
+
+    // ==========================================
+    // P1-3 / P1-5 Case C: ListItem with nested CodeBlock
+    // ==========================================
+    let md_code = "- item\n  ```rust\n  fn main() {}\n  ```";
+    let doc_code = MarkdownDocument::parse(md_code, MarkdownSpec::Gfm);
+    assert_eq!(
+        doc_code.blocks.len(),
+        1,
+        "CodeBlock should be inside ListItem, not top-level"
+    );
+    match &doc_code.blocks[0] {
+        MarkdownBlock::ListItem {
+            depth,
+            spans,
+            children,
+            ..
+        } => {
+            assert_eq!(*depth, 0);
+            assert_eq!(spans_plain_text(spans), "item");
+            assert_eq!(
+                children.len(),
+                1,
+                "ListItem must hold CodeBlock in children"
+            );
+            match &children[0] {
+                MarkdownBlock::CodeBlock { lang, code } => {
+                    assert_eq!(lang, "rust");
+                    assert!(code.contains("fn main() {}"));
+                }
+                _ => panic!("Expected CodeBlock child"),
+            }
+        }
+        _ => panic!("Expected ListItem"),
+    }
+
+    // Multiple sibling items with nested code block
+    let md_code_siblings = "- item 1\n  ```rust\n  let x = 1;\n  ```\n- item 2";
+    let doc_code_siblings = MarkdownDocument::parse(md_code_siblings, MarkdownSpec::Gfm);
+    assert_eq!(doc_code_siblings.blocks.len(), 2, "2 sibling list items");
+    match &doc_code_siblings.blocks[0] {
+        MarkdownBlock::ListItem {
+            depth,
+            spans,
+            children,
+            ..
+        } => {
+            assert_eq!(*depth, 0);
+            assert_eq!(spans_plain_text(spans), "item 1");
+            assert_eq!(children.len(), 1);
+            match &children[0] {
+                MarkdownBlock::CodeBlock { lang, code } => {
+                    assert_eq!(lang, "rust");
+                    assert!(code.contains("let x = 1;"));
+                }
+                _ => panic!("Expected CodeBlock child"),
+            }
+        }
+        _ => panic!("Expected ListItem 1"),
+    }
+    match &doc_code_siblings.blocks[1] {
+        MarkdownBlock::ListItem {
+            depth,
+            spans,
+            children,
+            ..
+        } => {
+            assert_eq!(*depth, 0);
+            assert_eq!(spans_plain_text(spans), "item 2");
+            assert!(children.is_empty());
+        }
+        _ => panic!("Expected ListItem 2"),
+    }
+
+    // Nested list with continuation and code block
+    let md_complex = "- Parent\n  - Child\n    ```python\n    print(42)\n    ```\n  continuation";
+    let doc_complex = MarkdownDocument::parse(md_complex, MarkdownSpec::Gfm);
+    assert_eq!(doc_complex.blocks.len(), 2, "Parent and Child");
+    match &doc_complex.blocks[0] {
+        MarkdownBlock::ListItem { depth, spans, .. } => {
+            assert_eq!(*depth, 0);
+            let text = spans_plain_text(spans);
+            assert!(text.contains("Parent") && text.contains("continuation"));
+        }
+        _ => panic!("Expected Parent"),
+    }
+    match &doc_complex.blocks[1] {
+        MarkdownBlock::ListItem {
+            depth,
+            spans,
+            children,
+            ..
+        } => {
+            assert_eq!(*depth, 1);
+            assert_eq!(spans_plain_text(spans), "Child");
+            assert_eq!(children.len(), 1);
+            match &children[0] {
+                MarkdownBlock::CodeBlock { lang, code } => {
+                    assert_eq!(lang, "python");
+                    assert!(code.contains("print(42)"));
+                }
+                _ => panic!("Expected Python code block"),
+            }
+        }
+        _ => panic!("Expected Child"),
+    }
+}
+
+#[test]
+fn test_p2_inline_formatting_and_gfm_semantics() {
+    use rooney::config::MarkdownSpec;
+    use rooney::markdown::inline::{spans_plain_text, InlineSpan, InlineStyle};
+    use rooney::markdown::parser::{AlertKind, ColumnAlignment, MarkdownBlock, MarkdownDocument};
+
+    // ==================================================
+    // P2-1: Nested inline formatting inside links
+    // ==================================================
+
+    // 1. [**bold link**](...)
+    let doc = MarkdownDocument::parse(
+        "[**bold link**](https://example.com/bold)",
+        MarkdownSpec::Gfm,
+    );
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(spans.len(), 1);
+            match &spans[0] {
+                InlineSpan::Link { children, url } => {
+                    assert_eq!(url, "https://example.com/bold");
+                    assert_eq!(children, &[InlineSpan::Bold("bold link".to_string())]);
+                }
+                _ => panic!("Expected Link span"),
+            }
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // 2. [*italic link*](...)
+    let doc = MarkdownDocument::parse(
+        "[*italic link*](https://example.com/italic)",
+        MarkdownSpec::Gfm,
+    );
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(spans.len(), 1);
+            match &spans[0] {
+                InlineSpan::Link { children, url } => {
+                    assert_eq!(url, "https://example.com/italic");
+                    assert_eq!(children, &[InlineSpan::Italic("italic link".to_string())]);
+                }
+                _ => panic!("Expected Link span"),
+            }
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // 3. [~~strike link~~](...)
+    let doc = MarkdownDocument::parse(
+        "[~~strike link~~](https://example.com/strike)",
+        MarkdownSpec::Gfm,
+    );
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(spans.len(), 1);
+            match &spans[0] {
+                InlineSpan::Link { children, url } => {
+                    assert_eq!(url, "https://example.com/strike");
+                    assert_eq!(
+                        children,
+                        &[InlineSpan::Strikethrough("strike link".to_string())]
+                    );
+                }
+                _ => panic!("Expected Link span"),
+            }
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // 4. [***bold italic link***](...)
+    let doc = MarkdownDocument::parse(
+        "[***bold italic link***](https://example.com/bi)",
+        MarkdownSpec::Gfm,
+    );
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(spans.len(), 1);
+            match &spans[0] {
+                InlineSpan::Link { children, url } => {
+                    assert_eq!(url, "https://example.com/bi");
+                    assert_eq!(
+                        children,
+                        &[InlineSpan::Styled {
+                            text: "bold italic link".to_string(),
+                            style: InlineStyle {
+                                bold: true,
+                                italic: true,
+                                strike: false,
+                            },
+                        }]
+                    );
+                }
+                _ => panic!("Expected Link span"),
+            }
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // 5. [**bold *italic***](...)
+    let doc = MarkdownDocument::parse(
+        "[**bold *italic***](https://example.com/nested)",
+        MarkdownSpec::Gfm,
+    );
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(spans.len(), 1);
+            match &spans[0] {
+                InlineSpan::Link { children, url } => {
+                    assert_eq!(url, "https://example.com/nested");
+                    assert_eq!(
+                        children,
+                        &[
+                            InlineSpan::Bold("bold ".to_string()),
+                            InlineSpan::Styled {
+                                text: "italic".to_string(),
+                                style: InlineStyle {
+                                    bold: true,
+                                    italic: true,
+                                    strike: false,
+                                },
+                            },
+                        ]
+                    );
+                }
+                _ => panic!("Expected Link span"),
+            }
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // 6. ~~[**bold link**](...)~~
+    let doc = MarkdownDocument::parse(
+        "~~[**bold link**](https://example.com/strike-bold)~~",
+        MarkdownSpec::Gfm,
+    );
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(spans.len(), 1);
+            match &spans[0] {
+                InlineSpan::Link { children, url } => {
+                    assert_eq!(url, "https://example.com/strike-bold");
+                    assert_eq!(
+                        children,
+                        &[InlineSpan::Styled {
+                            text: "bold link".to_string(),
+                            style: InlineStyle {
+                                bold: true,
+                                italic: false,
+                                strike: true,
+                            },
+                        }]
+                    );
+                }
+                _ => panic!("Expected Link span"),
+            }
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // 7. [prefix `code` suffix](...)
+    let doc = MarkdownDocument::parse(
+        "[prefix `code` suffix](https://example.com/mixed)",
+        MarkdownSpec::Gfm,
+    );
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(spans.len(), 1);
+            match &spans[0] {
+                InlineSpan::Link { children, url } => {
+                    assert_eq!(url, "https://example.com/mixed");
+                    assert_eq!(
+                        children,
+                        &[
+                            InlineSpan::Text("prefix ".to_string()),
+                            InlineSpan::Code("code".to_string()),
+                            InlineSpan::Text(" suffix".to_string()),
+                        ]
+                    );
+                }
+                _ => panic!("Expected Link span"),
+            }
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // ==================================================
+    // P2-2: Composite inline formatting
+    // ==================================================
+
+    // 1. **bold *italic***
+    let doc = MarkdownDocument::parse("**bold *italic***", MarkdownSpec::Gfm);
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(
+                spans,
+                &[
+                    InlineSpan::Bold("bold ".to_string()),
+                    InlineSpan::Styled {
+                        text: "italic".to_string(),
+                        style: InlineStyle {
+                            bold: true,
+                            italic: true,
+                            strike: false,
+                        },
+                    },
+                ]
+            );
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // 2. ***bold italic***
+    let doc = MarkdownDocument::parse("***bold italic***", MarkdownSpec::Gfm);
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(
+                spans,
+                &[InlineSpan::Styled {
+                    text: "bold italic".to_string(),
+                    style: InlineStyle {
+                        bold: true,
+                        italic: true,
+                        strike: false,
+                    },
+                }]
+            );
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // 3. ~~**bold strike**~~
+    let doc = MarkdownDocument::parse("~~**bold strike**~~", MarkdownSpec::Gfm);
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(
+                spans,
+                &[InlineSpan::Styled {
+                    text: "bold strike".to_string(),
+                    style: InlineStyle {
+                        bold: true,
+                        italic: false,
+                        strike: true,
+                    },
+                }]
+            );
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // 4. **~~bold strike~~**
+    let doc = MarkdownDocument::parse("**~~bold strike~~**", MarkdownSpec::Gfm);
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(
+                spans,
+                &[InlineSpan::Styled {
+                    text: "bold strike".to_string(),
+                    style: InlineStyle {
+                        bold: true,
+                        italic: false,
+                        strike: true,
+                    },
+                }]
+            );
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // 5. ***~~bold italic strike~~***
+    let doc = MarkdownDocument::parse("***~~bold italic strike~~***", MarkdownSpec::Gfm);
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(
+                spans,
+                &[InlineSpan::Styled {
+                    text: "bold italic strike".to_string(),
+                    style: InlineStyle {
+                        bold: true,
+                        italic: true,
+                        strike: true,
+                    },
+                }]
+            );
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // ==================================================
+    // P2-3: GFM Autolinks and boundary punctuation
+    // ==================================================
+
+    // 1. Angle bracket autolink
+    let doc = MarkdownDocument::parse("<https://example.com/angle>", MarkdownSpec::Gfm);
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(
+                spans,
+                &[InlineSpan::Link {
+                    children: vec![InlineSpan::Text("https://example.com/angle".to_string())],
+                    url: "https://example.com/angle".to_string(),
+                }]
+            );
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // 2. Bare autolink http://
+    let doc = MarkdownDocument::parse("Visit http://example.com for info", MarkdownSpec::Gfm);
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(spans[0], InlineSpan::Text("Visit ".to_string()));
+            assert_eq!(
+                spans[1],
+                InlineSpan::Link {
+                    children: vec![InlineSpan::Text("http://example.com".to_string())],
+                    url: "http://example.com".to_string(),
+                }
+            );
+            assert_eq!(spans[2], InlineSpan::Text(" for info".to_string()));
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // 3. Boundary punctuation: https://example.com/foo).
+    let doc = MarkdownDocument::parse("(see https://example.com/foo).", MarkdownSpec::Gfm);
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(spans[0], InlineSpan::Text("(see ".to_string()));
+            assert_eq!(
+                spans[1],
+                InlineSpan::Link {
+                    children: vec![InlineSpan::Text("https://example.com/foo".to_string())],
+                    url: "https://example.com/foo".to_string(),
+                }
+            );
+            assert_eq!(spans[2], InlineSpan::Text(").".to_string()));
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // 4. Boundary punctuation: comma and period
+    let doc = MarkdownDocument::parse(
+        "https://example.com/foo, then https://example.com/foo.",
+        MarkdownSpec::Gfm,
+    );
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(
+                spans[0],
+                InlineSpan::Link {
+                    children: vec![InlineSpan::Text("https://example.com/foo".to_string())],
+                    url: "https://example.com/foo".to_string(),
+                }
+            );
+            assert_eq!(spans[1], InlineSpan::Text(", then ".to_string()));
+            assert_eq!(
+                spans[2],
+                InlineSpan::Link {
+                    children: vec![InlineSpan::Text("https://example.com/foo".to_string())],
+                    url: "https://example.com/foo".to_string(),
+                }
+            );
+            assert_eq!(spans[3], InlineSpan::Text(".".to_string()));
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // ==================================================
+    // P2-4: GFM Task Lists
+    // ==================================================
+
+    let md_tasks = "- [ ] todo\n- [x] done";
+    let doc = MarkdownDocument::parse(md_tasks, MarkdownSpec::Gfm);
+    assert_eq!(doc.blocks.len(), 2);
+    match &doc.blocks[0] {
+        MarkdownBlock::ListItem {
+            depth,
+            spans,
+            task_status,
+            children,
+        } => {
+            assert_eq!(*depth, 0);
+            assert_eq!(*task_status, Some(false));
+            assert_eq!(spans_plain_text(spans), "todo");
+            assert!(children.is_empty());
+        }
+        _ => panic!("Expected ListItem 0"),
+    }
+    match &doc.blocks[1] {
+        MarkdownBlock::ListItem {
+            depth,
+            spans,
+            task_status,
+            children,
+        } => {
+            assert_eq!(*depth, 0);
+            assert_eq!(*task_status, Some(true));
+            assert_eq!(spans_plain_text(spans), "done");
+            assert!(children.is_empty());
+        }
+        _ => panic!("Expected ListItem 1"),
+    }
+
+    // Nested task list
+    let md_nested_tasks = "- [ ] parent\n  - [x] child";
+    let doc = MarkdownDocument::parse(md_nested_tasks, MarkdownSpec::Gfm);
+    assert_eq!(doc.blocks.len(), 2);
+    match &doc.blocks[0] {
+        MarkdownBlock::ListItem {
+            depth,
+            spans,
+            task_status,
+            ..
+        } => {
+            assert_eq!(*depth, 0);
+            assert_eq!(*task_status, Some(false));
+            assert_eq!(spans_plain_text(spans), "parent");
+        }
+        _ => panic!("Expected Parent task item"),
+    }
+    match &doc.blocks[1] {
+        MarkdownBlock::ListItem {
+            depth,
+            spans,
+            task_status,
+            ..
+        } => {
+            assert_eq!(*depth, 1);
+            assert_eq!(*task_status, Some(true));
+            assert_eq!(spans_plain_text(spans), "child");
+        }
+        _ => panic!("Expected Child task item"),
+    }
+
+    // ==================================================
+    // P2-5: Tables (Alignment, Escaped Pipe, Rich Inline)
+    // ==================================================
+
+    // 1. Table with alignments
+    let md_table = "| Left | Center | Right |\n| :--- | :---: | ---: |\n| A | B | C |";
+    let doc = MarkdownDocument::parse(md_table, MarkdownSpec::Gfm);
+    assert_eq!(doc.blocks.len(), 1);
+    match &doc.blocks[0] {
+        MarkdownBlock::Table(tbl) => {
+            assert_eq!(tbl.headers.len(), 3);
+            assert_eq!(
+                tbl.alignments,
+                vec![
+                    ColumnAlignment::Left,
+                    ColumnAlignment::Center,
+                    ColumnAlignment::Right,
+                ]
+            );
+            assert_eq!(tbl.rows.len(), 1);
+            assert_eq!(tbl.rows[0].len(), 3);
+            assert_eq!(spans_plain_text(&tbl.rows[0][0]), "A");
+            assert_eq!(spans_plain_text(&tbl.rows[0][1]), "B");
+            assert_eq!(spans_plain_text(&tbl.rows[0][2]), "C");
+        }
+        _ => panic!("Expected Table"),
+    }
+
+    // 2. Escaped pipe in cell
+    let md_table_pipe = "| A | B |\n| --- | --- |\n| foo \\| bar | baz |";
+    let doc = MarkdownDocument::parse(md_table_pipe, MarkdownSpec::Gfm);
+    match &doc.blocks[0] {
+        MarkdownBlock::Table(tbl) => {
+            assert_eq!(tbl.rows[0].len(), 2);
+            assert_eq!(spans_plain_text(&tbl.rows[0][0]), "foo | bar");
+            assert_eq!(spans_plain_text(&tbl.rows[0][1]), "baz");
+        }
+        _ => panic!("Expected Table with escaped pipe"),
+    }
+
+    // 3. Rich inline in table cells
+    let md_table_rich = "| Name | Description |\n| --- | --- |\n| **Bold** | *Italic* |";
+    let doc = MarkdownDocument::parse(md_table_rich, MarkdownSpec::Gfm);
+    match &doc.blocks[0] {
+        MarkdownBlock::Table(tbl) => {
+            assert_eq!(tbl.headers[0], vec![InlineSpan::Text("Name".to_string())]);
+            assert_eq!(
+                tbl.headers[1],
+                vec![InlineSpan::Text("Description".to_string())]
+            );
+            assert_eq!(tbl.rows[0][0], vec![InlineSpan::Bold("Bold".to_string())]);
+            assert_eq!(
+                tbl.rows[0][1],
+                vec![InlineSpan::Italic("Italic".to_string())]
+            );
+        }
+        _ => panic!("Expected Table with rich inline"),
+    }
+
+    // ==================================================
+    // P2-6: Footnotes (Multiple definitions, references, rich formatting)
+    // ==================================================
+
+    let md_footnotes =
+        "First[^1] and second[^2] and again[^1].\n\n[^1]: Note with **bold**.\n[^2]: Simple note.";
+    let doc = MarkdownDocument::parse(md_footnotes, MarkdownSpec::Gfm);
+    assert!(doc.blocks.len() >= 4);
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(spans[0], InlineSpan::Text("First".to_string()));
+            assert_eq!(
+                spans[1],
+                InlineSpan::Link {
+                    children: vec![InlineSpan::Text("[^1]".to_string())],
+                    url: "#fn-1".to_string(),
+                }
+            );
+            assert_eq!(spans[2], InlineSpan::Text(" and second".to_string()));
+            assert_eq!(
+                spans[3],
+                InlineSpan::Link {
+                    children: vec![InlineSpan::Text("[^2]".to_string())],
+                    url: "#fn-2".to_string(),
+                }
+            );
+            assert_eq!(spans[4], InlineSpan::Text(" and again".to_string()));
+            assert_eq!(
+                spans[5],
+                InlineSpan::Link {
+                    children: vec![InlineSpan::Text("[^1]".to_string())],
+                    url: "#fn-1".to_string(),
+                }
+            );
+        }
+        _ => panic!("Expected Paragraph with footnote references"),
+    }
+
+    let fn1 = doc
+        .blocks
+        .iter()
+        .find(|b| matches!(b, MarkdownBlock::Footnote { label, .. } if label == "1"));
+    assert!(fn1.is_some());
+    if let Some(MarkdownBlock::Footnote { spans, .. }) = fn1 {
+        assert_eq!(
+            spans,
+            &[
+                InlineSpan::Text("Note with ".to_string()),
+                InlineSpan::Bold("bold".to_string()),
+                InlineSpan::Text(".".to_string()),
+            ]
+        );
+    }
+    let fn2 = doc
+        .blocks
+        .iter()
+        .find(|b| matches!(b, MarkdownBlock::Footnote { label, .. } if label == "2"));
+    assert!(fn2.is_some());
+    if let Some(MarkdownBlock::Footnote { spans, .. }) = fn2 {
+        assert_eq!(spans, &[InlineSpan::Text("Simple note.".to_string())]);
+    }
+
+    // ==================================================
+    // P2-7: GitHub Alerts
+    // ==================================================
+
+    let alerts_md = "> [!NOTE]\n> Note content\n\n> [!TIP]\n> Tip content\n\n> [!WARNING]\n> Warning content\n\n> [!IMPORTANT]\n> Important content\n\n> [!CAUTION]\n> Caution content";
+    let doc = MarkdownDocument::parse(alerts_md, MarkdownSpec::Gfm);
+    assert_eq!(doc.blocks.len(), 5);
+    match &doc.blocks[0] {
+        MarkdownBlock::Alert { kind, spans } => {
+            assert_eq!(*kind, AlertKind::Note);
+            assert_eq!(spans, &[InlineSpan::Text("Note content".to_string())]);
+        }
+        _ => panic!("Expected Note Alert"),
+    }
+    match &doc.blocks[1] {
+        MarkdownBlock::Alert { kind, spans } => {
+            assert_eq!(*kind, AlertKind::Tip);
+            assert_eq!(spans, &[InlineSpan::Text("Tip content".to_string())]);
+        }
+        _ => panic!("Expected Tip Alert"),
+    }
+    match &doc.blocks[2] {
+        MarkdownBlock::Alert { kind, spans } => {
+            assert_eq!(*kind, AlertKind::Warning);
+            assert_eq!(spans, &[InlineSpan::Text("Warning content".to_string())]);
+        }
+        _ => panic!("Expected Warning Alert"),
+    }
+    match &doc.blocks[3] {
+        MarkdownBlock::Alert { kind, spans } => {
+            assert_eq!(*kind, AlertKind::Important);
+            assert_eq!(spans, &[InlineSpan::Text("Important content".to_string())]);
+        }
+        _ => panic!("Expected Important Alert"),
+    }
+    match &doc.blocks[4] {
+        MarkdownBlock::Alert { kind, spans } => {
+            assert_eq!(*kind, AlertKind::Caution);
+            assert_eq!(spans, &[InlineSpan::Text("Caution content".to_string())]);
+        }
+        _ => panic!("Expected Caution Alert"),
+    }
+
+    // Nested alert in blockquote
+    let nested_alert_md = "> Outer quote\n> > [!WARNING]\n> > Inner warning";
+    let doc = MarkdownDocument::parse(nested_alert_md, MarkdownSpec::Gfm);
+    match &doc.blocks[0] {
+        MarkdownBlock::BlockQuote(inner) => {
+            assert_eq!(inner.len(), 2);
+            match &inner[1] {
+                MarkdownBlock::Alert { kind, spans } => {
+                    assert_eq!(*kind, AlertKind::Warning);
+                    assert_eq!(spans, &[InlineSpan::Text("Inner warning".to_string())]);
+                }
+                _ => panic!("Expected nested Alert"),
+            }
+        }
+        _ => panic!("Expected outer BlockQuote"),
+    }
+
+    // ==================================================
+    // P2-8: Safe HTML fallback (br, img, tag stripping)
+    // ==================================================
+
+    let html_md = "<p>First line<br/>Second line</p><img src=\"https://example.com/test.png\" alt=\"An image\" />";
+    let doc = MarkdownDocument::parse(html_md, MarkdownSpec::Gfm);
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert!(spans.contains(&InlineSpan::Text("First line\nSecond line".to_string())));
+            assert!(spans.contains(&InlineSpan::ImageFallback {
+                alt: "An image".to_string(),
+                url: "https://example.com/test.png".to_string(),
+            }));
+        }
+        _ => panic!("Expected Paragraph with HTML fallback"),
+    }
+
+    // ==================================================
+    // P2-9: GFM Image Syntax (ImageFallback with zero network fetch)
+    // ==================================================
+
+    let image_md = "![alt text](https://example.com/logo.png)";
+    let doc = MarkdownDocument::parse(image_md, MarkdownSpec::Gfm);
+    match &doc.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(spans.len(), 1);
+            assert_eq!(
+                spans[0],
+                InlineSpan::ImageFallback {
+                    alt: "alt text".to_string(),
+                    url: "https://example.com/logo.png".to_string(),
+                }
+            );
+        }
+        _ => panic!("Expected Paragraph with ImageFallback"),
+    }
+}
+
+#[test]
+fn test_p3_comprehensive_semantic_regression_matrix() {
+    use rooney::config::MarkdownSpec;
+    use rooney::markdown::inline::{spans_plain_text, InlineSpan, InlineStyle};
+    use rooney::markdown::parser::{AlertKind, MarkdownBlock, MarkdownDocument};
+    use rooney::ui::markdown_view::measure_spans_width;
+
+    // 1. Nested list
+    let md1 = "- Parent\n  - Child 1\n  - Child 2";
+    let doc1 = MarkdownDocument::parse(md1, MarkdownSpec::Gfm);
+    assert_eq!(doc1.blocks.len(), 3);
+    match (&doc1.blocks[0], &doc1.blocks[1], &doc1.blocks[2]) {
+        (
+            MarkdownBlock::ListItem {
+                depth: d0,
+                spans: s0,
+                ..
+            },
+            MarkdownBlock::ListItem {
+                depth: d1,
+                spans: s1,
+                ..
+            },
+            MarkdownBlock::ListItem {
+                depth: d2,
+                spans: s2,
+                ..
+            },
+        ) => {
+            assert_eq!(*d0, 0);
+            assert_eq!(spans_plain_text(s0), "Parent");
+            assert_eq!(*d1, 1);
+            assert_eq!(spans_plain_text(s1), "Child 1");
+            assert_eq!(*d2, 1);
+            assert_eq!(spans_plain_text(s2), "Child 2");
+        }
+        _ => panic!("Expected child ListItems"),
+    }
+
+    // 2. Nested list + continuation
+    let md2 = "- Parent\n  - Child\n\n  continuation text";
+    let doc2 = MarkdownDocument::parse(md2, MarkdownSpec::Gfm);
+    assert_eq!(doc2.blocks.len(), 2);
+    match (&doc2.blocks[0], &doc2.blocks[1]) {
+        (
+            MarkdownBlock::ListItem {
+                depth: d0,
+                spans: s0,
+                ..
+            },
+            MarkdownBlock::ListItem {
+                depth: d1,
+                spans: s1,
+                ..
+            },
+        ) => {
+            assert_eq!(*d0, 0);
+            let text = spans_plain_text(s0);
+            assert!(text.contains("Parent") && text.contains("continuation text"));
+            assert_eq!(*d1, 1);
+            assert_eq!(spans_plain_text(s1), "Child");
+        }
+        _ => panic!("Expected Parent ListItem with continuation"),
+    }
+
+    // 3. Blockquote + list
+    let md3 = "> - Quoted item 1\n> - Quoted item 2";
+    let doc3 = MarkdownDocument::parse(md3, MarkdownSpec::Gfm);
+    assert_eq!(doc3.blocks.len(), 1);
+    match &doc3.blocks[0] {
+        MarkdownBlock::BlockQuote(inner) => {
+            assert_eq!(inner.len(), 2);
+            match (&inner[0], &inner[1]) {
+                (
+                    MarkdownBlock::ListItem {
+                        depth: d1,
+                        spans: s1,
+                        ..
+                    },
+                    MarkdownBlock::ListItem {
+                        depth: d2,
+                        spans: s2,
+                        ..
+                    },
+                ) => {
+                    assert_eq!(*d1, 0);
+                    assert_eq!(spans_plain_text(s1), "Quoted item 1");
+                    assert_eq!(*d2, 0);
+                    assert_eq!(spans_plain_text(s2), "Quoted item 2");
+                }
+                _ => panic!("Expected ListItems in BlockQuote"),
+            }
+        }
+        _ => panic!("Expected BlockQuote"),
+    }
+
+    // 4. List + code block
+    let md4 = "- Item with code:\n\n  ```rust\n  let x = 1;\n  ```";
+    let doc4 = MarkdownDocument::parse(md4, MarkdownSpec::Gfm);
+    assert_eq!(doc4.blocks.len(), 1);
+    match &doc4.blocks[0] {
+        MarkdownBlock::ListItem {
+            depth,
+            spans,
+            children,
+            ..
+        } => {
+            assert_eq!(*depth, 0);
+            assert_eq!(spans_plain_text(spans), "Item with code:");
+            assert_eq!(children.len(), 1);
+            match &children[0] {
+                MarkdownBlock::CodeBlock { lang, code } => {
+                    assert_eq!(lang, "rust");
+                    assert!(code.contains("let x = 1;"));
+                }
+                _ => panic!("Expected CodeBlock child"),
+            }
+        }
+        _ => panic!("Expected ListItem"),
+    }
+
+    // 5. List + nested list + code
+    let md5 = "- Top level\n  - Sub item\n\n    ```python\n    print(\"nested\")\n    ```";
+    let doc5 = MarkdownDocument::parse(md5, MarkdownSpec::Gfm);
+    assert_eq!(doc5.blocks.len(), 2);
+    match (&doc5.blocks[0], &doc5.blocks[1]) {
+        (
+            MarkdownBlock::ListItem {
+                depth: d0,
+                spans: s0,
+                ..
+            },
+            MarkdownBlock::ListItem {
+                depth: d1,
+                spans: s1,
+                children: c1,
+                ..
+            },
+        ) => {
+            assert_eq!(*d0, 0);
+            assert_eq!(spans_plain_text(s0), "Top level");
+            assert_eq!(*d1, 1);
+            assert_eq!(spans_plain_text(s1), "Sub item");
+            assert_eq!(c1.len(), 1);
+            match &c1[0] {
+                MarkdownBlock::CodeBlock { lang, code } => {
+                    assert_eq!(lang, "python");
+                    assert!(code.contains("print(\"nested\")"));
+                }
+                _ => panic!("Expected nested Python CodeBlock"),
+            }
+        }
+        _ => panic!("Expected Top level ListItem"),
+    }
+
+    // 6. Nested inline formatting
+    let md6 = "**bold and *bold-italic* and ~~bold-strike~~**";
+    let doc6 = MarkdownDocument::parse(md6, MarkdownSpec::Gfm);
+    match &doc6.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(
+                spans,
+                &[
+                    InlineSpan::Bold("bold and ".to_string()),
+                    InlineSpan::Styled {
+                        text: "bold-italic".to_string(),
+                        style: InlineStyle {
+                            bold: true,
+                            italic: true,
+                            strike: false
+                        },
+                    },
+                    InlineSpan::Bold(" and ".to_string()),
+                    InlineSpan::Styled {
+                        text: "bold-strike".to_string(),
+                        style: InlineStyle {
+                            bold: true,
+                            italic: false,
+                            strike: true
+                        },
+                    },
+                ]
+            );
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // 7. Nested formatting + link
+    let md7 =
+        "~~[*italic link*](https://example.com/1) and [**bold link**](https://example.com/2)~~";
+    let doc7 = MarkdownDocument::parse(md7, MarkdownSpec::Gfm);
+    match &doc7.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(spans.len(), 3);
+            match (&spans[0], &spans[1], &spans[2]) {
+                (
+                    InlineSpan::Link {
+                        children: c1,
+                        url: u1,
+                    },
+                    InlineSpan::Strikethrough(mid),
+                    InlineSpan::Link {
+                        children: c2,
+                        url: u2,
+                    },
+                ) => {
+                    assert_eq!(u1, "https://example.com/1");
+                    assert_eq!(
+                        c1,
+                        &[InlineSpan::Styled {
+                            text: "italic link".to_string(),
+                            style: InlineStyle {
+                                bold: false,
+                                italic: true,
+                                strike: true
+                            },
+                        }]
+                    );
+                    assert_eq!(mid, " and ");
+                    assert_eq!(u2, "https://example.com/2");
+                    assert_eq!(
+                        c2,
+                        &[InlineSpan::Styled {
+                            text: "bold link".to_string(),
+                            style: InlineStyle {
+                                bold: true,
+                                italic: false,
+                                strike: true
+                            },
+                        }]
+                    );
+                }
+                _ => panic!("Expected Link spans with strike combination"),
+            }
+        }
+        _ => panic!("Expected Paragraph"),
+    }
+
+    // 8. Task list + nesting
+    let md8 = "- [ ] Todo parent\n  - [x] Done child";
+    let doc8 = MarkdownDocument::parse(md8, MarkdownSpec::Gfm);
+    assert_eq!(doc8.blocks.len(), 2);
+    match (&doc8.blocks[0], &doc8.blocks[1]) {
+        (
+            MarkdownBlock::ListItem {
+                depth: d0,
+                spans: s0,
+                task_status: ts0,
+                ..
+            },
+            MarkdownBlock::ListItem {
+                depth: d1,
+                spans: s1,
+                task_status: ts1,
+                ..
+            },
+        ) => {
+            assert_eq!(*d0, 0);
+            assert_eq!(*ts0, Some(false));
+            assert_eq!(spans_plain_text(s0), "Todo parent");
+            assert_eq!(*d1, 1);
+            assert_eq!(*ts1, Some(true));
+            assert_eq!(spans_plain_text(s1), "Done child");
+        }
+        _ => panic!("Expected Task ListItems"),
+    }
+
+    // 9. Table + rich inline
+    let md9 = "| Heading **1** | Heading *2* |\n| --- | --- |\n| `code` | ~~strike~~ |";
+    let doc9 = MarkdownDocument::parse(md9, MarkdownSpec::Gfm);
+    match &doc9.blocks[0] {
+        MarkdownBlock::Table(tbl) => {
+            assert_eq!(
+                tbl.headers[0],
+                vec![
+                    InlineSpan::Text("Heading ".to_string()),
+                    InlineSpan::Bold("1".to_string())
+                ]
+            );
+            assert_eq!(
+                tbl.headers[1],
+                vec![
+                    InlineSpan::Text("Heading ".to_string()),
+                    InlineSpan::Italic("2".to_string())
+                ]
+            );
+            assert_eq!(tbl.rows[0][0], vec![InlineSpan::Code("code".to_string())]);
+            assert_eq!(
+                tbl.rows[0][1],
+                vec![InlineSpan::Strikethrough("strike".to_string())]
+            );
+        }
+        _ => panic!("Expected Table"),
+    }
+
+    // 10. Table + Japanese
+    let md10 = "| 項目 | 値 |\n| --- | --- |\n| こんにちは世界 | 日本語テキスト |";
+    let doc10 = MarkdownDocument::parse(md10, MarkdownSpec::Gfm);
+    match &doc10.blocks[0] {
+        MarkdownBlock::Table(tbl) => {
+            assert_eq!(spans_plain_text(&tbl.headers[0]), "項目");
+            assert_eq!(spans_plain_text(&tbl.headers[1]), "値");
+            assert_eq!(spans_plain_text(&tbl.rows[0][0]), "こんにちは世界");
+            assert_eq!(spans_plain_text(&tbl.rows[0][1]), "日本語テキスト");
+        }
+        _ => panic!("Expected Table"),
+    }
+
+    // 11. Table + mixed script
+    let md11 = "| English / 日本語 | Value (123) |\n| --- | --- |\n| Code `fn main()` 日本語 | $100 & **50%** |";
+    let doc11 = MarkdownDocument::parse(md11, MarkdownSpec::Gfm);
+    match &doc11.blocks[0] {
+        MarkdownBlock::Table(tbl) => {
+            assert_eq!(spans_plain_text(&tbl.headers[0]), "English / 日本語");
+            assert_eq!(
+                tbl.rows[0][0],
+                vec![
+                    InlineSpan::Text("Code ".to_string()),
+                    InlineSpan::Code("fn main()".to_string()),
+                    InlineSpan::Text(" 日本語".to_string()),
+                ]
+            );
+            assert_eq!(
+                tbl.rows[0][1],
+                vec![
+                    InlineSpan::Text("$100 & ".to_string()),
+                    InlineSpan::Bold("50%".to_string()),
+                ]
+            );
+            // Verify metrics width calculation for mixed script
+            let w = measure_spans_width(&tbl.rows[0][0], 12.0, "monospace");
+            assert!(
+                w > 100.0,
+                "Measured mixed script advance must be positive and non-zero"
+            );
+        }
+        _ => panic!("Expected Table"),
+    }
+
+    // 12. Footnote + inline formatting
+    let md12 = "Text with note[^note].\n\n[^note]: Note with **bold** and `code`.";
+    let doc12 = MarkdownDocument::parse(md12, MarkdownSpec::Gfm);
+    let fn_block = doc12
+        .blocks
+        .iter()
+        .find(|b| matches!(b, MarkdownBlock::Footnote { label, .. } if label == "note"));
+    assert!(fn_block.is_some());
+    if let Some(MarkdownBlock::Footnote { spans, .. }) = fn_block {
+        assert_eq!(
+            spans,
+            &[
+                InlineSpan::Text("Note with ".to_string()),
+                InlineSpan::Bold("bold".to_string()),
+                InlineSpan::Text(" and ".to_string()),
+                InlineSpan::Code("code".to_string()),
+                InlineSpan::Text(".".to_string()),
+            ]
+        );
+    }
+
+    // 13. Alert + inline formatting
+    let md13 = "> [!WARNING]\n> **Caution!** Do not use `eval()`.";
+    let doc13 = MarkdownDocument::parse(md13, MarkdownSpec::Gfm);
+    match &doc13.blocks[0] {
+        MarkdownBlock::Alert { kind, spans } => {
+            assert_eq!(*kind, AlertKind::Warning);
+            assert_eq!(
+                spans,
+                &[
+                    InlineSpan::Bold("Caution!".to_string()),
+                    InlineSpan::Text(" Do not use ".to_string()),
+                    InlineSpan::Code("eval()".to_string()),
+                    InlineSpan::Text(".".to_string()),
+                ]
+            );
+        }
+        _ => panic!("Expected Alert"),
+    }
+
+    // 14. Image fallback
+    let md14 = "![Architecture Diagram](https://example.com/arch.png)";
+    let doc14 = MarkdownDocument::parse(md14, MarkdownSpec::Gfm);
+    match &doc14.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(
+                spans,
+                &[InlineSpan::ImageFallback {
+                    alt: "Architecture Diagram".to_string(),
+                    url: "https://example.com/arch.png".to_string(),
+                }]
+            );
+        }
+        _ => panic!("Expected Paragraph with ImageFallback"),
+    }
+
+    // 15. HTML fallback
+    let md15 = "<p>First<br/>Second</p><img src=\"test.png\" alt=\"Fallback Image\" />";
+    let doc15 = MarkdownDocument::parse(md15, MarkdownSpec::Gfm);
+    match &doc15.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert!(spans.contains(&InlineSpan::Text("First\nSecond".to_string())));
+            assert!(spans.contains(&InlineSpan::ImageFallback {
+                alt: "Fallback Image".to_string(),
+                url: "test.png".to_string(),
+            }));
+        }
+        _ => panic!("Expected Paragraph with HTML fallback"),
+    }
+
+    // 16. Autolink
+    let md16 = "Visit <https://example.com> and bare https://example.com/doc.";
+    let doc16 = MarkdownDocument::parse(md16, MarkdownSpec::Gfm);
+    match &doc16.blocks[0] {
+        MarkdownBlock::Paragraph(spans) => {
+            assert_eq!(spans[0], InlineSpan::Text("Visit ".to_string()));
+            assert_eq!(
+                spans[1],
+                InlineSpan::Link {
+                    children: vec![InlineSpan::Text("https://example.com".to_string())],
+                    url: "https://example.com".to_string(),
+                }
+            );
+            assert_eq!(spans[2], InlineSpan::Text(" and bare ".to_string()));
+            assert_eq!(
+                spans[3],
+                InlineSpan::Link {
+                    children: vec![InlineSpan::Text("https://example.com/doc".to_string())],
+                    url: "https://example.com/doc".to_string(),
+                }
+            );
+            assert_eq!(spans[4], InlineSpan::Text(".".to_string()));
+        }
+        _ => panic!("Expected Paragraph with autolinks"),
+    }
+}

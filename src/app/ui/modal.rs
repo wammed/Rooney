@@ -259,15 +259,19 @@ impl App {
             .push(
                 row::with_capacity(2)
                     .push(
-                        text::title3(" Delete Item")
-                            .class(cosmic::theme::Text::Color(cosmic::iced::Color::from_rgb(0.95, 0.35, 0.35))),
+                        text::title3(" Delete Item").class(cosmic::theme::Text::Color(
+                            cosmic::iced::Color::from_rgb(0.95, 0.35, 0.35),
+                        )),
                     )
                     .align_y(Alignment::Center),
             )
             .push(
-                text(format!("Are you sure you want to permanently delete '{}'?", item_name))
-                    .size(13.0)
-                    .class(cosmic::theme::Text::Color(theme.config.fg)),
+                text(format!(
+                    "Are you sure you want to permanently delete '{}'?",
+                    item_name
+                ))
+                .size(13.0)
+                .class(cosmic::theme::Text::Color(theme.config.fg)),
             )
             .push(
                 text("This operation cannot be undone.")
@@ -335,12 +339,8 @@ impl App {
                     .class(cosmic::theme::Text::Color(theme.config.fg)),
             )
             .push(
-                dropdown(
-                    &self.theme_names,
-                    Some(cur_theme_idx),
-                    Message::SelectTheme,
-                )
-                .width(Length::Fill),
+                dropdown(&self.theme_names, Some(cur_theme_idx), Message::SelectTheme)
+                    .width(Length::Fill),
             )
             .push(
                 text("Editor Font (Nerd Font):")
@@ -348,12 +348,8 @@ impl App {
                     .class(cosmic::theme::Text::Color(theme.config.fg)),
             )
             .push(
-                dropdown(
-                    &self.font_names,
-                    Some(cur_font_idx),
-                    Message::SelectFont,
-                )
-                .width(Length::Fill),
+                dropdown(&self.font_names, Some(cur_font_idx), Message::SelectFont)
+                    .width(Length::Fill),
             )
             .push(
                 row::with_capacity(3)
@@ -384,10 +380,7 @@ impl App {
                 .size(12.5)
                 .class(cosmic::theme::Text::Color(theme.config.fg)),
             )
-            .push(
-                slider(0.1..=1.0_f32, self.theme.opacity, Message::ChangeOpacity)
-                    .step(0.05_f32),
-            )
+            .push(slider(0.1..=1.0_f32, self.theme.opacity, Message::ChangeOpacity).step(0.05_f32))
             .push(
                 text(format!(
                     "File Tree Opacity: {:.0}%",
@@ -397,8 +390,12 @@ impl App {
                 .class(cosmic::theme::Text::Color(theme.config.fg)),
             )
             .push(
-                slider(0.0..=1.0_f32, self.theme.file_tree_opacity, Message::ChangeFileTreeOpacity)
-                    .step(0.05_f32),
+                slider(
+                    0.0..=1.0_f32,
+                    self.theme.file_tree_opacity,
+                    Message::ChangeFileTreeOpacity,
+                )
+                .step(0.05_f32),
             )
             .push(
                 text(format!(
@@ -409,8 +406,12 @@ impl App {
                 .class(cosmic::theme::Text::Color(theme.config.fg)),
             )
             .push(
-                slider(0.0..=1.0_f32, self.theme.title_bar_opacity, Message::ChangeTitleBarOpacity)
-                    .step(0.05_f32),
+                slider(
+                    0.0..=1.0_f32,
+                    self.theme.title_bar_opacity,
+                    Message::ChangeTitleBarOpacity,
+                )
+                .step(0.05_f32),
             )
             .push(
                 text(format!(
@@ -420,10 +421,7 @@ impl App {
                 .size(12.5)
                 .class(cosmic::theme::Text::Color(theme.config.fg)),
             )
-            .push(
-                slider(0.0..=1.0_f32, self.theme.dimming, Message::ChangeDimming)
-                    .step(0.05_f32),
-            )
+            .push(slider(0.0..=1.0_f32, self.theme.dimming, Message::ChangeDimming).step(0.05_f32))
             .push(
                 text("Local AI Model (Ollama):")
                     .size(12.5)
@@ -444,8 +442,17 @@ impl App {
             )
             .push(
                 dropdown(
-                    &["GFM (GitHub Flavored - Recommended)", "CommonMark (Standard)"],
-                    Some(if self.config.markdown_spec == crate::config::MarkdownSpec::Gfm { 0 } else { 1 }),
+                    &[
+                        "GFM (GitHub Flavored - Recommended)",
+                        "CommonMark (Standard)",
+                    ],
+                    Some(
+                        if self.config.markdown_spec == crate::config::MarkdownSpec::Gfm {
+                            0
+                        } else {
+                            1
+                        },
+                    ),
                     Message::SelectMarkdownSpec,
                 )
                 .width(Length::Fill),

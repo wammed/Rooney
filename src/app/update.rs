@@ -2,8 +2,8 @@ use crate::ai::AiStatus;
 use crate::app::message::Message;
 use crate::app::App;
 use crate::editor::SplitLayout;
-use crate::ui::file_tree_view::FileTreeMessage;
 use crate::theme::themes::ThemeId;
+use crate::ui::file_tree_view::FileTreeMessage;
 use cosmic::app::Task;
 use cosmic::ApplicationExt;
 use std::path::Path;
@@ -99,11 +99,16 @@ impl App {
                                 async_tasks.push(Task::perform(
                                     async move {
                                         tokio::task::spawn_blocking(move || {
-                                            let matches = crate::editor::pane::run_search_on_rope(&rope_clone, &query);
+                                            let matches = crate::editor::pane::run_search_on_rope(
+                                                &rope_clone,
+                                                &query,
+                                            );
                                             (pane_id, tab_id, generation, matches)
                                         })
                                         .await
-                                        .unwrap_or_else(|_| (pane_id, tab_id, generation, Vec::new()))
+                                        .unwrap_or_else(
+                                            |_| (pane_id, tab_id, generation, Vec::new()),
+                                        )
                                     },
                                     |(pane_id, tab_id, generation, matches)| {
                                         cosmic::Action::App(Message::SearchCompleted {
@@ -138,7 +143,8 @@ impl App {
                         pane.is_parsing_async = true;
                         let rope_clone = pane.buffer.rope.clone();
                         let lang = pane.highlighter.lang;
-                        let is_md_preview = pane.is_markdown_preview && lang == crate::syntax::SupportedLanguage::Markdown;
+                        let is_md_preview = pane.is_markdown_preview
+                            && lang == crate::syntax::SupportedLanguage::Markdown;
                         let md_spec = pane.markdown_spec;
                         let md_gen = pane.markdown_generation;
                         let parse_gen = pane.parse_generation;
@@ -174,11 +180,20 @@ impl App {
                                 async move {
                                     tokio::task::spawn_blocking(move || {
                                         let text = rope_clone_md.to_string();
-                                        let doc = crate::markdown::MarkdownDocument::parse(&text, md_spec);
+                                        let doc = crate::markdown::MarkdownDocument::parse(
+                                            &text, md_spec,
+                                        );
                                         (pane_id, tab_id, md_gen, doc)
                                     })
                                     .await
-                                    .unwrap_or_else(|_| (pane_id, tab_id, md_gen, crate::markdown::MarkdownDocument::parse("", md_spec)))
+                                    .unwrap_or_else(|_| {
+                                        (
+                                            pane_id,
+                                            tab_id,
+                                            md_gen,
+                                            crate::markdown::MarkdownDocument::parse("", md_spec),
+                                        )
+                                    })
                                 },
                                 |(pane_id, tab_id, md_gen, doc)| {
                                     cosmic::Action::App(Message::MarkdownParseCompleted {
@@ -196,7 +211,6 @@ impl App {
                     return Task::batch(async_tasks);
                 }
 
-
                 let pane = self.current_pane();
                 let elapsed = pane.last_edit_time.elapsed();
 
@@ -210,7 +224,6 @@ impl App {
                 }
                 Task::none()
             }
-
 
             Message::Event(event) => self.handle_key_event(event),
 
@@ -318,9 +331,9 @@ impl App {
                 Task::none()
             }
 
-            Message::ToggleEditMenu => {
-                self.handle_update(Message::ToggleHeaderMenu(crate::app::message::ActiveHeaderMenu::Edit))
-            }
+            Message::ToggleEditMenu => self.handle_update(Message::ToggleHeaderMenu(
+                crate::app::message::ActiveHeaderMenu::Edit,
+            )),
 
             Message::CloseEditMenu => {
                 self.active_header_menu = None;
@@ -466,7 +479,7 @@ impl App {
                         Task::none()
                     }
                 }
-            },
+            }
 
             Message::ToggleSplit => {
                 self.split_layout = match self.split_layout {
@@ -503,7 +516,8 @@ impl App {
                     if pane.buffer.len_bytes() <= SYNC_MD_MAX_BYTES {
                         let text = pane.buffer.full_text();
                         let spec = pane.markdown_spec;
-                        pane.markdown_doc = Some(crate::markdown::MarkdownDocument::parse(&text, spec));
+                        pane.markdown_doc =
+                            Some(crate::markdown::MarkdownDocument::parse(&text, spec));
                         Task::none()
                     } else {
                         let generation = pane.markdown_generation;
@@ -562,7 +576,8 @@ impl App {
                                 async move {
                                     tokio::task::spawn_blocking(move || {
                                         let text = rope_clone.to_string();
-                                        let doc = crate::markdown::MarkdownDocument::parse(&text, spec);
+                                        let doc =
+                                            crate::markdown::MarkdownDocument::parse(&text, spec);
                                         (pane_id, tab_id, generation, doc)
                                     })
                                     .await
@@ -632,7 +647,6 @@ impl App {
                 self.save_config();
                 Task::none()
             }
-
 
             Message::ToggleAi => {
                 self.ollama.is_enabled = !self.ollama.is_enabled;
@@ -857,7 +871,8 @@ impl App {
             Message::ConfirmNewFile => {
                 let raw_name = self.new_file_name_input.trim();
                 if !is_valid_file_or_folder_name(raw_name) {
-                    self.status_msg = Some("Invalid file name: path separators and '..' are not allowed".into());
+                    self.status_msg =
+                        Some("Invalid file name: path separators and '..' are not allowed".into());
                     return Task::none();
                 }
 
@@ -958,7 +973,8 @@ impl App {
                     Task::perform(
                         async move {
                             tokio::task::spawn_blocking(move || {
-                                let matches = crate::editor::pane::run_search_on_rope(&rope_clone, &query);
+                                let matches =
+                                    crate::editor::pane::run_search_on_rope(&rope_clone, &query);
                                 (pane_id, tab_id, generation, matches)
                             })
                             .await
@@ -1077,7 +1093,9 @@ impl App {
             Message::ConfirmNewFolder => {
                 let raw_name = self.new_folder_name_input.trim();
                 if !is_valid_file_or_folder_name(raw_name) {
-                    self.status_msg = Some("Invalid folder name: path separators and '..' are not allowed".into());
+                    self.status_msg = Some(
+                        "Invalid folder name: path separators and '..' are not allowed".into(),
+                    );
                     return Task::none();
                 }
 
@@ -1120,7 +1138,8 @@ impl App {
             Message::ConfirmRename => {
                 let new_name = self.rename_name_input.trim().to_string();
                 if !is_valid_file_or_folder_name(&new_name) {
-                    self.status_msg = Some("Invalid name: path separators and '..' are not allowed".into());
+                    self.status_msg =
+                        Some("Invalid name: path separators and '..' are not allowed".into());
                     return Task::none();
                 }
 

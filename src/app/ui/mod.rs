@@ -33,20 +33,17 @@ impl App {
                     "Markdown document empty"
                 };
                 let bg_color = theme.background_with_alpha();
-                container(
-                    text(msg)
-                        .class(cosmic::theme::Text::Color(theme.config.fg)),
-                )
-                .padding(20)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .class(cosmic::theme::Container::Custom(Box::new(move |_| {
-                    container::Style {
-                        background: Some(bg_color.into()),
-                        ..Default::default()
-                    }
-                })))
-                .into()
+                container(text(msg).class(cosmic::theme::Text::Color(theme.config.fg)))
+                    .padding(20)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .class(cosmic::theme::Container::Custom(Box::new(move |_| {
+                        container::Style {
+                            background: Some(bg_color.into()),
+                            ..Default::default()
+                        }
+                    })))
+                    .into()
             }
         } else {
             let editor = EditorCanvas::new(
@@ -75,9 +72,7 @@ impl App {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        let left_pane_box = container(left_col)
-            .width(Length::Fill)
-            .height(Length::Fill);
+        let left_pane_box = container(left_col).width(Length::Fill).height(Length::Fill);
 
         // Editor area (Single or Split)
         let editor_area: Element<'_, Message> = if self.split_layout == SplitLayout::Split {
@@ -91,20 +86,17 @@ impl App {
                         "Markdown document empty"
                     };
                     let bg_color = theme.background_with_alpha();
-                    container(
-                        text(msg)
-                            .class(cosmic::theme::Text::Color(theme.config.fg)),
-                    )
-                    .padding(20)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .class(cosmic::theme::Container::Custom(Box::new(move |_| {
-                        container::Style {
-                            background: Some(bg_color.into()),
-                            ..Default::default()
-                        }
-                    })))
-                    .into()
+                    container(text(msg).class(cosmic::theme::Text::Color(theme.config.fg)))
+                        .padding(20)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .class(cosmic::theme::Container::Custom(Box::new(move |_| {
+                            container::Style {
+                                background: Some(bg_color.into()),
+                                ..Default::default()
+                            }
+                        })))
+                        .into()
                 }
             } else {
                 let editor = EditorCanvas::new(
@@ -147,11 +139,12 @@ impl App {
             left_pane_box.into()
         };
 
-        let mut main_row = row::with_capacity(3).width(Length::Fill).height(Length::Fill);
+        let mut main_row = row::with_capacity(3)
+            .width(Length::Fill)
+            .height(Length::Fill);
 
         if self.file_tree.is_visible {
-            let tree_view =
-                view_file_tree(&self.file_tree, theme, font_name, Message::FileTreeMsg);
+            let tree_view = view_file_tree(&self.file_tree, theme, font_name, Message::FileTreeMsg);
             main_row = main_row.push(tree_view);
             main_row = main_row.push(Space::new().width(Length::Fixed(2.0)));
         }
@@ -196,28 +189,27 @@ impl App {
             )
             .align_y(Alignment::Center);
 
-        let status_right = row::with_capacity(4)
-            .spacing(14)
-            .push(
-                text(format!("Ln {}, Col {}", cursor.0 + 1, cursor.1 + 1))
-                    .size(11.0)
-                    .class(cosmic::theme::Text::Color(theme.config.fg)),
-            )
-            .push(
-                text(format!("{} lines, {} chars", total_lines, total_chars))
-                    .size(11.0)
-                    .class(cosmic::theme::Text::Color(theme.config.comment)),
-            )
-            .push(
-                text(self.ai_status.display_text())
-                    .size(11.0)
-                    .class(cosmic::theme::Text::Color(if self.ollama.is_enabled {
+        let status_right =
+            row::with_capacity(4)
+                .spacing(14)
+                .push(
+                    text(format!("Ln {}, Col {}", cursor.0 + 1, cursor.1 + 1))
+                        .size(11.0)
+                        .class(cosmic::theme::Text::Color(theme.config.fg)),
+                )
+                .push(
+                    text(format!("{} lines, {} chars", total_lines, total_chars))
+                        .size(11.0)
+                        .class(cosmic::theme::Text::Color(theme.config.comment)),
+                )
+                .push(text(self.ai_status.display_text()).size(11.0).class(
+                    cosmic::theme::Text::Color(if self.ollama.is_enabled {
                         theme.config.accent
                     } else {
                         theme.config.comment
-                    })),
-            )
-            .align_y(Alignment::Center);
+                    }),
+                ))
+                .align_y(Alignment::Center);
 
         let status_bar = row::with_capacity(3)
             .push(status_left)

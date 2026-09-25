@@ -67,7 +67,8 @@ pub fn parse_path_or_uri(input: &str) -> Option<PathBuf> {
             }
         }
         // Fallback for non-standard file: URIs
-        let is_triple_slash = trimmed.starts_with("file:///") || trimmed.starts_with("file://localhost/");
+        let is_triple_slash =
+            trimmed.starts_with("file:///") || trimmed.starts_with("file://localhost/");
         let stripped = trimmed
             .strip_prefix("file://localhost/")
             .or_else(|| trimmed.strip_prefix("file:///"))

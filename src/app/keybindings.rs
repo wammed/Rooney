@@ -24,7 +24,10 @@ impl App {
                         pane.on_content_changed();
                         self.last_ime_commit = Instant::now();
                     }
-                    cosmic::iced::advanced::input_method::Event::Preedit(preedit_text, selection) => {
+                    cosmic::iced::advanced::input_method::Event::Preedit(
+                        preedit_text,
+                        selection,
+                    ) => {
                         let pane = self.current_pane_mut();
                         pane.clear_ghost_text();
                         if preedit_text.is_empty() {

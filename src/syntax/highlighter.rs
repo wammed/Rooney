@@ -103,9 +103,9 @@ impl SupportedLanguage {
             SupportedLanguage::Toml => Some(tree_sitter_toml_ng::LANGUAGE.into()),
             SupportedLanguage::Yaml => Some(tree_sitter_yaml::LANGUAGE.into()),
             SupportedLanguage::Json => Some(tree_sitter_json::LANGUAGE.into()),
-            SupportedLanguage::Ini
-            | SupportedLanguage::Markdown
-            | SupportedLanguage::PlainText => None,
+            SupportedLanguage::Ini | SupportedLanguage::Markdown | SupportedLanguage::PlainText => {
+                None
+            }
         }
     }
 
@@ -712,35 +712,32 @@ fn classify_node(lang: SupportedLanguage, node: &Node) -> Option<TokenType> {
 
     match lang {
         SupportedLanguage::Rust => match kind {
-            "fn" | "let" | "mut" | "struct" | "enum" | "impl" | "use" | "pub" | "crate"
-            | "mod" | "match" | "if" | "else" | "return" | "while" | "for" | "in"
-            | "loop" | "where" | "as" | "break" | "continue" | "self" | "super"
-            | "type" | "const" | "static" | "trait" | "async" | "await" | "unsafe" => {
-                Some(TokenType::Keyword)
-            }
+            "fn" | "let" | "mut" | "struct" | "enum" | "impl" | "use" | "pub" | "crate" | "mod"
+            | "match" | "if" | "else" | "return" | "while" | "for" | "in" | "loop" | "where"
+            | "as" | "break" | "continue" | "self" | "super" | "type" | "const" | "static"
+            | "trait" | "async" | "await" | "unsafe" => Some(TokenType::Keyword),
             "identifier"
-                if node
-                    .parent()
-                    .is_some_and(|p| p.kind() == "call_expression" || p.kind() == "function_item") =>
+                if node.parent().is_some_and(|p| {
+                    p.kind() == "call_expression" || p.kind() == "function_item"
+                }) =>
             {
                 Some(TokenType::Function)
             }
             "type_identifier" | "primitive_type" => Some(TokenType::TypeName),
-            "+" | "-" | "*" | "/" | "%" | "=" | "==" | "!=" | "<" | ">" | "<=" | ">="
-            | "&&" | "||" | "!" | "&" | "|" | "^" | "<<" | ">>" | "+=" | "-=" | "=>"
-            | "->" => Some(TokenType::Operator),
+            "+" | "-" | "*" | "/" | "%" | "=" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "&&"
+            | "||" | "!" | "&" | "|" | "^" | "<<" | ">>" | "+=" | "-=" | "=>" | "->" => {
+                Some(TokenType::Operator)
+            }
             "{" | "}" | "(" | ")" | "[" | "]" | ";" | ":" | "::" | "," | "." => {
                 Some(TokenType::Punctuation)
             }
             _ => None,
         },
         SupportedLanguage::Python => match kind {
-            "def" | "class" | "return" | "if" | "else" | "elif" | "for" | "while"
-            | "try" | "except" | "finally" | "with" | "as" | "import" | "from"
-            | "yield" | "async" | "await" | "lambda" | "pass" | "break" | "continue"
-            | "in" | "is" | "not" | "and" | "or" | "global" | "nonlocal" => {
-                Some(TokenType::Keyword)
-            }
+            "def" | "class" | "return" | "if" | "else" | "elif" | "for" | "while" | "try"
+            | "except" | "finally" | "with" | "as" | "import" | "from" | "yield" | "async"
+            | "await" | "lambda" | "pass" | "break" | "continue" | "in" | "is" | "not" | "and"
+            | "or" | "global" | "nonlocal" => Some(TokenType::Keyword),
             "identifier"
                 if node
                     .parent()
@@ -749,21 +746,17 @@ fn classify_node(lang: SupportedLanguage, node: &Node) -> Option<TokenType> {
                 Some(TokenType::Function)
             }
             "type" => Some(TokenType::TypeName),
-            "+" | "-" | "*" | "/" | "%" | "=" | "==" | "!=" | "<" | ">" | "<=" | ">="
-            | "->" | "+=" | "-=" | "*=" | "/=" => Some(TokenType::Operator),
-            "{" | "}" | "(" | ")" | "[" | "]" | ":" | "," | "." => {
-                Some(TokenType::Punctuation)
-            }
+            "+" | "-" | "*" | "/" | "%" | "=" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "->"
+            | "+=" | "-=" | "*=" | "/=" => Some(TokenType::Operator),
+            "{" | "}" | "(" | ")" | "[" | "]" | ":" | "," | "." => Some(TokenType::Punctuation),
             _ => None,
         },
         SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => match kind {
-            "function" | "const" | "let" | "var" | "return" | "if" | "else" | "for"
-            | "while" | "do" | "switch" | "case" | "default" | "break" | "continue"
-            | "import" | "from" | "export" | "class" | "extends" | "new" | "this"
-            | "super" | "try" | "catch" | "finally" | "throw" | "typeof" | "instanceof"
-            | "async" | "await" | "yield" | "type" | "interface" => {
-                Some(TokenType::Keyword)
-            }
+            "function" | "const" | "let" | "var" | "return" | "if" | "else" | "for" | "while"
+            | "do" | "switch" | "case" | "default" | "break" | "continue" | "import" | "from"
+            | "export" | "class" | "extends" | "new" | "this" | "super" | "try" | "catch"
+            | "finally" | "throw" | "typeof" | "instanceof" | "async" | "await" | "yield"
+            | "type" | "interface" => Some(TokenType::Keyword),
             "identifier"
                 if node.parent().is_some_and(|p| {
                     p.kind() == "call_expression"
@@ -774,21 +767,19 @@ fn classify_node(lang: SupportedLanguage, node: &Node) -> Option<TokenType> {
                 Some(TokenType::Function)
             }
             "type_identifier" | "predefined_type" => Some(TokenType::TypeName),
-            "+" | "-" | "*" | "/" | "%" | "=" | "==" | "===" | "!=" | "!==" | "<" | ">"
-            | "<=" | ">=" | "&&" | "||" | "!" | "=>" => Some(TokenType::Operator),
+            "+" | "-" | "*" | "/" | "%" | "=" | "==" | "===" | "!=" | "!==" | "<" | ">" | "<="
+            | ">=" | "&&" | "||" | "!" | "=>" => Some(TokenType::Operator),
             "{" | "}" | "(" | ")" | "[" | "]" | ";" | ":" | "," | "." => {
                 Some(TokenType::Punctuation)
             }
             _ => None,
         },
         SupportedLanguage::C | SupportedLanguage::Cpp => match kind {
-            "if" | "else" | "for" | "while" | "do" | "switch" | "case" | "default"
-            | "break" | "continue" | "return" | "goto" | "struct" | "union" | "enum"
-            | "typedef" | "sizeof" | "static" | "const" | "volatile" | "extern"
-            | "inline" | "class" | "namespace" | "template" | "public" | "private"
-            | "protected" | "virtual" | "override" | "new" | "delete" => {
-                Some(TokenType::Keyword)
-            }
+            "if" | "else" | "for" | "while" | "do" | "switch" | "case" | "default" | "break"
+            | "continue" | "return" | "goto" | "struct" | "union" | "enum" | "typedef"
+            | "sizeof" | "static" | "const" | "volatile" | "extern" | "inline" | "class"
+            | "namespace" | "template" | "public" | "private" | "protected" | "virtual"
+            | "override" | "new" | "delete" => Some(TokenType::Keyword),
             "primitive_type" | "type_identifier" => Some(TokenType::TypeName),
             "identifier"
                 if node.parent().is_some_and(|p| {
@@ -797,30 +788,24 @@ fn classify_node(lang: SupportedLanguage, node: &Node) -> Option<TokenType> {
             {
                 Some(TokenType::Function)
             }
-            "+" | "-" | "*" | "/" | "%" | "=" | "==" | "!=" | "<" | ">" | "<=" | ">="
-            | "&&" | "||" | "!" | "&" | "|" | "^" | "->" | "::" => {
-                Some(TokenType::Operator)
-            }
+            "+" | "-" | "*" | "/" | "%" | "=" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "&&"
+            | "||" | "!" | "&" | "|" | "^" | "->" | "::" => Some(TokenType::Operator),
             "{" | "}" | "(" | ")" | "[" | "]" | ";" | ":" | "," | "." => {
                 Some(TokenType::Punctuation)
             }
             _ => None,
         },
         SupportedLanguage::Bash => match kind {
-            "if" | "then" | "else" | "elif" | "fi" | "for" | "in" | "do" | "done"
-            | "while" | "until" | "case" | "esac" | "function" | "select" => {
-                Some(TokenType::Keyword)
-            }
+            "if" | "then" | "else" | "elif" | "fi" | "for" | "in" | "do" | "done" | "while"
+            | "until" | "case" | "esac" | "function" | "select" => Some(TokenType::Keyword),
             "command_name" => Some(TokenType::Function),
             "variable_name" => Some(TokenType::Variable),
-            "|" | "||" | "&&" | "&" | ">" | "<" | ">>" | "<<" | "=" => {
-                Some(TokenType::Operator)
-            }
+            "|" | "||" | "&&" | "&" | ">" | "<" | ">>" | "<<" | "=" => Some(TokenType::Operator),
             _ => None,
         },
         SupportedLanguage::Fish => match kind {
-            "function" | "end" | "if" | "else" | "for" | "in" | "while" | "switch"
-            | "case" | "and" | "or" | "not" | "set" | "return" | "break" | "continue" => {
+            "function" | "end" | "if" | "else" | "for" | "in" | "while" | "switch" | "case"
+            | "and" | "or" | "not" | "set" | "return" | "break" | "continue" => {
                 Some(TokenType::Keyword)
             }
             "word"

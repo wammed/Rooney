@@ -1,19 +1,19 @@
 use crate::app::Message;
 use crate::editor::pane::EditorPane;
 use crate::theme::EditorTheme;
+use crate::ui::wrap::{compute_line_subrows, LineWrapModel};
 use cosmic::iced::advanced::graphics::geometry::{
-    Frame, Path, Stroke, Text, Renderer as GeometryRenderer,
+    Frame, Path, Renderer as GeometryRenderer, Stroke, Text,
 };
-use cosmic::iced::widget::canvas::Geometry;
 use cosmic::iced::advanced::layout::{self, Layout};
 use cosmic::iced::advanced::renderer;
 use cosmic::iced::advanced::widget::tree::{self, Tree};
-use cosmic::iced::advanced::{Clipboard, InputMethod, Shell, Widget, Renderer};
+use cosmic::iced::advanced::{Clipboard, InputMethod, Renderer, Shell, Widget};
 use cosmic::iced::event::Event;
 use cosmic::iced::mouse;
+use cosmic::iced::widget::canvas::Geometry;
 use cosmic::iced::{Color, Element, Font, Length, Pixels, Point, Rectangle, Size, Vector};
 use unicode_width::UnicodeWidthChar;
-use crate::ui::wrap::{compute_line_subrows, LineWrapModel};
 
 fn intern_font_name(name: &str) -> &'static str {
     use std::collections::HashSet;
@@ -120,7 +120,12 @@ pub fn measure_glyph_advance(c: char, font_size: f32, font_name: &str) -> f32 {
         } else {
             Family::Name(font_name)
         };
-        buffer.set_text(&mut fs, str_slice, Attrs::new().family(family), Shaping::Advanced);
+        buffer.set_text(
+            &mut fs,
+            str_slice,
+            Attrs::new().family(family),
+            Shaping::Advanced,
+        );
         buffer.shape_until_scroll(&mut fs, false);
 
         let mut total_w = 0.0;
@@ -169,7 +174,6 @@ impl<'a> EditorCanvas<'a> {
     pub fn glyph_advance(&self, c: char) -> f32 {
         measure_glyph_advance(c, self.font_size, self.font_name)
     }
-
 
     pub fn new(
         pane: &'a EditorPane,
@@ -234,7 +238,11 @@ impl<'a> EditorCanvas<'a> {
             "JetBrainsMono Nerd Font" => "JetBrainsMono Nerd Font",
             _ => intern_font_name(self.font_name),
         };
-        let key = (avail_width.to_bits(), self.font_size.to_bits(), interned_font);
+        let key = (
+            avail_width.to_bits(),
+            self.font_size.to_bits(),
+            interned_font,
+        );
         if let Ok(guard) = self.pane.active_tab().cached_wrap_model.read() {
             if let Some((cached_key, ref model)) = *guard {
                 if cached_key == key {
@@ -284,7 +292,9 @@ impl<'a> EditorCanvas<'a> {
         let first_vrow = (scroll_y / self.line_height).floor().max(0.0) as usize;
         let visible_vcount = (bounds_height / self.line_height).ceil().max(1.0) as usize;
         let margin = 5;
-        let start_vrow = first_vrow.saturating_sub(margin).min(total_vrows.saturating_sub(1));
+        let start_vrow = first_vrow
+            .saturating_sub(margin)
+            .min(total_vrows.saturating_sub(1));
         let end_vrow = (first_vrow + visible_vcount + margin).min(total_vrows);
 
         let (start_line, _) = wrap_model.visual_row_to_line(start_vrow);
@@ -359,7 +369,11 @@ impl<'a> EditorCanvas<'a> {
         let mut pixel_offset = 0.0;
         let chars: Vec<char> = line_text.chars().collect();
         if cursor.1 > target_subrow_start {
-            for &ch in chars.iter().skip(target_subrow_start).take(cursor.1.saturating_sub(target_subrow_start)) {
+            for &ch in chars
+                .iter()
+                .skip(target_subrow_start)
+                .take(cursor.1.saturating_sub(target_subrow_start))
+            {
                 pixel_offset += self.glyph_advance(ch);
             }
         }
@@ -382,7 +396,9 @@ impl<'a> EditorCanvas<'a> {
             return (0, 0);
         }
 
-        let clicked_vrow = ((pos.y + self.pane.scroll_y.get()) / self.line_height).floor().max(0.0) as usize;
+        let clicked_vrow = ((pos.y + self.pane.scroll_y.get()) / self.line_height)
+            .floor()
+            .max(0.0) as usize;
         let clicked_vrow = clicked_vrow.min(total_vrows.saturating_sub(1));
 
         let (clicked_line, subrow_idx) = wrap_model.visual_row_to_line(clicked_vrow);
@@ -424,11 +440,7 @@ impl<'a> EditorCanvas<'a> {
         (clicked_line, chosen_col)
     }
 
-    pub fn draw_frame(
-        &self,
-        renderer: &cosmic::Renderer,
-        bounds: Rectangle,
-    ) -> Vec<Geometry> {
+    pub fn draw_frame(&self, renderer: &cosmic::Renderer, bounds: Rectangle) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
         let gutter = self.gutter_width();
         let buffer = &self.pane.buffer;
@@ -444,7 +456,11 @@ impl<'a> EditorCanvas<'a> {
             width: gutter,
             height: bounds.height,
         };
-        frame.fill_rectangle(gutter_rect.position(), gutter_rect.size(), self.theme.config.gutter_bg);
+        frame.fill_rectangle(
+            gutter_rect.position(),
+            gutter_rect.size(),
+            self.theme.config.gutter_bg,
+        );
 
         frame.stroke(
             &Path::line(Point::new(gutter, 0.0), Point::new(gutter, bounds.height)),
@@ -484,7 +500,8 @@ impl<'a> EditorCanvas<'a> {
         self.pane.scroll_y.set(cur_scroll_y);
         let cur_scroll_x = self.pane.scroll_x.get();
 
-        let visual_rows = self.build_viewport_visual_rows(bounds.width, cur_scroll_y, bounds.height);
+        let visual_rows =
+            self.build_viewport_visual_rows(bounds.width, cur_scroll_y, bounds.height);
 
         // 4. Current Line highlight
         for row in &visual_rows {
@@ -509,11 +526,12 @@ impl<'a> EditorCanvas<'a> {
         // 4.1 Draw Selection Highlight (if any text is selected)
         if let Some(anchor) = self.pane.buffer.selection_anchor {
             if anchor != buffer.cursor {
-                let (sel_start, sel_end) = if (buffer.cursor.0, buffer.cursor.1) < (anchor.0, anchor.1) {
-                    (buffer.cursor, anchor)
-                } else {
-                    (anchor, buffer.cursor)
-                };
+                let (sel_start, sel_end) =
+                    if (buffer.cursor.0, buffer.cursor.1) < (anchor.0, anchor.1) {
+                        (buffer.cursor, anchor)
+                    } else {
+                        (anchor, buffer.cursor)
+                    };
 
                 for row in &visual_rows {
                     let y = row.y - cur_scroll_y;
@@ -539,13 +557,21 @@ impl<'a> EditorCanvas<'a> {
                         if line_sel_start < line_sel_end {
                             let mut start_x_offset = 0.0;
                             if line_sel_start > row.char_start {
-                                for ch in line_text.chars().skip(row.char_start).take(line_sel_start - row.char_start) {
+                                for ch in line_text
+                                    .chars()
+                                    .skip(row.char_start)
+                                    .take(line_sel_start - row.char_start)
+                                {
                                     start_x_offset += self.glyph_advance(ch);
                                 }
                             }
 
                             let mut sel_w = 0.0;
-                            for ch in line_text.chars().skip(line_sel_start).take(line_sel_end - line_sel_start) {
+                            for ch in line_text
+                                .chars()
+                                .skip(line_sel_start)
+                                .take(line_sel_end - line_sel_start)
+                            {
                                 sel_w += self.glyph_advance(ch);
                             }
 
@@ -568,7 +594,9 @@ impl<'a> EditorCanvas<'a> {
 
         // 4.2 Draw Search Match Highlights
         if !self.pane.search_matches.is_empty() {
-            for (match_idx, &(m_line, m_start, m_end)) in self.pane.search_matches.iter().enumerate() {
+            for (match_idx, &(m_line, m_start, m_end)) in
+                self.pane.search_matches.iter().enumerate()
+            {
                 for row in &visual_rows {
                     let y = row.y - cur_scroll_y;
                     if y + self.line_height < 0.0 || y > bounds.height {
@@ -584,13 +612,21 @@ impl<'a> EditorCanvas<'a> {
 
                             let mut x_offset = 0.0;
                             if match_vis_start > row.char_start {
-                                for ch in line_text.chars().skip(row.char_start).take(match_vis_start - row.char_start) {
+                                for ch in line_text
+                                    .chars()
+                                    .skip(row.char_start)
+                                    .take(match_vis_start - row.char_start)
+                                {
                                     x_offset += self.glyph_advance(ch);
                                 }
                             }
 
                             let mut match_w = 0.0;
-                            for ch in line_text.chars().skip(match_vis_start).take(match_vis_end - match_vis_start) {
+                            for ch in line_text
+                                .chars()
+                                .skip(match_vis_start)
+                                .take(match_vis_end - match_vis_start)
+                            {
                                 match_w += self.glyph_advance(ch);
                             }
 
@@ -607,7 +643,11 @@ impl<'a> EditorCanvas<'a> {
                             } else {
                                 Color::from_rgba(1.0, 0.9, 0.3, 0.3)
                             };
-                            frame.fill_rectangle(match_rect.position(), match_rect.size(), match_color);
+                            frame.fill_rectangle(
+                                match_rect.position(),
+                                match_rect.size(),
+                                match_color,
+                            );
 
                             if is_current {
                                 frame.stroke(
@@ -656,15 +696,23 @@ impl<'a> EditorCanvas<'a> {
             if let Some(line_text) = buffer.line_text(row.line_idx) {
                 if row.char_start < row.char_end {
                     let sub_end = row.char_end;
-                    let spans = self.pane.highlighter.highlight_line(&line_text, row.line_idx);
+                    let spans = self
+                        .pane
+                        .highlighter
+                        .highlight_line(&line_text, row.line_idx);
 
                     let mut cur_col = row.char_start;
                     let mut cur_pixel_x = gutter + 10.0 - cur_scroll_x;
 
                     while cur_col < sub_end {
-                        let span = spans.iter().find(|s| s.start_col <= cur_col && cur_col < s.end_col);
+                        let span = spans
+                            .iter()
+                            .find(|s| s.start_col <= cur_col && cur_col < s.end_col);
                         let (token_end, token_color) = if let Some(s) = span {
-                            (s.end_col.min(sub_end), s.token_type.color(&self.theme.config))
+                            (
+                                s.end_col.min(sub_end),
+                                s.token_type.color(&self.theme.config),
+                            )
                         } else {
                             let next_start = spans
                                 .iter()
@@ -733,7 +781,10 @@ impl<'a> EditorCanvas<'a> {
                             frame.stroke(
                                 &Path::line(
                                     Point::new(preedit_x, cursor_pt.y + self.line_height - 1.0),
-                                    Point::new(preedit_x + preedit_w, cursor_pt.y + self.line_height - 1.0),
+                                    Point::new(
+                                        preedit_x + preedit_w,
+                                        cursor_pt.y + self.line_height - 1.0,
+                                    ),
                                 ),
                                 Stroke::default()
                                     .with_color(self.theme.config.accent)
@@ -741,7 +792,10 @@ impl<'a> EditorCanvas<'a> {
                             );
 
                             // The caret is placed at the end of the preedit (or selection)
-                            let sel_end = sel.as_ref().map(|r| r.end).unwrap_or(preedit_str.chars().count());
+                            let sel_end = sel
+                                .as_ref()
+                                .map(|r| r.end)
+                                .unwrap_or(preedit_str.chars().count());
                             let mut sel_w = 0.0;
                             for c in preedit_str.chars().take(sel_end) {
                                 sel_w += self.glyph_advance(c);
@@ -841,11 +895,7 @@ impl<'a> EditorCanvas<'a> {
                 width: scrollbar_width - 4.0,
                 height: thumb_height,
             };
-            frame.fill_rectangle(
-                thumb_rect.position(),
-                thumb_rect.size(),
-                thumb_color,
-            );
+            frame.fill_rectangle(thumb_rect.position(), thumb_rect.size(), thumb_color);
         }
 
         vec![frame.into_geometry()]
@@ -971,7 +1021,8 @@ impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
                             state.scrollbar_drag_offset_y = pos.y - thumb_y;
                         } else {
                             state.scrollbar_drag_offset_y = thumb_height / 2.0;
-                            let target_thumb_y = (pos.y - thumb_height / 2.0).clamp(0.0, max_thumb_y);
+                            let target_thumb_y =
+                                (pos.y - thumb_height / 2.0).clamp(0.0, max_thumb_y);
                             let new_scroll_y = if max_thumb_y > 0.0 {
                                 (target_thumb_y / max_thumb_y) * max_scroll
                             } else {
@@ -983,11 +1034,7 @@ impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
                     } else {
                         state.is_dragging = true;
                         let (target_line, target_col) = self.pos_to_char_coords(pos, bounds);
-                        shell.publish(Message::ClickPane(
-                            self.pane.id,
-                            target_line,
-                            target_col,
-                        ));
+                        shell.publish(Message::ClickPane(self.pane.id, target_line, target_col));
                         shell.capture_event();
                     }
                 }
@@ -997,14 +1044,17 @@ impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
                 if state.is_dragging_scrollbar {
                     if let Some(global_pos) = cursor.position() {
                         let rel_y = global_pos.y - bounds.y;
-                        let total_content_height = self.total_content_height_with_width(bounds.width);
+                        let total_content_height =
+                            self.total_content_height_with_width(bounds.width);
                         let max_scroll = (total_content_height - bounds.height).max(0.0);
                         if total_content_height > bounds.height && max_scroll > 0.0 {
-                            let thumb_height = ((bounds.height / total_content_height) * bounds.height)
+                            let thumb_height = ((bounds.height / total_content_height)
+                                * bounds.height)
                                 .max(28.0)
                                 .min(bounds.height);
                             let max_thumb_y = (bounds.height - thumb_height).max(0.0);
-                            let target_thumb_y = (rel_y - state.scrollbar_drag_offset_y).clamp(0.0, max_thumb_y);
+                            let target_thumb_y =
+                                (rel_y - state.scrollbar_drag_offset_y).clamp(0.0, max_thumb_y);
                             let new_scroll_y = if max_thumb_y > 0.0 {
                                 (target_thumb_y / max_thumb_y) * max_scroll
                             } else {
@@ -1022,7 +1072,8 @@ impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
                     } else if let Some(global_pos) = cursor.position() {
                         let clamped_x = (global_pos.x - bounds.x).clamp(0.0, bounds.width);
                         let clamped_y = (global_pos.y - bounds.y).clamp(0.0, bounds.height);
-                        let (line, col) = self.pos_to_char_coords(Point::new(clamped_x, clamped_y), bounds);
+                        let (line, col) =
+                            self.pos_to_char_coords(Point::new(clamped_x, clamped_y), bounds);
                         shell.publish(Message::DragSelect(self.pane.id, line, col));
                         shell.capture_event();
                     }
@@ -1085,14 +1136,11 @@ impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
 
         let layers = self.draw_frame(renderer, bounds);
         renderer.with_layer(bounds, |renderer| {
-            renderer.with_translation(
-                Vector::new(bounds.x, bounds.y),
-                |renderer| {
-                    for layer in layers {
-                        GeometryRenderer::draw_geometry(renderer, layer);
-                    }
-                },
-            );
+            renderer.with_translation(Vector::new(bounds.x, bounds.y), |renderer| {
+                for layer in layers {
+                    GeometryRenderer::draw_geometry(renderer, layer);
+                }
+            });
         });
     }
 }

@@ -27,7 +27,10 @@ impl LineWrapModel {
     }
 
     pub fn line_to_visual_row(&self, line_idx: usize) -> usize {
-        match self.wrapped_lines.binary_search_by_key(&line_idx, |w| w.line_idx) {
+        match self
+            .wrapped_lines
+            .binary_search_by_key(&line_idx, |w| w.line_idx)
+        {
             Ok(idx) => line_idx + self.wrapped_lines[idx].cum_extra_before,
             Err(idx) => {
                 if idx == 0 {
@@ -63,7 +66,10 @@ impl LineWrapModel {
     }
 
     pub fn subrow_count(&self, line_idx: usize) -> usize {
-        match self.wrapped_lines.binary_search_by_key(&line_idx, |w| w.line_idx) {
+        match self
+            .wrapped_lines
+            .binary_search_by_key(&line_idx, |w| w.line_idx)
+        {
             Ok(idx) => self.wrapped_lines[idx].subrow_count,
             Err(_) => 1,
         }

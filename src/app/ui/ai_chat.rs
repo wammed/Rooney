@@ -57,9 +57,10 @@ impl App {
         let mut messages_col = column::with_capacity(self.ai_chat_messages.len() + 2).spacing(8);
 
         if self.ai_chat_messages.is_empty() {
-            let empty_prompt = text("Ask AI anything, generate code, or attach file/selection context.")
-                .size(12.0)
-                .class(cosmic::theme::Text::Color(theme.config.comment));
+            let empty_prompt =
+                text("Ask AI anything, generate code, or attach file/selection context.")
+                    .size(12.0)
+                    .class(cosmic::theme::Text::Color(theme.config.comment));
             messages_col = messages_col.push(empty_prompt);
         } else {
             let total_msgs = self.ai_chat_messages.len();

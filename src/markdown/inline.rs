@@ -1,4 +1,5 @@
 use super::html::parse_html_fragment;
+use std::borrow::Cow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct InlineStyle {
@@ -14,22 +15,31 @@ pub enum InlineSpan {
     Italic(String),
     Code(String),
     Strikethrough(String),
-    Styled { text: String, style: InlineStyle },
-    Link { text: String, url: String },
-    ImageFallback { alt: String, url: String },
+    Styled {
+        text: String,
+        style: InlineStyle,
+    },
+    Link {
+        children: Vec<InlineSpan>,
+        url: String,
+    },
+    ImageFallback {
+        alt: String,
+        url: String,
+    },
 }
 
 impl InlineSpan {
-    pub fn plain_text(&self) -> &str {
+    pub fn plain_text(&self) -> Cow<'_, str> {
         match self {
             InlineSpan::Text(s)
             | InlineSpan::Bold(s)
             | InlineSpan::Italic(s)
             | InlineSpan::Code(s)
             | InlineSpan::Strikethrough(s)
-            | InlineSpan::Styled { text: s, .. } => s.as_str(),
-            InlineSpan::Link { text, .. } => text.as_str(),
-            InlineSpan::ImageFallback { alt, .. } => alt.as_str(),
+            | InlineSpan::Styled { text: s, .. } => Cow::Borrowed(s.as_str()),
+            InlineSpan::Link { children, .. } => Cow::Owned(spans_plain_text(children)),
+            InlineSpan::ImageFallback { alt, .. } => Cow::Borrowed(alt.as_str()),
         }
     }
 }
@@ -37,7 +47,7 @@ impl InlineSpan {
 pub fn spans_plain_text(spans: &[InlineSpan]) -> String {
     let mut out = String::new();
     for span in spans {
-        out.push_str(span.plain_text());
+        out.push_str(&span.plain_text());
     }
     out
 }
@@ -63,7 +73,10 @@ pub fn find_next_autolink(text: &str) -> Option<(usize, usize)> {
 
         while len > 0 {
             let last_char = after[..len].chars().next_back().unwrap();
-            if matches!(last_char, '.' | ',' | ')' | '!' | '?' | ':' | ';' | '\'' | ']') {
+            if matches!(
+                last_char,
+                '.' | ',' | ')' | '!' | '?' | ':' | ';' | '\'' | ']'
+            ) {
                 len -= last_char.len_utf8();
             } else {
                 break;
@@ -79,11 +92,18 @@ pub fn find_next_autolink(text: &str) -> Option<(usize, usize)> {
     None
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct LinkState {
+    pub url: String,
+    pub spans: Vec<InlineSpan>,
+    pub current_text: String,
+}
+
 #[derive(Default)]
 pub struct InlineCollector {
     pub spans: Vec<InlineSpan>,
     pub current_text: String,
-    pub link: Option<(String, String)>,
+    pub link_stack: Vec<LinkState>,
     pub image: Option<(String, String)>,
     pub strong_depth: usize,
     pub emphasis_depth: usize,
@@ -94,7 +114,7 @@ impl InlineCollector {
     pub fn reset(&mut self) {
         self.spans.clear();
         self.current_text.clear();
-        self.link = None;
+        self.link_stack.clear();
         self.image = None;
         self.strong_depth = 0;
         self.emphasis_depth = 0;
@@ -102,10 +122,17 @@ impl InlineCollector {
     }
 
     pub fn flush_current(&mut self) {
-        if self.current_text.is_empty() {
+        let (current_text, target_spans) = if let Some(link) = self.link_stack.last_mut() {
+            (&mut link.current_text, &mut link.spans)
+        } else {
+            (&mut self.current_text, &mut self.spans)
+        };
+
+        if current_text.is_empty() {
             return;
         }
-        let text = std::mem::take(&mut self.current_text);
+
+        let text = std::mem::take(current_text);
         let style = InlineStyle {
             bold: self.strong_depth > 0,
             italic: self.emphasis_depth > 0,
@@ -118,7 +145,7 @@ impl InlineCollector {
             (false, false, true) => InlineSpan::Strikethrough(text),
             _ => InlineSpan::Styled { text, style },
         };
-        self.spans.push(span);
+        target_spans.push(span);
     }
 
     pub fn push_text(&mut self, mut text: &str) {
@@ -126,8 +153,8 @@ impl InlineCollector {
             alt.push_str(text);
             return;
         }
-        if let Some((_, link_text)) = &mut self.link {
-            link_text.push_str(text);
+        if let Some(link) = self.link_stack.last_mut() {
+            link.current_text.push_str(text);
             return;
         }
 
@@ -138,7 +165,7 @@ impl InlineCollector {
             self.flush_current();
             let url = text[start..end].to_string();
             self.spans.push(InlineSpan::Link {
-                text: url.clone(),
+                children: vec![InlineSpan::Text(url.clone())],
                 url,
             });
             text = &text[end..];
@@ -152,12 +179,15 @@ impl InlineCollector {
     pub fn push_code(&mut self, code: &str) {
         if let Some((_, alt)) = &mut self.image {
             alt.push_str(code);
-        } else if let Some((_, link_text)) = &mut self.link {
-            link_text.push_str(code);
-        } else {
-            self.flush_current();
-            self.spans.push(InlineSpan::Code(code.to_string()));
+            return;
         }
+        self.flush_current();
+        let target_spans = if let Some(link) = self.link_stack.last_mut() {
+            &mut link.spans
+        } else {
+            &mut self.spans
+        };
+        target_spans.push(InlineSpan::Code(code.to_string()));
     }
 
     pub fn push_html(&mut self, html: &str) {
@@ -167,7 +197,7 @@ impl InlineCollector {
                 InlineSpan::Text(s) => self.push_text(&s),
                 InlineSpan::ImageFallback { alt, url } => {
                     if self.image.is_none()
-                        && self.link.is_none()
+                        && self.link_stack.is_empty()
                         && self.strong_depth == 0
                         && self.emphasis_depth == 0
                         && self.strike_depth == 0
@@ -191,7 +221,7 @@ impl InlineCollector {
     pub fn push_footnote_ref(&mut self, label: &str) {
         let ref_text = format!("[^{}]", label);
         if self.image.is_some()
-            || self.link.is_some()
+            || !self.link_stack.is_empty()
             || self.strong_depth > 0
             || self.emphasis_depth > 0
             || self.strike_depth > 0
@@ -200,7 +230,7 @@ impl InlineCollector {
         } else {
             self.flush_current();
             self.spans.push(InlineSpan::Link {
-                text: ref_text,
+                children: vec![InlineSpan::Text(ref_text)],
                 url: format!("#fn-{}", label),
             });
         }
@@ -238,12 +268,26 @@ impl InlineCollector {
 
     pub fn start_link(&mut self, url: String) {
         self.flush_current();
-        self.link = Some((url, String::new()));
+        self.link_stack.push(LinkState {
+            url,
+            spans: Vec::new(),
+            current_text: String::new(),
+        });
     }
 
     pub fn end_link(&mut self) {
-        if let Some((url, text)) = self.link.take() {
-            self.spans.push(InlineSpan::Link { text, url });
+        self.flush_current();
+        if let Some(mut state) = self.link_stack.pop() {
+            trim_spans(&mut state.spans);
+            let link_span = InlineSpan::Link {
+                children: state.spans,
+                url: state.url,
+            };
+            if let Some(parent) = self.link_stack.last_mut() {
+                parent.spans.push(link_span);
+            } else {
+                self.spans.push(link_span);
+            }
         }
     }
 
@@ -260,8 +304,13 @@ impl InlineCollector {
 
     pub fn finish(&mut self) -> Vec<InlineSpan> {
         self.flush_current();
-        if let Some((url, text)) = self.link.take() {
-            self.spans.push(InlineSpan::Link { text, url });
+        while let Some(mut state) = self.link_stack.pop() {
+            trim_spans(&mut state.spans);
+            let link_span = InlineSpan::Link {
+                children: state.spans,
+                url: state.url,
+            };
+            self.spans.push(link_span);
         }
         if let Some((url, alt)) = self.image.take() {
             self.spans.push(InlineSpan::ImageFallback { alt, url });
@@ -277,14 +326,10 @@ impl InlineCollector {
 
 pub fn trim_spans(spans: &mut Vec<InlineSpan>) {
     if let Some(InlineSpan::Text(s) | InlineSpan::Styled { text: s, .. }) = spans.first_mut() {
-        *s = s
-            .trim_start_matches([' ', '\t', '\r', '\n'])
-            .to_string();
+        *s = s.trim_start_matches([' ', '\t', '\r', '\n']).to_string();
     }
     if let Some(InlineSpan::Text(s) | InlineSpan::Styled { text: s, .. }) = spans.last_mut() {
-        *s = s
-            .trim_end_matches([' ', '\t', '\r', '\n'])
-            .to_string();
+        *s = s.trim_end_matches([' ', '\t', '\r', '\n']).to_string();
     }
     spans.retain(|s| match s {
         InlineSpan::Text(t) | InlineSpan::Styled { text: t, .. } => !t.is_empty(),

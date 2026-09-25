@@ -137,13 +137,36 @@ impl App {
             ActiveHeaderMenu::File => {
                 menu_items = menu_items
                     .push(make_item("", "New File", "Ctrl+N", Message::PromptNewFile))
-                    .push(make_item("󰈔", "Open File...", "Ctrl+O", Message::OpenFilePrompt))
-                    .push(make_item("", "Open Folder...", "Ctrl+Shift+O", Message::OpenFolderPrompt))
-                    .push(make_item("󰆓", "Save", "Ctrl+S", Message::SaveFile))
-                    .push(make_item("󰆓", "Save As...", "Ctrl+Shift+S", Message::SaveFileAsPrompt))
                     .push(make_item(
-                        if self.file_tree.is_visible { "" } else { "" },
-                        if self.file_tree.is_visible { "Hide File Tree" } else { "Show File Tree" },
+                        "󰈔",
+                        "Open File...",
+                        "Ctrl+O",
+                        Message::OpenFilePrompt,
+                    ))
+                    .push(make_item(
+                        "",
+                        "Open Folder...",
+                        "Ctrl+Shift+O",
+                        Message::OpenFolderPrompt,
+                    ))
+                    .push(make_item("󰆓", "Save", "Ctrl+S", Message::SaveFile))
+                    .push(make_item(
+                        "󰆓",
+                        "Save As...",
+                        "Ctrl+Shift+S",
+                        Message::SaveFileAsPrompt,
+                    ))
+                    .push(make_item(
+                        if self.file_tree.is_visible {
+                            ""
+                        } else {
+                            ""
+                        },
+                        if self.file_tree.is_visible {
+                            "Hide File Tree"
+                        } else {
+                            "Show File Tree"
+                        },
                         "Ctrl+B",
                         Message::FileTreeMsg(FileTreeMessage::ToggleVisibility),
                     ));
@@ -164,17 +187,30 @@ impl App {
                 menu_items = menu_items
                     .push(make_item(
                         "",
-                        if is_split { "Single Pane" } else { "Split Pane" },
+                        if is_split {
+                            "Single Pane"
+                        } else {
+                            "Split Pane"
+                        },
                         "Ctrl+\\",
                         Message::ToggleSplit,
                     ))
                     .push(make_item(
                         if is_preview { "" } else { "" },
-                        if is_preview { "Markdown Edit" } else { "Markdown Preview" },
+                        if is_preview {
+                            "Markdown Edit"
+                        } else {
+                            "Markdown Preview"
+                        },
                         "Ctrl+M",
                         Message::ToggleMarkdownPreview,
                     ))
-                    .push(make_item("", "Find in File", "Ctrl+F", Message::ToggleSearch));
+                    .push(make_item(
+                        "",
+                        "Find in File",
+                        "Ctrl+F",
+                        Message::ToggleSearch,
+                    ));
             }
             ActiveHeaderMenu::Ai => {
                 let ai_on = self.ollama.is_enabled;
@@ -188,11 +224,20 @@ impl App {
                     ))
                     .push(make_item(
                         "󰭹",
-                        if self.show_ai_chat { "Close Chat Panel" } else { "Open Chat Panel" },
+                        if self.show_ai_chat {
+                            "Close Chat Panel"
+                        } else {
+                            "Open Chat Panel"
+                        },
                         "Ctrl+Shift+A",
                         Message::ToggleAiChat,
                     ))
-                    .push(make_item("󰚩", "Trigger Suggestion", "Alt+Enter", Message::TriggerAiFim));
+                    .push(make_item(
+                        "󰚩",
+                        "Trigger Suggestion",
+                        "Alt+Enter",
+                        Message::TriggerAiFim,
+                    ));
             }
         }
 

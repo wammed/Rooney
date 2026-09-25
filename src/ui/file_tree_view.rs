@@ -70,8 +70,8 @@ pub fn view_file_tree<'a, Message: 'static + Clone>(
         .spacing(3)
         .padding([4, 6]);
 
-    let header_area = mouse_area(header_row)
-        .on_right_press(on_msg(FileTreeMessage::RightClickRoot));
+    let header_area =
+        mouse_area(header_row).on_right_press(on_msg(FileTreeMessage::RightClickRoot));
 
     let mut items_col = column::with_capacity(tree.items.len()).spacing(1);
 
@@ -154,8 +154,12 @@ pub fn view_file_tree<'a, Message: 'static + Clone>(
         items_col = items_col.push(row_area);
     }
 
-    let empty_bottom = mouse_area(Space::new().width(Length::Fill).height(Length::Fixed(600.0)))
-        .on_right_press(on_msg(FileTreeMessage::RightClickRoot));
+    let empty_bottom = mouse_area(
+        Space::new()
+            .width(Length::Fill)
+            .height(Length::Fixed(600.0)),
+    )
+    .on_right_press(on_msg(FileTreeMessage::RightClickRoot));
     items_col = items_col.push(empty_bottom);
 
     let sidebar_w = tree.width.max(280.0);

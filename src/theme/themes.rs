@@ -95,7 +95,6 @@ impl ThemeId {
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub struct ThemeConfig {
     pub id: ThemeId,

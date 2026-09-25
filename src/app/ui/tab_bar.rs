@@ -20,7 +20,10 @@ impl App {
             let is_active = idx == pane.active_tab_idx;
 
             // Resolve file icon from path or filename
-            let file_path = tab.file_path.as_deref().unwrap_or(Path::new(&tab.file_name));
+            let file_path = tab
+                .file_path
+                .as_deref()
+                .unwrap_or(Path::new(&tab.file_name));
             let file_icon = FileTypeIcon::for_path(file_path, false, false);
 
             let dirty_mark = if tab.buffer.is_modified { " ●" } else { "" };
@@ -52,31 +55,32 @@ impl App {
                 .push(close_btn)
                 .align_y(Alignment::Center);
 
-            let tab_container = container(tab_content)
-                .padding([1, 2])
-                .class(cosmic::theme::Container::Custom(Box::new(move |_| {
-                    if is_active {
-                        container::Style {
-                            background: Some(theme.config.gutter_bg.into()),
-                            border: cosmic::iced::border::rounded(4)
-                                .color(if is_pane_active {
-                                    theme.config.accent
-                                } else {
-                                    theme.config.border
-                                })
-                                .width(1.0),
-                            ..Default::default()
+            let tab_container =
+                container(tab_content)
+                    .padding([1, 2])
+                    .class(cosmic::theme::Container::Custom(Box::new(move |_| {
+                        if is_active {
+                            container::Style {
+                                background: Some(theme.config.gutter_bg.into()),
+                                border: cosmic::iced::border::rounded(4)
+                                    .color(if is_pane_active {
+                                        theme.config.accent
+                                    } else {
+                                        theme.config.border
+                                    })
+                                    .width(1.0),
+                                ..Default::default()
+                            }
+                        } else {
+                            container::Style {
+                                background: Some(theme.config.bg.into()),
+                                border: cosmic::iced::border::rounded(4)
+                                    .color(theme.config.border)
+                                    .width(0.5),
+                                ..Default::default()
+                            }
                         }
-                    } else {
-                        container::Style {
-                            background: Some(theme.config.bg.into()),
-                            border: cosmic::iced::border::rounded(4)
-                                .color(theme.config.border)
-                                .width(0.5),
-                            ..Default::default()
-                        }
-                    }
-                })));
+                    })));
 
             tabs_row = tabs_row.push(tab_container);
         }

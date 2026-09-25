@@ -177,12 +177,7 @@ impl FileTree {
         self.items = items;
     }
 
-    fn scan_dir(
-        dir: &Path,
-        depth: usize,
-        expanded: &HashSet<PathBuf>,
-        out: &mut Vec<FileItem>,
-    ) {
+    fn scan_dir(dir: &Path, depth: usize, expanded: &HashSet<PathBuf>, out: &mut Vec<FileItem>) {
         if depth > 48 {
             return;
         }

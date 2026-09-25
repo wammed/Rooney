@@ -113,10 +113,14 @@ impl std::fmt::Display for OllamaError {
         match self {
             OllamaError::Disabled => write!(f, "Ollama integration is disabled"),
             OllamaError::HttpError(e) => write!(f, "Ollama HTTP error: {}", e),
-            OllamaError::StatusError(code, msg) => write!(f, "Ollama returned status {}: {}", code, msg),
+            OllamaError::StatusError(code, msg) => {
+                write!(f, "Ollama returned status {}: {}", code, msg)
+            }
             OllamaError::ParseError(e) => write!(f, "Ollama parse error: {}", e),
             OllamaError::StreamError(e) => write!(f, "Ollama stream error: {}", e),
-            OllamaError::BufferExceeded => write!(f, "Stream line buffer exceeded safety threshold"),
+            OllamaError::BufferExceeded => {
+                write!(f, "Stream line buffer exceeded safety threshold")
+            }
         }
     }
 }
@@ -183,11 +187,7 @@ impl OllamaClient {
         Ok(models)
     }
 
-    pub async fn generate_fim(
-        &self,
-        prefix: &str,
-        suffix: &str,
-    ) -> Result<String, OllamaError> {
+    pub async fn generate_fim(&self, prefix: &str, suffix: &str) -> Result<String, OllamaError> {
         if !self.is_enabled {
             return Err(OllamaError::Disabled);
         }
@@ -196,7 +196,10 @@ impl OllamaClient {
         let model = &self.active_model;
 
         let (prompt, opt_suffix, stop_tokens) = if model.contains("deepseek") {
-            let p = format!("<｜fim begin｜>{}<｜fim hole｜>{}<｜fim end｜>", prefix, suffix);
+            let p = format!(
+                "<｜fim begin｜>{}<｜fim hole｜>{}<｜fim end｜>",
+                prefix, suffix
+            );
             (
                 p,
                 None,
@@ -334,13 +337,17 @@ impl OllamaClient {
         let resp = match self.client.post(&url).json(&payload).send().await {
             Ok(r) => r,
             Err(e) => {
-                let _ = tx.unbounded_send(ChatStreamEvent::Error(format!("Ollama request error: {e}")));
+                let _ =
+                    tx.unbounded_send(ChatStreamEvent::Error(format!("Ollama request error: {e}")));
                 return;
             }
         };
 
         if !resp.status().is_success() {
-            let _ = tx.unbounded_send(ChatStreamEvent::Error(format!("Ollama returned status {}", resp.status())));
+            let _ = tx.unbounded_send(ChatStreamEvent::Error(format!(
+                "Ollama returned status {}",
+                resp.status()
+            )));
             return;
         }
 
@@ -357,7 +364,8 @@ impl OllamaClient {
             let bytes = match item {
                 Ok(b) => b,
                 Err(e) => {
-                    let _ = tx.unbounded_send(ChatStreamEvent::Error(format!("Stream read error: {e}")));
+                    let _ = tx
+                        .unbounded_send(ChatStreamEvent::Error(format!("Stream read error: {e}")));
                     return;
                 }
             };

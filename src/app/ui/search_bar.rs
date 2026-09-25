@@ -22,7 +22,11 @@ impl App {
                 "0/0".to_string()
             }
         } else {
-            format!("{}/{}", pane.current_match_idx + 1, pane.search_matches.len())
+            format!(
+                "{}/{}",
+                pane.current_match_idx + 1,
+                pane.search_matches.len()
+            )
         };
 
         let bar = row::with_capacity(6)

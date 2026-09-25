@@ -66,7 +66,11 @@ impl FontManager {
             .iter()
             .find(|f| f.contains("JetBrainsMono Nerd Font"))
             .or_else(|| font_list.iter().find(|f| f.contains("Hack Nerd Font")))
-            .or_else(|| font_list.iter().find(|f| f.to_lowercase().contains("nerd font")))
+            .or_else(|| {
+                font_list
+                    .iter()
+                    .find(|f| f.to_lowercase().contains("nerd font"))
+            })
             .or_else(|| font_list.iter().find(|f| f.to_lowercase().contains("mono")))
             .cloned()
             .unwrap_or_else(|| "monospace".to_string());

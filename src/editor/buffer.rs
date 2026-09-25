@@ -2,7 +2,6 @@ use ropey::Rope;
 use std::collections::VecDeque;
 use unicode_segmentation::UnicodeSegmentation;
 
-
 #[derive(Debug, Clone)]
 pub struct TextBuffer {
     pub rope: Rope,
@@ -100,7 +99,6 @@ impl TextBuffer {
     pub fn len_chars(&self) -> usize {
         self.rope.len_chars()
     }
-
 
     pub fn line_text(&self, line_idx: usize) -> Option<String> {
         if line_idx < self.rope.len_lines() {
@@ -231,7 +229,6 @@ impl TextBuffer {
         self.cursor.1 = self.snap_to_grapheme_boundary(self.cursor.0, self.cursor.1);
     }
 
-
     pub fn line_char_count(&self, line: usize) -> usize {
         if line >= self.rope.len_lines() {
             return 0;
@@ -254,7 +251,10 @@ impl TextBuffer {
                 } else {
                     (anchor, self.cursor)
                 };
-                (self.char_index(start.0, start.1), self.char_index(end.0, end.1))
+                (
+                    self.char_index(start.0, start.1),
+                    self.char_index(end.0, end.1),
+                )
             } else {
                 let idx = self.char_index(self.cursor.0, self.cursor.1);
                 (idx, idx)
