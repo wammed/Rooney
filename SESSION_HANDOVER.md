@@ -756,6 +756,46 @@
   - `cargo test --test core_tests`: **68/68 全テスト通過 (0 failed)**（Markdown 画像フォールバック検証 `test_gfm_rich_inline_elements_and_image_fallback` を含む）。
   - 全ドキュメントの記述整合性を確認完了。
 
+### セッション 37: GFM 対応 P1/P2/P3 の改修（構造保持・Nested Inline 意味論・Table メトリクス・回帰マトリクス）
+- **P1: Nested List の構造保持と親コンテンツ消失・継続行分離の根本修正**:
+  - `InlineCollector` の状態がネストしたリスト開始時にリセットされ、親 ListItem のインライン内容が失われる不具合を修正。
+  - 親アイテムの先行テキストを `emit_parent_list_item_in_scope` で `blocks` に先行配置し、後続の継続行（continuation）および子ブロック（コードブロック等）を元の親 `ListItem` にアトミックにマージする設計を確立。
+  - `MarkdownBlock::BlockQuote(Vec<MarkdownBlock>)` を新設し、BlockQuote 内の任意のブロック構造（段落、リスト、アラート等）の再帰的構造を損失なく保持。
+- **P2: Nested Inline / GFM 構文組み合わせ / 外部アクセス禁止の固定**:
+  - `InlineSpan::Link { children: Vec<InlineSpan>, url: String }` へ改修し、リンク内の装飾（`[**bold link**](url)` 等）の情報を完全保持。
+  - `InlineStyle { bold, italic, strike }` およびスタックベースの書式収集を導入し、複合装飾（`***bold italic***`, `~~**bold strike**~~`）を損失なく表現。
+  - HTML の `<br>` 改行処理および画像構文フォールバック（`󰋩 [画像: alt]`）を安全なインラインスパンとして確立。外部ネットワーク I/O（Zero Remote I/O）およびリンク非クリック仕様を固定。
+- **P3: レンダラー分離・Table 幅グリフメトリクス・16項目回帰マトリクス**:
+  - `src/markdown/parser.rs`, `src/markdown/inline.rs`, `src/markdown/html.rs`, `src/markdown/renderer.rs` にモジュール分割・責務明確化。
+  - `measure_spans_width` を導入し、テーブル各列の幅を `canvas_editor::measure_glyph_advance` と `METRICS_CACHE` に基づき計算。列幅クランプ（60.0〜420.0px）およびテーブル横スクロール（`scrollable(Direction::Horizontal)`）を実装。
+  - 16項目からなる意味論的総合回帰マトリクステスト（`test_p3_comprehensive_semantic_regression_matrix`）を追加。
+
+### セッション 38: Markdown / GFM 最終安定化（depth-based List AST の正式確定・Table グリフ計測最適化・品質ゲート通過）
+- **depth-based List AST の正式仕様確定と不変条件（Invariant）の明文化**:
+  - `MarkdownBlock::ListItem { depth, spans, task_status, children }` を正式設計として確定。
+  - リスト階層は `children` への再帰的入れ子ではなく、`depth + document order` により表現する仕様を明文化。
+  - `children` にはコードブロック等のアイテム直下非リストブロックのみを格納し、アイテム同士の親子・兄弟階層は `depth` で復元可能。
+  - パーサー末尾に `validate_list_depth_invariants()` を新設（debug / test ビルドで自動実行）。
+    1. リスト先頭アイテムは `depth = 0` であること
+    2. リスト深さの増加は最大 1 ステップ以内（`curr_depth <= prev_depth + 1`）であること
+    3. `children` に `ListItem` が再帰格納されないこと
+- **明示的 Regression Test（Cases A, B, C）の配備 (`tests/core_tests.rs`)**:
+  - `test_final_stabilization_depth_based_list_ast` を追加。
+    - **Case A**: 3段ネスト + 継続行 + 後続項目（`[0, 1, 2, 0]`、Parent に continuation マージ、CommonMark のタイト/ルーズ両挙動を完全検証）。
+    - **Case B**: 複数親と兄弟アイテム（`[0, 1, 1, 0, 1]` の順序とテキスト完全一致を直接 assert）。
+    - **Case C**: ListItem + コードブロック + 継続行（`depth=0`, `spans` に Parent と continuation、`children` に `CodeBlock`）。
+- **Table グリフ計測のゼロ・アロケーション化とスタイル整合 (`src/ui/markdown_view.rs`)**:
+  - `InlineSpan::ImageFallback` 幅計測における `format!` 文字列確保を全廃。プレフィックス・代替テキスト・サフィックスの各グリフアドバンスを直接合算するゼロ・アロケーション計算へ刷新。
+  - `test_table_glyph_measurement_and_style_awareness` を追加：Bold（プロポーショナル太字拡大幅 1.05 倍）、Italic、Code（0.9倍+12pxパディング）、日本語全角（3.0em）、英数日本語混在（誤差 1e-4 未満）の整合性を検証。
+- **README とアーキテクチャ記述の完全整合**:
+  - `README.md` および `README.ja.md` に推奨語句（`GFM-oriented Markdown support`、`Markdown rendering performs zero remote I/O`、`Images use safe textual fallback`、`External links are display-only / non-clickable` 等）を統一反映し、depth-based List AST の設計意図を明記。
+- **全品質ゲートの完全通過**:
+  - `cargo fmt --check`: クリーン。
+  - `cargo check`: クリーン（0.84s）。
+  - `cargo clippy --all-targets --all-features -- -D warnings`: 警告 0 件。
+  - `cargo test`: **84/84 全テスト通過（3 benchmark + 78 core + 3 ollama）**。
+  - `cargo build --release`: クリーンビルド完了（16.22s）。
+
 ---
 
 ## 3. ファイル構成と役割
@@ -793,7 +833,10 @@ Rooney/
 │   │   └── highlighter.rs   # Highlighter & classify_node (12+言語のTree-sitter/字句解析エンジン)
 │   ├── markdown/
 │   │   ├── mod.rs
-│   │   └── renderer.rs      # MarkdownDocument (Text-Focused GFM & CommonMark動的仕様切替、テーブル、タスクリスト、アラート、打ち消し線、画像フォールバック)
+│   │   ├── parser.rs        # MarkdownDocument, parse, validate_list_depth_invariants, AlertKind, TableBlock
+│   │   ├── inline.rs        # InlineSpan, InlineStyle, InlineCollector, spans_plain_text, trim_spans
+│   │   ├── html.rs          # parse_html_fragment (安全なHTMLテキストフォールバック)
+│   │   └── renderer.rs      # パブリック型・ヘルパー再エクスポート
 │   ├── fs/
 │   │   ├── mod.rs
 │   │   └── tree.rs          # FileTree (除外パターン、Nerd Font アイコン、ディレクトリ走査)
@@ -811,7 +854,8 @@ Rooney/
 │       ├── mod.rs           # ChatMessage, ChatRole, ChatStreamEvent 再エクスポート
 │       └── ollama.rs        # OllamaClient (FIM補完、chat_generate_stream ストリーミング、モデル自動検出)
 └── tests/
-    ├── core_tests.rs        # 35件のユニットテスト (Markdown仕様比較、設定永続化、セッション復元、タブ同期、構文、検索等)
+    ├── benchmark_tests.rs   # 3件のマルチスケール性能ベンチマーク (50MB連続入力、折り返しモデル、スケール走査)
+    ├── core_tests.rs        # 78件のユニットテスト (Markdown仕様比較、GFM回帰マトリクス、AST深さ不変条件、設定永続化、セッション復元、タブ同期、構文、検索等)
     └── ollama_tests.rs      # 3件の統合テスト (Ollama 接続性、FIM生成、チャットストリーミング実走テスト)
 ```
 
@@ -866,8 +910,15 @@ Rooney/
 
 ## 5. 現在のビルドおよびテスト状態
 
-- `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings** (完全クリーン)
-- `cargo test`: **70/70 全テスト通過 (3 benchmark + 64 core + 3 ollama, 0 failed)**
+- `cargo fmt --check`: **クリーン通過**
+- `cargo check`: **0 errors, 0 warnings (0.84s)**
+- `cargo clippy --all-targets --all-features -- -D warnings`: **0 errors, 0 warnings** (完全クリーン)
+- `cargo test`: **84/84 全テスト通過 (3 benchmark + 78 core + 3 ollama, 0 failed)**
+  - `test_final_stabilization_depth_based_list_ast` ... ok (List AST Cases A, B, C の深さ・順序・継続行マージ・CodeBlock保持完全検証)
+  - `test_table_glyph_measurement_and_style_awareness` ... ok (Table グリフ幅のスタイル別測定・ゼロアロケーション・和欧混在文字幅完全検証)
+  - `test_p3_comprehensive_semantic_regression_matrix` ... ok (16項目意味論的回帰マトリクス完全検証)
+  - `test_p2_inline_formatting_and_gfm_semantics` ... ok (Link内装飾保持・複合装飾・HTMLフォールバック検証)
+  - `test_p1_nested_list_continuation_and_structural_ast` ... ok (親ListItem先行配置・継続行マージ・BlockQuote構造保持検証)
   - `test_treesitter_file_switch_parse_generation_race` ... ok (ファイル切替時旧AST安全破棄・新AST適用検証)
   - `test_treesitter_save_as_language_change_race` ... ok (言語変更Save-As時旧AST破棄・新言語AST適用検証)
   - `test_treesitter_undo_redo_parse_generation_stale_discard` ... ok (Undo/Redo世代進行時遅延AST破棄検証)
