@@ -764,7 +764,65 @@ impl MarkdownDocument {
             blocks.extend(footnotes);
         }
 
-        Self { blocks }
+        let doc = Self { blocks };
+        #[cfg(any(debug_assertions, test))]
+        doc.validate_list_depth_invariants()
+            .expect("List depth invariant violated");
+        doc
+    }
+
+    /// Verifies depth invariants of the depth-based List AST:
+    /// 1. Top-level list items start at depth 0.
+    /// 2. Subsequent list items can increase depth by at most 1 (d <= prev + 1).
+    /// 3. Nested non-list blocks (CodeBlock, etc.) reside in `children`.
+    /// 4. `ListItem` itself is never recursively nested in `children`; list hierarchy is represented via `depth + document order`.
+    pub fn validate_list_depth_invariants(&self) -> Result<(), String> {
+        fn check_blocks(blocks: &[MarkdownBlock]) -> Result<(), String> {
+            let mut prev_list_depth: Option<usize> = None;
+            for block in blocks {
+                match block {
+                    MarkdownBlock::ListItem {
+                        depth, children, ..
+                    } => {
+                        let d = *depth;
+                        if let Some(prev) = prev_list_depth {
+                            if d > prev + 1 {
+                                return Err(format!(
+                                    "List depth jump exceeds 1: prev={}, curr={}",
+                                    prev, d
+                                ));
+                            }
+                        } else if d != 0 {
+                            return Err(format!(
+                                "Initial list item in context must start at depth 0, got {}",
+                                d
+                            ));
+                        }
+                        prev_list_depth = Some(d);
+
+                        for child in children {
+                            if matches!(child, MarkdownBlock::ListItem { .. }) {
+                                return Err(
+                                    "ListItem must not be recursively nested in children; list hierarchy is depth-based"
+                                        .to_string(),
+                                );
+                            }
+                        }
+                        check_blocks(children)?;
+                    }
+                    MarkdownBlock::BlockQuote(inner) => {
+                        prev_list_depth = None;
+                        check_blocks(inner)?;
+                    }
+                    _ => {
+                        prev_list_depth = None;
+                    }
+                }
+            }
+            Ok(())
+        }
+
+        check_blocks(&self.blocks)
     }
 
     pub fn parse_gfm(source: &str) -> Self {

@@ -4900,3 +4900,368 @@ fn test_p3_comprehensive_semantic_regression_matrix() {
         _ => panic!("Expected Paragraph with autolinks"),
     }
 }
+
+#[test]
+fn test_final_stabilization_depth_based_list_ast() {
+    use rooney::config::MarkdownSpec;
+    use rooney::markdown::renderer::{spans_plain_text, MarkdownBlock, MarkdownDocument};
+
+    // ========================================================
+    // Case A:
+    // - Parent
+    //   - Child
+    //     - Grandchild
+    //
+    //   continuation
+    // - Next
+    //
+    // Expected:
+    // depth=0 Parent + continuation
+    // depth=1 Child
+    // depth=2 Grandchild
+    // depth=0 Next
+    // ========================================================
+    let md_case_a = "- Parent\n  - Child\n    - Grandchild\n\n  continuation\n- Next";
+    let doc_a = MarkdownDocument::parse(md_case_a, MarkdownSpec::Gfm);
+    assert_eq!(
+        doc_a.blocks.len(),
+        4,
+        "Case A must produce exactly 4 list item blocks"
+    );
+
+    // Item 0: depth=0, Parent + continuation
+    match &doc_a.blocks[0] {
+        MarkdownBlock::ListItem {
+            depth,
+            spans,
+            children,
+            ..
+        } => {
+            assert_eq!(*depth, 0, "Item 0 depth must be 0");
+            let text = spans_plain_text(spans);
+            assert!(
+                text.contains("Parent") && text.contains("continuation"),
+                "Item 0 must contain Parent and continuation, got: {text}"
+            );
+            assert!(children.is_empty(), "Item 0 should have no child blocks");
+        }
+        _ => panic!("Item 0 must be ListItem"),
+    }
+
+    // Item 1: depth=1, Child
+    match &doc_a.blocks[1] {
+        MarkdownBlock::ListItem {
+            depth,
+            spans,
+            children,
+            ..
+        } => {
+            assert_eq!(*depth, 1, "Item 1 depth must be 1");
+            let text = spans_plain_text(spans);
+            assert_eq!(text, "Child");
+            assert!(children.is_empty());
+        }
+        _ => panic!("Item 1 must be ListItem"),
+    }
+
+    // Item 2: depth=2, Grandchild
+    match &doc_a.blocks[2] {
+        MarkdownBlock::ListItem {
+            depth,
+            spans,
+            children,
+            ..
+        } => {
+            assert_eq!(*depth, 2, "Item 2 depth must be 2");
+            let text = spans_plain_text(spans);
+            assert_eq!(text, "Grandchild");
+            assert!(children.is_empty());
+        }
+        _ => panic!("Item 2 must be ListItem"),
+    }
+
+    // Item 3: depth=0, Next
+    match &doc_a.blocks[3] {
+        MarkdownBlock::ListItem {
+            depth,
+            spans,
+            children,
+            ..
+        } => {
+            assert_eq!(*depth, 0, "Item 3 depth must be 0");
+            let text = spans_plain_text(spans);
+            assert_eq!(text, "Next");
+            assert!(children.is_empty());
+        }
+        _ => panic!("Item 3 must be ListItem"),
+    }
+
+    // Also verify behavior when written as tight markdown:
+    // In CommonMark, without an intervening blank line, 'continuation' is a lazy continuation of innermost item
+    let md_case_a_tight = "- Parent\n  - Child\n    - Grandchild\n  continuation\n- Next";
+    let doc_a_tight = MarkdownDocument::parse(md_case_a_tight, MarkdownSpec::Gfm);
+    assert_eq!(
+        doc_a_tight.blocks.len(),
+        4,
+        "Case A tight must produce 4 list items"
+    );
+    assert_eq!(doc_a_tight.blocks[0].plain_text(), "Parent");
+    assert_eq!(doc_a_tight.blocks[1].plain_text(), "Child");
+    assert_eq!(
+        doc_a_tight.blocks[2].plain_text(),
+        "Grandchild continuation"
+    );
+    assert_eq!(doc_a_tight.blocks[3].plain_text(), "Next");
+
+    // Item 1: depth=1, Child
+    match &doc_a.blocks[1] {
+        MarkdownBlock::ListItem {
+            depth,
+            spans,
+            children,
+            ..
+        } => {
+            assert_eq!(*depth, 1, "Item 1 depth must be 1");
+            let text = spans_plain_text(spans);
+            assert_eq!(text, "Child");
+            assert!(children.is_empty());
+        }
+        _ => panic!("Item 1 must be ListItem"),
+    }
+
+    // Item 2: depth=2, Grandchild
+    match &doc_a.blocks[2] {
+        MarkdownBlock::ListItem {
+            depth,
+            spans,
+            children,
+            ..
+        } => {
+            assert_eq!(*depth, 2, "Item 2 depth must be 2");
+            let text = spans_plain_text(spans);
+            assert_eq!(text, "Grandchild");
+            assert!(children.is_empty());
+        }
+        _ => panic!("Item 2 must be ListItem"),
+    }
+
+    // Item 3: depth=0, Next
+    match &doc_a.blocks[3] {
+        MarkdownBlock::ListItem {
+            depth,
+            spans,
+            children,
+            ..
+        } => {
+            assert_eq!(*depth, 0, "Item 3 depth must be 0");
+            let text = spans_plain_text(spans);
+            assert_eq!(text, "Next");
+            assert!(children.is_empty());
+        }
+        _ => panic!("Item 3 must be ListItem"),
+    }
+
+    // ========================================================
+    // Case B:
+    // - Parent 1
+    //   - Child 1
+    //   - Child 2
+    // - Parent 2
+    //   - Child 3
+    //
+    // Expected:
+    // 0 Parent 1
+    // 1 Child 1
+    // 1 Child 2
+    // 0 Parent 2
+    // 1 Child 3
+    // ========================================================
+    let md_case_b = "- Parent 1\n  - Child 1\n  - Child 2\n- Parent 2\n  - Child 3";
+    let doc_b = MarkdownDocument::parse(md_case_b, MarkdownSpec::Gfm);
+    assert_eq!(
+        doc_b.blocks.len(),
+        5,
+        "Case B must produce exactly 5 list item blocks"
+    );
+
+    let expected_b = [
+        (0, "Parent 1"),
+        (1, "Child 1"),
+        (1, "Child 2"),
+        (0, "Parent 2"),
+        (1, "Child 3"),
+    ];
+
+    for (i, (exp_depth, exp_text)) in expected_b.iter().enumerate() {
+        match &doc_b.blocks[i] {
+            MarkdownBlock::ListItem {
+                depth,
+                spans,
+                children,
+                ..
+            } => {
+                assert_eq!(*depth, *exp_depth, "Case B item {i} depth mismatch");
+                assert_eq!(
+                    spans_plain_text(spans),
+                    *exp_text,
+                    "Case B item {i} text mismatch"
+                );
+                assert!(
+                    children.is_empty(),
+                    "Case B item {i} children must be empty"
+                );
+            }
+            _ => panic!("Case B item {i} must be ListItem"),
+        }
+    }
+
+    // ========================================================
+    // Case C:
+    // - Parent
+    //
+    //   ```rust
+    //   fn main() {}
+    //   ```
+    //
+    //   continuation
+    //
+    // Expected:
+    // ListItem depth=0
+    //   spans = Parent + continuation
+    //   children = CodeBlock
+    // ========================================================
+    let md_case_c = "- Parent\n\n  ```rust\n  fn main() {}\n  ```\n\n  continuation";
+    let doc_c = MarkdownDocument::parse(md_case_c, MarkdownSpec::Gfm);
+    assert_eq!(
+        doc_c.blocks.len(),
+        1,
+        "Case C must produce single top-level ListItem"
+    );
+
+    match &doc_c.blocks[0] {
+        MarkdownBlock::ListItem {
+            depth,
+            spans,
+            children,
+            ..
+        } => {
+            assert_eq!(*depth, 0, "Case C depth must be 0");
+            let text = spans_plain_text(spans);
+            assert!(
+                text.contains("Parent"),
+                "Case C spans must contain 'Parent', got: {text}"
+            );
+            assert!(
+                text.contains("continuation"),
+                "Case C spans must contain 'continuation', got: {text}"
+            );
+            assert_eq!(
+                children.len(),
+                1,
+                "Case C children must contain exactly 1 nested block"
+            );
+            match &children[0] {
+                MarkdownBlock::CodeBlock { lang, code } => {
+                    assert_eq!(lang, "rust");
+                    assert!(code.contains("fn main() {}"));
+                }
+                _ => panic!("Case C child must be CodeBlock"),
+            }
+        }
+        _ => panic!("Case C block must be ListItem"),
+    }
+}
+
+#[test]
+fn test_table_glyph_measurement_and_style_awareness() {
+    use rooney::config::MarkdownSpec;
+    use rooney::markdown::renderer::{InlineSpan, InlineStyle, MarkdownBlock, MarkdownDocument};
+    use rooney::ui::markdown_view::measure_spans_width;
+
+    let font_name = "JetBrainsMono Nerd Font";
+    let base_size = 12.0f32;
+
+    // 1. Normal vs Bold vs Italic vs Bold Italic
+    let span_normal = vec![InlineSpan::Text("Content".to_string())];
+    let span_bold = vec![InlineSpan::Bold("Content".to_string())];
+    let span_italic = vec![InlineSpan::Italic("Content".to_string())];
+    let span_bold_italic = vec![InlineSpan::Styled {
+        text: "Content".to_string(),
+        style: InlineStyle {
+            bold: true,
+            italic: true,
+            strike: false,
+        },
+    }];
+    let span_code = vec![InlineSpan::Code("Content".to_string())];
+
+    let w_normal = measure_spans_width(&span_normal, base_size, font_name);
+    let w_bold = measure_spans_width(&span_bold, base_size, font_name);
+    let w_italic = measure_spans_width(&span_italic, base_size, font_name);
+    let w_bold_italic = measure_spans_width(&span_bold_italic, base_size, font_name);
+    let w_code = measure_spans_width(&span_code, base_size, font_name);
+
+    assert!((w_normal - 7.0 * 0.60 * base_size).abs() < 1e-4);
+    assert!(
+        (w_italic - w_normal).abs() < 1e-4,
+        "Italic maintains monospace advance"
+    );
+    assert!(
+        w_bold > w_normal,
+        "Bold advance ({w_bold}) must exceed normal advance ({w_normal})"
+    );
+    assert!(
+        (w_bold - w_bold_italic).abs() < 1e-4,
+        "Bold italic advance should equal bold advance"
+    );
+    // Code has 12px padding + 0.9 * base_size font
+    assert!((w_code - ((7.0 * 0.60 * base_size * 0.9) + 12.0)).abs() < 1e-4);
+
+    // 2. Japanese & Mixed Script
+    let span_ja = vec![InlineSpan::Text("日本語".to_string())];
+    let span_mixed = vec![InlineSpan::Text("ABC日本語123".to_string())];
+    let w_ja = measure_spans_width(&span_ja, base_size, font_name);
+    let w_mixed = measure_spans_width(&span_mixed, base_size, font_name);
+
+    assert!(
+        (w_ja - 3.0 * base_size).abs() < 1e-4,
+        "3 CJK characters = 3.0 em"
+    );
+    // 6 ASCII (6 * 0.6 = 3.6) + 3 CJK (3.0) = 6.6 * base_size
+    assert!(
+        (w_mixed - (6.0 * 0.60 + 3.0) * base_size).abs() < 1e-4,
+        "Mixed script should accurately sum ASCII and CJK glyphs"
+    );
+
+    // 3. ImageFallback measurement without allocations
+    let span_img = vec![InlineSpan::ImageFallback {
+        alt: "Logo".to_string(),
+        url: "https://example.com/logo.png".to_string(),
+    }];
+    let w_img = measure_spans_width(&span_img, base_size, font_name);
+    assert!(
+        w_img > 50.0,
+        "ImageFallback should measure badge prefix + alt + padding"
+    );
+
+    // 4. Full Table Parsing & Column Width Verification
+    let md_table = r#"| Content |
+| --- |
+| normal |
+| **bold** |
+| *italic* |
+| ***bold italic*** |
+| `code` |
+| 日本語 |
+| ABC日本語123 |
+"#;
+    let doc = MarkdownDocument::parse(md_table, MarkdownSpec::Gfm);
+    assert_eq!(doc.blocks.len(), 1);
+    match &doc.blocks[0] {
+        MarkdownBlock::Table(tbl) => {
+            assert_eq!(tbl.headers.len(), 1);
+            assert_eq!(tbl.rows.len(), 7);
+        }
+        _ => panic!("Expected Table block"),
+    }
+}

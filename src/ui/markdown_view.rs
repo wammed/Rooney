@@ -272,13 +272,12 @@ fn measure_span_width(span: &InlineSpan, base_size: f32, font_name: &str) -> f32
             }
         }
         InlineSpan::ImageFallback { alt, url } => {
-            let display = if alt.trim().is_empty() {
-                let filename = url.rsplit('/').next().unwrap_or("image");
-                format!("󰋩 [画像: {}]", filename)
+            let target_str = if alt.trim().is_empty() {
+                url.rsplit('/').next().unwrap_or("image")
             } else {
-                format!("󰋩 [画像: {}]", alt.trim())
+                alt.trim()
             };
-            let text_w: f32 = display
+            let prefix_w: f32 = "󰋩 [画像: "
                 .chars()
                 .map(|ch| {
                     crate::ui::canvas_editor::measure_glyph_advance(
@@ -288,7 +287,19 @@ fn measure_span_width(span: &InlineSpan, base_size: f32, font_name: &str) -> f32
                     )
                 })
                 .sum();
-            text_w + 10.0 // 4px left + 4px right padding + 2px borders
+            let suffix_w =
+                crate::ui::canvas_editor::measure_glyph_advance(']', base_size * 0.9, "monospace");
+            let inner_w: f32 = target_str
+                .chars()
+                .map(|ch| {
+                    crate::ui::canvas_editor::measure_glyph_advance(
+                        ch,
+                        base_size * 0.9,
+                        "monospace",
+                    )
+                })
+                .sum();
+            prefix_w + inner_w + suffix_w + 10.0 // 4px left + 4px right padding + 2px borders
         }
     }
 }
