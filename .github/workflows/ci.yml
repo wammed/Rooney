@@ -1,6 +1,4 @@
-
-:::writing{variant="document" id="58321" title="Rooney GitHub Actions CI"}
-name: CI
+name:CI
 
 on:
   push:
@@ -196,4 +194,3 @@ jobs:
           fi
 
           echo "All CI jobs passed."
-:::
