@@ -1,233 +1,216 @@
 name: CI
 
 on:
-push:
-branches:
-- main
-- master
-pull_request:
-workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
 
 permissions:
-contents: read
+  contents: read
 
 env:
-CARGO_TERM_COLOR: always
-RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
 jobs:
-check:
-name: Check / Clippy / Format
-runs-on: ubuntu-latest
+  check:
+    name: Check / Clippy / Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-```
-steps:
-  - name: Checkout
-    uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev
 
-  - name: Install system dependencies
-    run: |
-      sudo apt-get update
-      sudo apt-get install -y libxkbcommon-dev
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
-  - name: Install Rust
-    uses: dtolnay/rust-toolchain@stable
-    with:
-      components: rustfmt, clippy
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-check-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-check-
+            ${{ runner.os }}-cargo-
 
-  - name: Cache Cargo
-    uses: actions/cache@v4
-    with:
-      path: |
-        ~/.cargo/registry
-        ~/.cargo/git
-        target
-      key: ${{ runner.os }}-cargo-check-${{ hashFiles('**/Cargo.lock') }}
-      restore-keys: |
-        ${{ runner.os }}-cargo-check-
-        ${{ runner.os }}-cargo-
+      - name: Fetch dependencies
+        run: cargo fetch --locked
 
-  - name: Fetch dependencies
-    run: cargo fetch --locked
+      - name: Check
+        run: cargo check --all-targets --all-features --locked
 
-  - name: Check
-    run: cargo check --all-targets --all-features --locked
+      - name: Format
+        run: cargo fmt --all -- --check
 
-  - name: Format
-    run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
 
-  - name: Clippy
-    run: cargo clippy --all-targets --all-features --locked -- -D warnings
-```
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-test:
-name: Test
-runs-on: ubuntu-latest
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev
 
-```
-steps:
-  - name: Checkout
-    uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-  - name: Install system dependencies
-    run: |
-      sudo apt-get update
-      sudo apt-get install -y libxkbcommon-dev
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-
+            ${{ runner.os }}-cargo-
 
-  - name: Install Rust
-    uses: dtolnay/rust-toolchain@stable
+      - name: Fetch dependencies
+        run: cargo fetch --locked
 
-  - name: Cache Cargo
-    uses: actions/cache@v4
-    with:
-      path: |
-        ~/.cargo/registry
-        ~/.cargo/git
-        target
-      key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
-      restore-keys: |
-        ${{ runner.os }}-cargo-test-
-        ${{ runner.os }}-cargo-
+      - name: Run tests
+        run: cargo test --all-targets --locked
 
-  - name: Fetch dependencies
-    run: cargo fetch --locked
+      - name: Run release tests
+        run: cargo test --release --locked
 
-  - name: Run tests
-    run: cargo test --all-targets --locked
+  build:
+    name: Release Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  - name: Run release tests
-    run: cargo test --release --locked
-```
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev
 
-build:
-name: Release Build
-runs-on: ubuntu-latest
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-```
-steps:
-  - name: Checkout
-    uses: actions/checkout@v4
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+            ${{ runner.os }}-cargo-
 
-  - name: Install system dependencies
-    run: |
-      sudo apt-get update
-      sudo apt-get install -y libxkbcommon-dev
+      - name: Fetch dependencies
+        run: cargo fetch --locked
 
-  - name: Install Rust
-    uses: dtolnay/rust-toolchain@stable
+      - name: Build release
+        run: cargo build --release --locked
 
-  - name: Cache Cargo
-    uses: actions/cache@v4
-    with:
-      path: |
-        ~/.cargo/registry
-        ~/.cargo/git
-        target
-      key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
-      restore-keys: |
-        ${{ runner.os }}-cargo-release-
-        ${{ runner.os }}-cargo-
+      - name: Verify binary
+        run: test -x target/release/rooney
 
-  - name: Fetch dependencies
-    run: cargo fetch --locked
+  license:
+    name: License / Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  - name: Build release
-    run: cargo build --release --locked
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev
 
-  - name: Verify binary
-    run: test -x target/release/rooney
-```
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-license:
-name: License / Dependency Audit
-runs-on: ubuntu-latest
+      - name: Fetch dependencies
+        run: cargo fetch --locked
 
-```
-steps:
-  - name: Checkout
-    uses: actions/checkout@v4
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
 
-  - name: Install system dependencies
-    run: |
-      sudo apt-get update
-      sudo apt-get install -y libxkbcommon-dev
+      - name: Install cargo-about
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
 
-  - name: Install Rust
-    uses: dtolnay/rust-toolchain@stable
+      - name: Check licenses
+        run: cargo deny check licenses
 
-  - name: Fetch dependencies
-    run: cargo fetch --locked
+      - name: Check banned dependencies
+        run: cargo deny check bans
 
-  - name: Install cargo-deny
-    uses: taiki-e/install-action@v2
-    with:
-      tool: cargo-deny
+      - name: Check dependency sources
+        run: cargo deny check sources
 
-  - name: Install cargo-about
-    uses: taiki-e/install-action@v2
-    with:
-      tool: cargo-about
+      - name: Verify license report generation
+        run: cargo about generate about.hbs --offline > /dev/null
 
-  - name: Check licenses
-    run: cargo deny check licenses
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  - name: Check banned dependencies
-    run: cargo deny check bans
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev
 
-  - name: Check dependency sources
-    run: cargo deny check sources
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-  - name: Verify license report generation
-    run: cargo about generate about.hbs --offline > /dev/null
-```
+      - name: Fetch dependencies
+        run: cargo fetch --locked
 
-docs:
-name: Documentation
-runs-on: ubuntu-latest
+      - name: Check documentation
+        run: cargo doc --no-deps --all-features --locked
 
-```
-steps:
-  - name: Checkout
-    uses: actions/checkout@v4
+  ci-success:
+    name: CI Success
+    if: always()
+    needs:
+      - check
+      - test
+      - build
+      - license
+      - docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all required jobs passed
+        run: |
+          if [[ "${{ needs.check.result }}" != "success" ||
+                "${{ needs.test.result }}" != "success" ||
+                "${{ needs.build.result }}" != "success" ||
+                "${{ needs.license.result }}" != "success" ||
+                "${{ needs.docs.result }}" != "success" ]]; then
+            echo "One or more CI jobs failed."
+            exit 1
+          fi
 
-  - name: Install system dependencies
-    run: |
-      sudo apt-get update
-      sudo apt-get install -y libxkbcommon-dev
+          echo "All CI jobs passed."
 
-  - name: Install Rust
-    uses: dtolnay/rust-toolchain@stable
-
-  - name: Fetch dependencies
-    run: cargo fetch --locked
-
-  - name: Check documentation
-    run: cargo doc --no-deps --all-features --locked
-```
-
-ci-success:
-name: CI Success
-if: always()
-needs:
-- check
-- test
-- build
-- license
-- docs
-runs-on: ubuntu-latest
-
-```
-steps:
-  - name: Verify all required jobs passed
-    run: |
-      if [[ "${{ needs.check.result }}" != "success" ||
-            "${{ needs.test.result }}" != "success" ||
-            "${{ needs.build.result }}" != "success" ||
-            "${{ needs.license.result }}" != "success" ||
-            "${{ needs.docs.result }}" != "success" ]]; then
-        echo "One or more CI jobs failed."
-        exit 1
-      fi
-
-      echo "All CI jobs passed."
-```
