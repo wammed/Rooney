@@ -247,7 +247,9 @@ fn test_benchmark_scenario_b_wrapped_lines_layout_and_hit_test() {
     let font_size = 14.0f32;
     let canvas = EditorCanvas::new(&pane, &theme, true, "monospace", font_size);
 
-    let avail_width = 800.0f32;
+    let bounds_width = 800.0f32;
+    let gutter = canvas.gutter_width();
+    let avail_width = (bounds_width - gutter - 24.0).max(120.0);
     let line_height = canvas.line_height;
 
     // 1. Measure LineWrapModel building throughput
@@ -261,10 +263,12 @@ fn test_benchmark_scenario_b_wrapped_lines_layout_and_hit_test() {
         "Long lines must wrap into many visual rows"
     );
 
-    // 2. Measure Viewport Virtualized Visual Rows calculation
+    // 2. Measure Viewport Virtualized Visual Rows calculation.
+    // build_viewport_visual_rows() computes the same avail_width internally,
+    // allowing the cached LineWrapModel to be reused.
     let t_viewport = Instant::now();
     let scroll_y = 500.0f32;
-    let visual_rows = canvas.build_viewport_visual_rows(avail_width + 100.0, scroll_y, 600.0);
+    let visual_rows = canvas.build_viewport_visual_rows(bounds_width, scroll_y, 600.0);
     let viewport_us = t_viewport.elapsed().as_secs_f64() * 1_000_000.0;
 
     assert!(!visual_rows.is_empty());
@@ -283,7 +287,7 @@ fn test_benchmark_scenario_b_wrapped_lines_layout_and_hit_test() {
     // 3. Measure Hit-Test (pos_to_char_coords) throughput across 1000 simulated clicks
     let t_hit = Instant::now();
     let hit_count = 1000;
-    let bounds = Rectangle::new(Point::ORIGIN, Size::new(avail_width + 100.0, 800.0));
+    let bounds = Rectangle::new(Point::ORIGIN, Size::new(bounds_width, 800.0));
     for step in 0..hit_count {
         let test_y = (step as f32 * 3.7) % (total_vrows as f32 * line_height);
         let test_x = 50.0 + (step as f32 * 7.3) % 700.0;
