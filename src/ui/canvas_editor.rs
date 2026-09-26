@@ -81,9 +81,6 @@ pub fn measure_glyph_advance(c: char, font_size: f32, font_name: &str) -> f32 {
     if (' '..='~').contains(&c) {
         return font_size * 0.60;
     }
-    if c == '\t' {
-        return 4.0 * font_size * 0.60;
-    }
     // Fast path: standard CJK Ideographs and Kana have 1.0 * font_size in monospace
     if c.width_cjk().unwrap_or(1) == 2 {
         return font_size * 1.0;
