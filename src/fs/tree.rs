@@ -173,11 +173,17 @@ impl FileTree {
 
     pub fn refresh(&mut self) {
         let mut items = Vec::new();
-        Self::scan_dir(&self.root, 0, &self.expanded_dirs, &mut items);
+        Self::scan_dir(&self.root, &self.root, 0, &self.expanded_dirs, &mut items);
         self.items = items;
     }
 
-    fn scan_dir(dir: &Path, depth: usize, expanded: &HashSet<PathBuf>, out: &mut Vec<FileItem>) {
+    fn scan_dir(
+        root: &Path,
+        dir: &Path,
+        depth: usize,
+        expanded: &HashSet<PathBuf>,
+        out: &mut Vec<FileItem>,
+    ) {
         if depth > 48 {
             return;
         }
@@ -214,6 +220,21 @@ impl FileTree {
                 continue;
             }
 
+            // Symlink safety: if path is a symlink, verify it doesn't traverse outside root
+            let is_symlink = entry.file_type().map(|ft| ft.is_symlink()).unwrap_or(false);
+
+            if is_symlink {
+                if let Ok(target) = path.canonicalize() {
+                    if !target.starts_with(root) {
+                        // Skip external symlinks pointing outside the workspace sandbox
+                        continue;
+                    }
+                } else {
+                    // Broken symlink
+                    continue;
+                }
+            }
+
             if path.is_dir() {
                 dirs.push((name, path));
             } else {
@@ -238,7 +259,7 @@ impl FileTree {
             });
 
             if is_expanded {
-                Self::scan_dir(&path, depth + 1, expanded, out);
+                Self::scan_dir(root, &path, depth + 1, expanded, out);
             }
         }
 

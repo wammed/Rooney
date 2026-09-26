@@ -45,10 +45,20 @@ pub struct EditorTab {
     pub last_cursor_time: Instant,
     pub needs_highlight_parse: bool,
     pub is_parsing_async: bool,
+    /// Parse worker ownership and generation separation:
+    /// - `parse_generation`: Tracks whether parsed AST matches latest buffer content.
+    /// - `active_parse_worker_generation`: Identifies who currently owns the active async parse worker slot.
+    pub active_parse_worker_generation: Option<usize>,
+    pub parse_worker_counter: usize,
     pub needs_search_update: bool,
     pub last_search_update: Instant,
     pub search_generation: usize,
     pub is_searching_async: bool,
+    /// Search worker ownership and generation separation:
+    /// - `search_generation`: Tracks whether search results match latest buffer content/query.
+    /// - `active_search_worker_generation`: Identifies who currently owns the active async search worker slot.
+    pub active_search_worker_generation: Option<usize>,
+    pub search_worker_counter: usize,
     pub markdown_generation: usize,
     pub parse_generation: usize,
     pub cached_wrap_model: CachedWrapModel,
@@ -78,10 +88,14 @@ impl EditorTab {
             last_cursor_time: Instant::now(),
             needs_highlight_parse: false,
             is_parsing_async: false,
+            active_parse_worker_generation: None,
+            parse_worker_counter: 0,
             needs_search_update: false,
             last_search_update: Instant::now(),
             search_generation: 0,
             is_searching_async: false,
+            active_search_worker_generation: None,
+            search_worker_counter: 0,
             markdown_generation: 0,
             parse_generation: 0,
             cached_wrap_model: std::sync::RwLock::new(None),
@@ -111,15 +125,14 @@ impl EditorTab {
 
         let lang = SupportedLanguage::from_path(path);
         let mut highlighter = Highlighter::new(lang);
-        highlighter.update_source(&content);
 
         self.file_path = Some(path.to_path_buf());
         self.file_name = name;
         self.buffer = TextBuffer::new(&content);
+        self.buffer.mark_saved();
         if let Ok(mut guard) = self.cached_wrap_model.write() {
             *guard = None;
         }
-        self.highlighter = highlighter;
         self.scroll_y.set(0.0);
         self.scroll_x.set(0.0);
         self.needs_scroll_to_cursor.set(true);
@@ -127,12 +140,30 @@ impl EditorTab {
         self.preedit = None;
         self.markdown_generation = self.markdown_generation.wrapping_add(1);
         self.parse_generation = self.parse_generation.wrapping_add(1);
-        self.is_parsing_async = false;
-        self.needs_highlight_parse = false;
 
-        if lang == SupportedLanguage::Markdown && self.is_markdown_preview {
-            self.markdown_doc = Some(MarkdownDocument::parse(&content, self.markdown_spec));
+        const SYNC_PARSE_MAX_BYTES: usize = 2 * 1024 * 1024;
+        self.is_searching_async = false;
+        self.active_search_worker_generation = None;
+        self.active_parse_worker_generation = None;
+        if content.len() <= SYNC_PARSE_MAX_BYTES {
+            highlighter.update_source(&content);
+            self.highlighter = highlighter;
+            self.is_parsing_async = false;
+            self.needs_highlight_parse = false;
+
+            if lang == SupportedLanguage::Markdown && self.is_markdown_preview {
+                self.markdown_doc = Some(MarkdownDocument::parse(&content, self.markdown_spec));
+            } else {
+                self.markdown_doc = None;
+            }
         } else {
+            // Large file (> 2MB): avoid synchronous full tree-sitter parse on UI thread.
+            // Tab is created and editor is immediately usable; tree-sitter parse is offloaded.
+            self.highlighter = highlighter;
+            self.is_parsing_async = false;
+            self.needs_highlight_parse = true;
+            // Set last_edit_time so background parse can trigger immediately
+            self.last_edit_time = Instant::now() - std::time::Duration::from_millis(200);
             self.markdown_doc = None;
         }
 
@@ -143,7 +174,7 @@ impl EditorTab {
         if let Some(ref path) = self.file_path {
             let text = self.buffer.full_text();
             Self::atomic_write_file(path, &text)?;
-            self.buffer.is_modified = false;
+            self.buffer.mark_saved();
             Ok(())
         } else {
             Err(std::io::Error::new(
@@ -162,19 +193,32 @@ impl EditorTab {
             .and_then(|n| n.to_str())
             .unwrap_or("Untitled")
             .to_string();
-        self.buffer.is_modified = false;
+        self.buffer.mark_saved();
 
         let lang = SupportedLanguage::from_path(path);
-        self.highlighter = Highlighter::new(lang);
-        self.highlighter.update_source(&text);
+        let highlighter = Highlighter::new(lang);
+        self.highlighter = highlighter;
         self.markdown_generation = self.markdown_generation.wrapping_add(1);
         self.parse_generation = self.parse_generation.wrapping_add(1);
-        self.is_parsing_async = false;
-        self.needs_highlight_parse = false;
+        self.is_searching_async = false;
+        self.active_search_worker_generation = None;
+        self.active_parse_worker_generation = None;
 
-        if lang == SupportedLanguage::Markdown && self.is_markdown_preview {
-            self.markdown_doc = Some(MarkdownDocument::parse(&text, self.markdown_spec));
+        const SYNC_PARSE_MAX_BYTES: usize = 2 * 1024 * 1024;
+        if text.len() <= SYNC_PARSE_MAX_BYTES {
+            self.highlighter.update_source(&text);
+            self.is_parsing_async = false;
+            self.needs_highlight_parse = false;
+
+            if lang == SupportedLanguage::Markdown && self.is_markdown_preview {
+                self.markdown_doc = Some(MarkdownDocument::parse(&text, self.markdown_spec));
+            } else {
+                self.markdown_doc = None;
+            }
         } else {
+            self.is_parsing_async = false;
+            self.needs_highlight_parse = true;
+            self.last_edit_time = Instant::now() - std::time::Duration::from_millis(200);
             self.markdown_doc = None;
         }
 
@@ -322,24 +366,61 @@ impl EditorTab {
         }
     }
 
-    /// Safely apply parsed Tree-sitter Tree only if parse generation matches.
+    /// Starts an async parse worker, acquiring ownership and returning `(parse_generation, worker_generation)`.
+    pub fn start_parse_worker(&mut self) -> (usize, usize) {
+        self.parse_worker_counter = self.parse_worker_counter.wrapping_add(1);
+        let worker_gen = self.parse_worker_counter;
+        self.active_parse_worker_generation = Some(worker_gen);
+        self.is_parsing_async = true;
+        (self.parse_generation, worker_gen)
+    }
+
+    /// Starts an async search worker, acquiring ownership and returning `(search_generation, worker_generation)`.
+    pub fn start_search_worker(&mut self) -> (usize, usize) {
+        self.search_generation = self.search_generation.wrapping_add(1);
+        self.search_worker_counter = self.search_worker_counter.wrapping_add(1);
+        let worker_gen = self.search_worker_counter;
+        self.active_search_worker_generation = Some(worker_gen);
+        self.is_searching_async = true;
+        self.needs_search_update = false;
+        (self.search_generation, worker_gen)
+    }
+
+    /// Safely apply parsed Tree-sitter Tree.
+    ///
+    /// Distinguishes between:
+    /// - `generation` (`parse_generation`): "Is the parsed AST based on the latest buffer content?"
+    /// - `worker_generation`: "Who currently owns the active async parse worker slot?"
+    ///
+    /// Invariants:
+    /// - Case A (current worker + current generation): apply AST, clear active worker, set `is_parsing_async = false`, `needs_highlight_parse = false`.
+    /// - Case B (current worker + stale generation): discard AST, clear active worker, set `is_parsing_async = false`, `needs_highlight_parse = true`.
+    ///   This allows subsequent debounced ticks to launch the next worker without becoming permanently stalled.
+    /// - Case C (stale worker, another worker already active or ownership cleared): discard AST, do NOT touch active worker or `is_parsing_async`.
     pub fn apply_highlight_tree(
         &mut self,
         generation: usize,
+        worker_generation: usize,
         tree: Option<tree_sitter::Tree>,
     ) -> bool {
-        if self.parse_generation == generation {
+        if self.active_parse_worker_generation == Some(worker_generation) {
+            self.active_parse_worker_generation = None;
             self.is_parsing_async = false;
 
-            if let Some(new_tree) = tree {
-                self.highlighter.set_tree(new_tree);
+            if self.parse_generation == generation {
+                if let Some(new_tree) = tree {
+                    self.highlighter.set_tree(new_tree);
+                }
+                self.needs_highlight_parse = false;
+                true
+            } else {
+                // Stale generation: AST discarded, but worker ownership freed so next worker can run
+                self.needs_highlight_parse = true;
+                false
             }
-
-            self.needs_highlight_parse = false;
-            true
         } else {
-            // Stale completion: 実行中の後続ワーカーを阻害しないよう async フラグは触らない
-            self.needs_highlight_parse = true;
+            // Case C: stale worker completion from an earlier superseded worker.
+            // Do NOT touch active_parse_worker_generation or is_parsing_async!
             false
         }
     }
@@ -361,6 +442,7 @@ impl EditorTab {
             self.current_match_idx = 0;
             self.needs_search_update = false;
             self.is_searching_async = false;
+            self.active_search_worker_generation = None;
             return (self.search_generation, false);
         }
 
@@ -370,6 +452,9 @@ impl EditorTab {
         let is_large = self.buffer.len_bytes() > SYNC_SEARCH_MAX_BYTES;
 
         if is_large {
+            self.search_worker_counter = self.search_worker_counter.wrapping_add(1);
+            let worker_gen = self.search_worker_counter;
+            self.active_search_worker_generation = Some(worker_gen);
             self.is_searching_async = true;
             self.needs_search_update = false;
         } else {
@@ -378,24 +463,48 @@ impl EditorTab {
                 self.current_match_idx = 0;
             }
             self.is_searching_async = false;
+            self.active_search_worker_generation = None;
             self.needs_search_update = false;
         }
         (self.search_generation, is_large)
     }
 
+    /// Safely apply background search results.
+    ///
+    /// Distinguishes between:
+    /// - `generation` (`search_generation`): "Are the search matches based on the latest buffer content/query?"
+    /// - `worker_generation`: "Who currently owns the active async search worker slot?"
+    ///
+    /// Invariants:
+    /// - Case A (current worker + current generation): apply matches, clear active worker, set `is_searching_async = false`, `needs_search_update = false`.
+    /// - Case B (current worker + stale generation): discard matches, clear active worker, set `is_searching_async = false`, `needs_search_update = true`.
+    ///   This allows subsequent debounced ticks to launch the next worker without becoming permanently stalled.
+    /// - Case C (stale worker, another worker already active or ownership cleared): discard matches, do NOT touch active worker or `is_searching_async`.
     pub fn apply_search_results(
         &mut self,
         generation: usize,
+        worker_generation: usize,
         matches: Vec<(usize, usize, usize)>,
     ) -> bool {
-        if generation == self.search_generation {
+        if self.active_search_worker_generation == Some(worker_generation) {
+            self.active_search_worker_generation = None;
             self.is_searching_async = false;
-            self.search_matches = matches;
-            if self.current_match_idx >= self.search_matches.len() {
-                self.current_match_idx = 0;
+
+            if generation == self.search_generation {
+                self.search_matches = matches;
+                if self.current_match_idx >= self.search_matches.len() {
+                    self.current_match_idx = 0;
+                }
+                self.needs_search_update = false;
+                true
+            } else {
+                // Stale generation: results discarded, but worker ownership freed so next worker can run
+                self.needs_search_update = true;
+                false
             }
-            true
         } else {
+            // Case C: stale worker completion from an earlier superseded worker.
+            // Do NOT touch active_search_worker_generation or is_searching_async!
             false
         }
     }
@@ -540,6 +649,9 @@ impl EditorPane {
                 tab.highlighter = highlighter;
                 tab.parse_generation = tab.parse_generation.wrapping_add(1);
                 tab.is_parsing_async = false;
+                tab.active_parse_worker_generation = None;
+                tab.is_searching_async = false;
+                tab.active_search_worker_generation = None;
                 tab.needs_highlight_parse = false;
                 tab.needs_scroll_to_cursor.set(true);
                 return Ok(());
@@ -623,6 +735,10 @@ impl EditorPane {
         self.active_tab().id
     }
 
+    pub fn tab_by_id(&self, id: usize) -> Option<&EditorTab> {
+        self.tabs.iter().find(|t| t.id == id)
+    }
+
     pub fn tab_by_id_mut(&mut self, id: usize) -> Option<&mut EditorTab> {
         self.tabs.iter_mut().find(|t| t.id == id)
     }
@@ -635,24 +751,48 @@ impl EditorPane {
 }
 
 /// Pure helper function to execute substring search on a Rope without mutating editor state.
+/// Ensures Unicode case-folding safety and exact character position mapping.
+/// Absolutely avoids byte-offset slicing into differing strings to guarantee zero UTF-8 boundary panics.
 pub fn run_search_on_rope(rope: &ropey::Rope, query: &str) -> Vec<(usize, usize, usize)> {
     if query.is_empty() {
         return Vec::new();
     }
-    let q_lower = query.to_lowercase();
-    let q_len = query.chars().count();
+    let q_lower_chars: Vec<char> = query.chars().flat_map(|c| c.to_lowercase()).collect();
+    if q_lower_chars.is_empty() {
+        return Vec::new();
+    }
+    let q_len = q_lower_chars.len();
     let mut matches = Vec::new();
 
     for (line_idx, line_slice) in rope.lines().enumerate() {
         let line_str = line_slice.to_string();
         let line_trimmed = line_str.trim_end_matches(['\r', '\n']);
-        let line_lower = line_trimmed.to_lowercase();
-        let mut start_byte = 0;
-        while let Some(byte_pos) = line_lower[start_byte..].find(&q_lower) {
-            let actual_byte = start_byte + byte_pos;
-            let char_start = line_trimmed[..actual_byte].chars().count();
-            matches.push((line_idx, char_start, char_start + q_len));
-            start_byte = actual_byte + q_lower.len().max(1);
+        if line_trimmed.is_empty() {
+            continue;
+        }
+
+        // Map each character in the original line to its lowercase expansion,
+        // recording the original character index.
+        let mut line_lower_chars: Vec<(char, usize)> = Vec::with_capacity(line_trimmed.len());
+        for (orig_idx, ch) in line_trimmed.chars().enumerate() {
+            for low_ch in ch.to_lowercase() {
+                line_lower_chars.push((low_ch, orig_idx));
+            }
+        }
+
+        if q_len <= line_lower_chars.len() {
+            let mut i = 0;
+            while i + q_len <= line_lower_chars.len() {
+                let is_match = (0..q_len).all(|j| line_lower_chars[i + j].0 == q_lower_chars[j]);
+                if is_match {
+                    let start_char = line_lower_chars[i].1;
+                    let end_char = line_lower_chars[i + q_len - 1].1 + 1;
+                    matches.push((line_idx, start_char, end_char));
+                    i += q_len.max(1);
+                } else {
+                    i += 1;
+                }
+            }
         }
     }
     matches

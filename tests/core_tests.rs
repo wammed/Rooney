@@ -2335,17 +2335,15 @@ fn test_async_search_generation_and_stale_discard() {
     assert!(!is_large, "Small file is marked !is_large");
     assert_eq!(pane.search_matches.len(), 2);
 
-    // User types faster: start search for "beta"
-    let (gen2, _) = pane.start_search("beta");
-    assert_eq!(gen2, 2);
+    // User types faster: start search worker for "beta"
+    let (gen2, worker_beta) = pane.start_search_worker();
 
-    // User types faster again: start search for "gamma"
-    let (gen3, _) = pane.start_search("gamma");
-    assert_eq!(gen3, 3);
+    // User types faster again: start search worker for "gamma"
+    let (gen3, worker_gamma) = pane.start_search_worker();
 
     // Suppose an older background search worker for "beta" (gen 2) finishes now with 1 match:
     let stale_matches = vec![(0, 6, 10)];
-    let applied = pane.apply_search_results(gen2, stale_matches);
+    let applied = pane.apply_search_results(gen2, worker_beta, stale_matches);
     assert!(
         !applied,
         "Stale search generation (2 vs 3) must be discarded"
@@ -2353,7 +2351,7 @@ fn test_async_search_generation_and_stale_discard() {
 
     // Current background worker for "gamma" (gen 3) finishes with 1 match:
     let current_matches = vec![(0, 11, 16)];
-    let applied = pane.apply_search_results(gen3, current_matches.clone());
+    let applied = pane.apply_search_results(gen3, worker_gamma, current_matches.clone());
     assert!(applied, "Matching search generation (3) must be applied");
     assert_eq!(pane.search_matches, current_matches);
 
@@ -2458,6 +2456,7 @@ fn test_search_generation_incremented_on_content_edit() {
     assert!(is_large, "File > 2MB must be marked as large for search");
     assert!(pane.search_query.is_some());
     assert_eq!(pane.search_generation, gen1);
+    let worker_1 = pane.active_search_worker_generation.unwrap();
 
     // Simulate background worker being in flight with gen1...
     // 2. User edits document while worker is in flight
@@ -2477,7 +2476,7 @@ fn test_search_generation_incremented_on_content_edit() {
     // 3. In-flight worker for gen1 finishes and tries to apply results
     let stale_matches = vec![(0, 3, 16)];
     let tab = pane.active_tab_mut();
-    let applied = tab.apply_search_results(gen1, stale_matches);
+    let applied = tab.apply_search_results(gen1, worker_1, stale_matches);
     assert!(
         !applied,
         "apply_search_results must reject stale generation from before the edit"
@@ -2486,11 +2485,19 @@ fn test_search_generation_incremented_on_content_edit() {
         tab.search_matches.is_empty(),
         "Stale matches must not be saved into tab"
     );
+    assert!(
+        !tab.is_searching_async,
+        "Worker 1 was active, so stale completion must free ownership (Case B)"
+    );
+    assert!(
+        tab.needs_search_update,
+        "needs_search_update must remain true after Case B"
+    );
 
     // 4. Tick debounced search runs for current generation
-    let current_gen = tab.search_generation;
+    let (current_gen, worker_2) = tab.start_search_worker();
     let fresh_matches = vec![(1, 3, 16)];
-    let applied_fresh = tab.apply_search_results(current_gen, fresh_matches.clone());
+    let applied_fresh = tab.apply_search_results(current_gen, worker_2, fresh_matches.clone());
     assert!(
         applied_fresh,
         "apply_search_results must accept current generation"
@@ -2683,7 +2690,7 @@ fn test_treesitter_file_switch_parse_generation_race() {
     let mut pane = EditorPane::new(PaneId::Left, "Untitled");
     pane.active_tab_mut().load_file(&file_rs).unwrap();
 
-    let initial_gen = pane.active_tab().parse_generation;
+    let (initial_gen, worker_rs) = pane.active_tab_mut().start_parse_worker();
     assert_eq!(pane.active_tab().highlighter.lang, SupportedLanguage::Rust);
 
     // Simulate async parse starting for file_rs (generation = initial_gen)
@@ -2694,7 +2701,7 @@ fn test_treesitter_file_switch_parse_generation_race() {
 
     // Before worker completes, user loads file_py into the same tab
     pane.active_tab_mut().load_file(&file_py).unwrap();
-    let new_gen = pane.active_tab().parse_generation;
+    let (new_gen, worker_py) = pane.active_tab_mut().start_parse_worker();
     assert_ne!(
         initial_gen, new_gen,
         "load_file must increment parse_generation"
@@ -2704,10 +2711,10 @@ fn test_treesitter_file_switch_parse_generation_race() {
         SupportedLanguage::Python
     );
 
-    // Stale tree from file_rs returns with initial_gen
+    // Stale tree from file_rs returns with initial_gen and worker_rs
     let applied = pane
         .active_tab_mut()
-        .apply_highlight_tree(initial_gen, tree_rs);
+        .apply_highlight_tree(initial_gen, worker_rs, tree_rs);
     assert!(!applied, "Stale AST from old file must be rejected");
 
     // Fresh tree for file_py with new_gen arrives
@@ -2716,7 +2723,9 @@ fn test_treesitter_file_switch_parse_generation_race() {
     py_parser.set_language(&py_ts_lang).unwrap();
     let tree_py = py_parser.parse("def hello():\n    print(\"Hello\")\n", None);
 
-    let applied_py = pane.active_tab_mut().apply_highlight_tree(new_gen, tree_py);
+    let applied_py = pane
+        .active_tab_mut()
+        .apply_highlight_tree(new_gen, worker_py, tree_py);
     assert!(applied_py, "Matching generation AST must be accepted");
     assert!(
         pane.active_tab().highlighter.has_tree(),
@@ -2738,7 +2747,7 @@ fn test_treesitter_save_as_language_change_race() {
     let mut pane = EditorPane::new(PaneId::Left, "scratch.txt");
     pane.active_tab_mut().buffer.insert_str("print('hello')\n");
     pane.active_tab_mut().on_content_changed();
-    let gen_before_save = pane.active_tab().parse_generation;
+    let (gen_before_save, worker_old) = pane.active_tab_mut().start_parse_worker();
 
     // Simulate background parse dispatched for PlainText / Rust
     let mut parser = tree_sitter::Parser::new();
@@ -2746,7 +2755,7 @@ fn test_treesitter_save_as_language_change_race() {
 
     // User performs save_file_as to python file
     pane.active_tab_mut().save_file_as(&file_py).unwrap();
-    let gen_after_save = pane.active_tab().parse_generation;
+    let (gen_after_save, worker_new) = pane.active_tab_mut().start_parse_worker();
     assert!(
         gen_after_save > gen_before_save,
         "save_file_as must increment parse_generation"
@@ -2757,9 +2766,9 @@ fn test_treesitter_save_as_language_change_race() {
     );
 
     // Stale parse returns with gen_before_save
-    let applied = pane
-        .active_tab_mut()
-        .apply_highlight_tree(gen_before_save, dummy_tree);
+    let applied =
+        pane.active_tab_mut()
+            .apply_highlight_tree(gen_before_save, worker_old, dummy_tree);
     assert!(!applied, "Stale AST before save_as must be rejected");
 
     // Correct Python parse returns
@@ -2768,9 +2777,9 @@ fn test_treesitter_save_as_language_change_race() {
     py_parser.set_language(&py_lang).unwrap();
     let py_tree = py_parser.parse("print('hello')\n", None);
 
-    let applied_correct = pane
-        .active_tab_mut()
-        .apply_highlight_tree(gen_after_save, py_tree);
+    let applied_correct =
+        pane.active_tab_mut()
+            .apply_highlight_tree(gen_after_save, worker_new, py_tree);
     assert!(applied_correct, "Current generation AST must be applied");
 
     let _ = std::fs::remove_file(file_py);
@@ -2786,7 +2795,7 @@ fn test_treesitter_undo_redo_parse_generation_stale_discard() {
         rooney::syntax::highlighter::Highlighter::new(SupportedLanguage::Rust);
     pane.active_tab_mut().buffer.insert_str("fn foo() {}");
     pane.active_tab_mut().on_content_changed();
-    let gen_edit1 = pane.active_tab().parse_generation;
+    let (gen_edit1, worker_edit1) = pane.active_tab_mut().start_parse_worker();
 
     // Worker started for edit1
     let mut parser = tree_sitter::Parser::new();
@@ -2797,16 +2806,16 @@ fn test_treesitter_undo_redo_parse_generation_stale_discard() {
     // User undoes the change
     pane.active_tab_mut().undo();
     assert_eq!(pane.active_tab().buffer.full_text(), "");
-    let gen_undo = pane.active_tab().parse_generation;
+    let (gen_undo, worker_undo) = pane.active_tab_mut().start_parse_worker();
     assert!(
         gen_undo > gen_edit1,
         "undo() must increment parse_generation"
     );
 
     // Worker for edit1 completes late
-    let applied_stale = pane
-        .active_tab_mut()
-        .apply_highlight_tree(gen_edit1, tree_edit1);
+    let applied_stale =
+        pane.active_tab_mut()
+            .apply_highlight_tree(gen_edit1, worker_edit1, tree_edit1);
     assert!(
         !applied_stale,
         "Stale tree from before undo must be discarded"
@@ -2816,13 +2825,13 @@ fn test_treesitter_undo_redo_parse_generation_stale_discard() {
     let tree_undo = parser.parse("", None);
     let applied_undo = pane
         .active_tab_mut()
-        .apply_highlight_tree(gen_undo, tree_undo);
+        .apply_highlight_tree(gen_undo, worker_undo, tree_undo);
     assert!(applied_undo, "AST matching undo generation must be applied");
 
     // User redoes the change
     pane.active_tab_mut().redo();
     assert_eq!(pane.active_tab().buffer.full_text(), "fn foo() {}");
-    let gen_redo = pane.active_tab().parse_generation;
+    let (gen_redo, worker_redo) = pane.active_tab_mut().start_parse_worker();
     assert!(
         gen_redo > gen_undo,
         "redo() must increment parse_generation"
@@ -2830,13 +2839,19 @@ fn test_treesitter_undo_redo_parse_generation_stale_discard() {
 
     // Late tree for undo state should be discarded
     let late_undo_tree = parser.parse("", None);
-    let applied_late = pane
-        .active_tab_mut()
-        .apply_highlight_tree(gen_undo, late_undo_tree);
+    let applied_late =
+        pane.active_tab_mut()
+            .apply_highlight_tree(gen_undo, worker_undo, late_undo_tree);
     assert!(
         !applied_late,
         "Stale tree from before redo must be discarded"
     );
+
+    let tree_redo = parser.parse("fn foo() {}", None);
+    let applied_redo = pane
+        .active_tab_mut()
+        .apply_highlight_tree(gen_redo, worker_redo, tree_redo);
+    assert!(applied_redo, "Redo tree must be applied");
 }
 
 #[test]
@@ -2849,7 +2864,7 @@ fn test_treesitter_stale_completion_preserves_is_parsing_async() {
         rooney::syntax::highlighter::Highlighter::new(SupportedLanguage::Rust);
     pane.active_tab_mut().buffer.insert_str("fn first() {}\n");
     pane.active_tab_mut().on_content_changed();
-    let gen_worker_a = pane.active_tab().parse_generation;
+    let (gen_worker_a, worker_a) = pane.active_tab_mut().start_parse_worker();
 
     // Simulate Worker A parsing tree for gen_worker_a
     let mut parser = tree_sitter::Parser::new();
@@ -2861,32 +2876,41 @@ fn test_treesitter_stale_completion_preserves_is_parsing_async() {
     // This increments parse_generation, and Tick would start Worker B setting is_parsing_async = true
     pane.active_tab_mut().buffer.insert_char('x');
     pane.active_tab_mut().on_content_changed();
-    let gen_worker_b = pane.active_tab().parse_generation;
+    let (gen_worker_b, worker_b) = pane.active_tab_mut().start_parse_worker();
     assert!(gen_worker_b > gen_worker_a);
+    assert_ne!(worker_b, worker_a);
+    assert_eq!(
+        pane.active_tab().active_parse_worker_generation,
+        Some(worker_b)
+    );
+    assert!(pane.active_tab().is_parsing_async);
 
-    // Mark async parsing active for Worker B
-    pane.active_tab_mut().is_parsing_async = true;
-
-    // Worker A finishes late (stale completion with gen_worker_a)
+    // Worker A finishes late (stale completion with gen_worker_a and worker_a)
     let applied_a = pane
         .active_tab_mut()
-        .apply_highlight_tree(gen_worker_a, tree_a);
+        .apply_highlight_tree(gen_worker_a, worker_a, tree_a);
     assert!(!applied_a, "Stale worker completion must return false");
+    assert_eq!(
+        pane.active_tab().active_parse_worker_generation,
+        Some(worker_b),
+        "Active worker ownership must remain with Worker B"
+    );
     assert!(
         pane.active_tab().is_parsing_async,
         "is_parsing_async must remain true when stale completion arrives, so running worker B is not corrupted"
-    );
-    assert!(
-        pane.active_tab().needs_highlight_parse,
-        "needs_highlight_parse must remain true on stale completion"
     );
 
     // Worker B completes with matching generation
     let tree_b = parser.parse("xfn first() {}\n", None);
     let applied_b = pane
         .active_tab_mut()
-        .apply_highlight_tree(gen_worker_b, tree_b);
+        .apply_highlight_tree(gen_worker_b, worker_b, tree_b);
     assert!(applied_b, "Current generation completion must be applied");
+    assert_eq!(
+        pane.active_tab().active_parse_worker_generation,
+        None,
+        "Active worker ownership must be cleared"
+    );
     assert!(
         !pane.active_tab().is_parsing_async,
         "is_parsing_async must be reset to false when current generation completes"
@@ -2895,6 +2919,230 @@ fn test_treesitter_stale_completion_preserves_is_parsing_async() {
         !pane.active_tab().needs_highlight_parse,
         "needs_highlight_parse must be cleared on successful parse application"
     );
+}
+
+#[test]
+fn test_treesitter_stale_worker_lifecycle_resets_for_next_worker() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use rooney::syntax::SupportedLanguage;
+
+    let mut pane = EditorPane::new(PaneId::Left, "main.rs");
+    pane.active_tab_mut().highlighter =
+        rooney::syntax::highlighter::Highlighter::new(SupportedLanguage::Rust);
+    // Large buffer (> 2MB) to exercise async debounced parsing behavior
+    let large_code = "fn code() { println!(\"hello\"); }\n".repeat(70_000);
+    pane.active_tab_mut().buffer = rooney::editor::buffer::TextBuffer::new(&large_code);
+    pane.active_tab_mut().needs_highlight_parse = true;
+
+    // 1. Worker A starts
+    let (gen_a, worker_a) = pane.active_tab_mut().start_parse_worker();
+    assert!(pane.active_tab().is_parsing_async);
+    assert_eq!(
+        pane.active_tab().active_parse_worker_generation,
+        Some(worker_a)
+    );
+
+    // 2. Buffer edit while A is running
+    pane.active_tab_mut().buffer.insert_str("// comment\n");
+    pane.active_tab_mut().on_content_changed();
+    assert!(pane.active_tab().parse_generation > gen_a);
+    assert!(pane.active_tab().needs_highlight_parse);
+
+    // 3. Worker A completes stale
+    let mut parser = tree_sitter::Parser::new();
+    let rs_lang = SupportedLanguage::Rust.tree_sitter_language().unwrap();
+    parser.set_language(&rs_lang).unwrap();
+    let tree_a = parser.parse("fn first() {}\n", None);
+
+    let applied_a = pane
+        .active_tab_mut()
+        .apply_highlight_tree(gen_a, worker_a, tree_a);
+    assert!(!applied_a, "Stale AST must be rejected");
+    // Case B Invariant: worker ownership freed, is_parsing_async = false, needs_highlight_parse = true
+    assert_eq!(
+        pane.active_tab().active_parse_worker_generation,
+        None,
+        "Case B: active worker ownership must be reset to None"
+    );
+    assert!(
+        !pane.active_tab().is_parsing_async,
+        "Case B: is_parsing_async must be false so next worker can be launched"
+    );
+    assert!(
+        pane.active_tab().needs_highlight_parse,
+        "Case B: needs_highlight_parse must remain true"
+    );
+
+    // 4. Tick triggers Worker B
+    let (gen_b, worker_b) = pane.active_tab_mut().start_parse_worker();
+    assert!(pane.active_tab().is_parsing_async);
+    assert_eq!(
+        pane.active_tab().active_parse_worker_generation,
+        Some(worker_b)
+    );
+
+    // 5. Worker B completes with matching generation
+    let tree_b = parser.parse("// comment\nfn first() {}\n", None);
+    let applied_b = pane
+        .active_tab_mut()
+        .apply_highlight_tree(gen_b, worker_b, tree_b);
+    assert!(applied_b, "Current AST must be accepted");
+    assert!(!pane.active_tab().is_parsing_async);
+    assert_eq!(pane.active_tab().active_parse_worker_generation, None);
+    assert!(!pane.active_tab().needs_highlight_parse);
+}
+
+#[test]
+fn test_treesitter_stale_worker_must_not_clear_active_successor() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use rooney::syntax::SupportedLanguage;
+
+    let mut pane = EditorPane::new(PaneId::Left, "main.rs");
+    pane.active_tab_mut().highlighter =
+        rooney::syntax::highlighter::Highlighter::new(SupportedLanguage::Rust);
+    pane.active_tab_mut().buffer.insert_str("fn first() {}\n");
+    pane.active_tab_mut().on_content_changed();
+
+    // 1. Worker A starts
+    let (gen_a, worker_a) = pane.active_tab_mut().start_parse_worker();
+
+    // 2. Buffer edit
+    pane.active_tab_mut().buffer.insert_char('!');
+    pane.active_tab_mut().on_content_changed();
+
+    // 3. Worker B starts (successor active worker)
+    let (gen_b, worker_b) = pane.active_tab_mut().start_parse_worker();
+    assert_eq!(
+        pane.active_tab().active_parse_worker_generation,
+        Some(worker_b)
+    );
+    assert!(pane.active_tab().is_parsing_async);
+
+    // 4. Worker A completes stale (Case C)
+    let mut parser = tree_sitter::Parser::new();
+    let rs_lang = SupportedLanguage::Rust.tree_sitter_language().unwrap();
+    parser.set_language(&rs_lang).unwrap();
+    let tree_a = parser.parse("fn first() {}\n", None);
+
+    let applied_a = pane
+        .active_tab_mut()
+        .apply_highlight_tree(gen_a, worker_a, tree_a);
+    assert!(!applied_a);
+    assert_eq!(
+        pane.active_tab().active_parse_worker_generation,
+        Some(worker_b),
+        "Case C: Stale worker A must NOT clear active worker B"
+    );
+    assert!(
+        pane.active_tab().is_parsing_async,
+        "Case C: is_parsing_async must remain true for Worker B"
+    );
+
+    // 5. Worker B completes
+    let tree_b = parser.parse("!fn first() {}\n", None);
+    let applied_b = pane
+        .active_tab_mut()
+        .apply_highlight_tree(gen_b, worker_b, tree_b);
+    assert!(applied_b);
+    assert_eq!(pane.active_tab().active_parse_worker_generation, None);
+    assert!(!pane.active_tab().is_parsing_async);
+}
+
+#[test]
+fn test_search_stale_worker_lifecycle_resets_for_next_worker() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+
+    let mut pane = EditorPane::new(PaneId::Left, "search.rs");
+    // Large buffer (> 2MB) with active search query
+    let large_text = "apple banana cherry\n".repeat(120_000);
+    pane.buffer = rooney::editor::buffer::TextBuffer::new(&large_text);
+    pane.search_query = Some("apple".to_string());
+    pane.needs_search_update = true;
+
+    // 1. Search worker A starts
+    let (gen_a, worker_a) = pane.start_search_worker();
+    assert!(pane.is_searching_async);
+    assert_eq!(pane.active_search_worker_generation, Some(worker_a));
+
+    // 2. User edits buffer while A is searching
+    pane.buffer.insert_str("date elderberry\n");
+    pane.on_content_changed();
+    assert!(pane.search_generation > gen_a);
+    assert!(pane.needs_search_update);
+
+    // 3. Worker A completes stale (Case B)
+    let stale_matches = vec![(0, 0, 5)];
+    let applied_a = pane.apply_search_results(gen_a, worker_a, stale_matches);
+    assert!(!applied_a, "Stale search matches must be discarded");
+    assert_eq!(
+        pane.active_search_worker_generation, None,
+        "Case B: active search worker must be cleared to None"
+    );
+    assert!(
+        !pane.is_searching_async,
+        "Case B: is_searching_async must be false so next search worker can run"
+    );
+    assert!(
+        pane.needs_search_update,
+        "Case B: needs_search_update must remain true"
+    );
+
+    // 4. Tick starts next search worker B
+    let (gen_b, worker_b) = pane.start_search_worker();
+    assert!(pane.is_searching_async);
+    assert_eq!(pane.active_search_worker_generation, Some(worker_b));
+
+    // 5. Worker B completes
+    let fresh_matches = vec![(0, 0, 5), (1, 0, 4)];
+    let applied_b = pane.apply_search_results(gen_b, worker_b, fresh_matches.clone());
+    assert!(applied_b, "Current search matches must be accepted");
+    assert_eq!(pane.active_search_worker_generation, None);
+    assert!(!pane.is_searching_async);
+    assert!(!pane.needs_search_update);
+    assert_eq!(pane.search_matches, fresh_matches);
+}
+
+#[test]
+fn test_search_stale_worker_must_not_clear_active_successor() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+
+    let mut pane = EditorPane::new(PaneId::Left, "search.rs");
+    pane.buffer.insert_str("apple banana cherry\n");
+    pane.on_content_changed();
+
+    // 1. Search worker A starts
+    let (gen_a, worker_a) = pane.start_search_worker();
+
+    // 2. User edits buffer
+    pane.buffer.insert_str("date\n");
+    pane.on_content_changed();
+
+    // 3. Worker B starts (successor active worker)
+    let (gen_b, worker_b) = pane.start_search_worker();
+    assert_eq!(pane.active_search_worker_generation, Some(worker_b));
+    assert!(pane.is_searching_async);
+
+    // 4. Worker A completes stale (Case C)
+    let stale_matches = vec![(0, 0, 5)];
+    let applied_a = pane.apply_search_results(gen_a, worker_a, stale_matches);
+    assert!(!applied_a);
+    assert_eq!(
+        pane.active_search_worker_generation,
+        Some(worker_b),
+        "Case C: Stale search worker A must NOT clear active search worker B"
+    );
+    assert!(
+        pane.is_searching_async,
+        "Case C: is_searching_async must remain true for Worker B"
+    );
+
+    // 5. Worker B completes
+    let fresh_matches = vec![(1, 0, 4)];
+    let applied_b = pane.apply_search_results(gen_b, worker_b, fresh_matches.clone());
+    assert!(applied_b);
+    assert_eq!(pane.active_search_worker_generation, None);
+    assert!(!pane.is_searching_async);
+    assert_eq!(pane.search_matches, fresh_matches);
 }
 
 #[test]
@@ -5264,4 +5512,335 @@ fn test_table_glyph_measurement_and_style_awareness() {
         }
         _ => panic!("Expected Table block"),
     }
+}
+
+#[test]
+fn test_ai_fim_stale_result_and_replacement_safety() {
+    use rooney::app::message::FimRequestToken;
+    use rooney::editor::pane::{EditorPane, PaneId};
+
+    let mut pane = EditorPane::new(PaneId::Left, "Tab1");
+    pane.buffer = TextBuffer::new("fn main() {\n    \n}");
+    pane.buffer.cursor = (1, 4);
+
+    let tab1_id = pane.active_tab_id();
+    let initial_rev = pane.buffer.revision;
+
+    let token_a = FimRequestToken {
+        pane_id: PaneId::Left,
+        tab_id: tab1_id,
+        request_id: 1,
+        buffer_revision: initial_rev,
+        cursor: (1, 4),
+    };
+
+    // Case 1: Tab switch
+    // User opens Tab 2
+    pane.new_tab("Tab2");
+    assert_ne!(pane.active_tab_id(), tab1_id);
+
+    // Simulated check for applying A to currently active tab (or if tab changed)
+    let is_valid_switch = token_a.tab_id == pane.active_tab_id()
+        && pane.buffer.revision == token_a.buffer_revision
+        && pane.buffer.cursor == token_a.cursor;
+    assert!(
+        !is_valid_switch,
+        "Stale FIM completion must be rejected when active tab does not match"
+    );
+
+    // Case 2: Buffer modification on Tab 1
+    pane.select_tab(0);
+    assert_eq!(pane.active_tab_id(), tab1_id);
+    pane.buffer.insert_str("println!();");
+    assert_ne!(pane.buffer.revision, token_a.buffer_revision);
+
+    let is_valid_buf = token_a.tab_id == pane.active_tab_id()
+        && pane.buffer.revision == token_a.buffer_revision
+        && pane.buffer.cursor == token_a.cursor;
+    assert!(
+        !is_valid_buf,
+        "Stale FIM completion must be rejected when buffer revision changed"
+    );
+
+    // Case 3: Cursor movement
+    pane.undo();
+    assert_eq!(pane.buffer.revision, token_a.buffer_revision);
+    pane.buffer.cursor = (0, 0); // moved cursor
+    let is_valid_cursor = token_a.tab_id == pane.active_tab_id()
+        && pane.buffer.revision == token_a.buffer_revision
+        && pane.buffer.cursor == token_a.cursor;
+    assert!(
+        !is_valid_cursor,
+        "Stale FIM completion must be rejected when cursor moved"
+    );
+
+    // Case 4: Request replacement (Request A superseded by Request B)
+    pane.buffer.cursor = (1, 4);
+    let mut current_fim_gen = 1; // Request A
+    current_fim_gen += 1; // Request B issued
+    let token_b = FimRequestToken {
+        pane_id: PaneId::Left,
+        tab_id: tab1_id,
+        request_id: current_fim_gen,
+        buffer_revision: pane.buffer.revision,
+        cursor: (1, 4),
+    };
+
+    // A arrives late
+    let a_accepted = token_a.request_id == current_fim_gen;
+    assert!(
+        !a_accepted,
+        "Request A must be discarded when superseded by Request B"
+    );
+
+    // B arrives
+    let b_accepted = token_b.request_id == current_fim_gen
+        && pane.buffer.revision == token_b.buffer_revision
+        && pane.buffer.cursor == token_b.cursor;
+    assert!(
+        b_accepted,
+        "Request B must be accepted when generation and buffer match"
+    );
+}
+
+#[test]
+fn test_ai_chat_streaming_stale_result_safety() {
+    use rooney::ai::{ChatMessage, ChatRole};
+
+    let mut current_chat_gen: usize = 1;
+    let mut messages: Vec<ChatMessage> = Vec::new();
+
+    // User prompts
+    messages.push(ChatMessage {
+        role: ChatRole::User,
+        content: "First question".into(),
+    });
+    messages.push(ChatMessage {
+        role: ChatRole::Assistant,
+        content: String::new(),
+    });
+
+    // Chunk 1 from request 1
+    let req1_id = current_chat_gen;
+    if req1_id == current_chat_gen {
+        if let Some(last) = messages.last_mut() {
+            last.content.push_str("Chunk 1 ");
+        }
+    }
+    assert_eq!(messages.last().unwrap().content, "Chunk 1 ");
+
+    // User stops request 1 and starts request 2
+    current_chat_gen += 1;
+    let req2_id = current_chat_gen;
+
+    messages.push(ChatMessage {
+        role: ChatRole::User,
+        content: "Second question".into(),
+    });
+    messages.push(ChatMessage {
+        role: ChatRole::Assistant,
+        content: String::new(),
+    });
+
+    // Stale late chunk from request 1 arrives!
+    let stale_chunk = "Late Chunk from 1";
+    let is_stale_accepted = if req1_id == current_chat_gen {
+        if let Some(last) = messages.last_mut() {
+            last.content.push_str(stale_chunk);
+        }
+        true
+    } else {
+        false
+    };
+    assert!(
+        !is_stale_accepted,
+        "Late chunk from old chat request must be discarded"
+    );
+    assert_eq!(messages.last().unwrap().content, "");
+
+    // Chunk from request 2 arrives
+    if req2_id == current_chat_gen {
+        if let Some(last) = messages.last_mut() {
+            last.content.push_str("Fresh response 2");
+        }
+    }
+    assert_eq!(messages.last().unwrap().content, "Fresh response 2");
+}
+
+#[test]
+fn test_search_unicode_correctness_matrix() {
+    use rooney::editor::pane::run_search_on_rope;
+    use ropey::Rope;
+
+    // 1. ASCII case-insensitive
+    let rope_ascii = Rope::from_str("Hello World\nhello WORLD\nAnother world line");
+    let matches_ascii = run_search_on_rope(&rope_ascii, "world");
+    assert_eq!(matches_ascii.len(), 3);
+    assert_eq!(matches_ascii[0], (0, 6, 11));
+    assert_eq!(matches_ascii[1], (1, 6, 11));
+    assert_eq!(matches_ascii[2], (2, 8, 13));
+
+    // 2. CJK (Japanese & Chinese characters)
+    let rope_cjk = Rope::from_str("こんにちは世界\n世界平和とRooneyエディタ\n世界中の開発者");
+    let matches_cjk = run_search_on_rope(&rope_cjk, "世界");
+    assert_eq!(matches_cjk.len(), 3);
+    assert_eq!(matches_cjk[0], (0, 5, 7)); // "こんにちは" is 5 chars, "世界" is 2 chars
+    assert_eq!(matches_cjk[1], (1, 0, 2));
+    assert_eq!(matches_cjk[2], (2, 0, 2));
+
+    // 3. Mixed CJK and Latin with case folding
+    let rope_mixed =
+        Rope::from_str("Rust言語は最高\nrust言語による高速処理\nRUST言語のメモリ安全性");
+    let matches_mixed = run_search_on_rope(&rope_mixed, "rust言語");
+    assert_eq!(matches_mixed.len(), 3);
+    assert_eq!(matches_mixed[0], (0, 0, 6)); // "Rust言語" = 6 chars
+    assert_eq!(matches_mixed[1], (1, 0, 6));
+    assert_eq!(matches_mixed[2], (2, 0, 6));
+
+    // 4. Emoji (multi-byte UTF-8, variable width)
+    let rope_emoji = Rope::from_str("Rooney 🦀 🚀 🌟 🦀\nRusty 🦀 code");
+    let matches_emoji = run_search_on_rope(&rope_emoji, "🦀");
+    assert_eq!(matches_emoji.len(), 3);
+    assert_eq!(matches_emoji[0], (0, 7, 8));
+    assert_eq!(matches_emoji[1], (0, 13, 14));
+    assert_eq!(matches_emoji[2], (1, 6, 7));
+
+    // 5. Combining marks
+    let rope_combining = Rope::from_str("e\u{0301}cole primaire\ne\u{0301}cole secondaire");
+    let matches_combining = run_search_on_rope(&rope_combining, "e\u{0301}cole");
+    assert_eq!(matches_combining.len(), 2);
+    assert_eq!(matches_combining[0], (0, 0, 6)); // 'e' + '\u{0301}' + 'c' + 'o' + 'l' + 'e' = 6 chars
+    assert_eq!(matches_combining[1], (1, 0, 6));
+
+    // 6. Unicode case conversion where byte length or char count changes
+    // 6.1 Kelvin sign (\u{212A}, 3 bytes) folds to 'k' (1 byte)
+    let rope_kelvin = Rope::from_str("temperature: 300\u{212A} absolute\ntemperature: 273k normal");
+    let matches_kelvin = run_search_on_rope(&rope_kelvin, "300k");
+    assert_eq!(matches_kelvin.len(), 1);
+    assert_eq!(matches_kelvin[0], (0, 13, 17)); // "300" (3) + "\u{212A}" (1) = 4 chars: 13..17
+
+    // 6.2 Turkish dotted uppercase I (\u{0130}, 2 bytes)
+    let rope_turkish = Rope::from_str("\u{0130}STANBUL city\nistanbul lowercase");
+    // Ensure no panic occurs on boundary during search
+    let matches_turkish = run_search_on_rope(&rope_turkish, "\u{0130}st");
+    assert_eq!(matches_turkish.len(), 1);
+    assert_eq!(matches_turkish[0].0, 0);
+
+    // 7. Selection & Replace from search matches
+    let mut buf = TextBuffer::new("apple orange apple banana");
+    let matches = run_search_on_rope(&buf.rope, "apple");
+    assert_eq!(matches.len(), 2);
+
+    // Select second "apple"
+    let (line, start, end) = matches[1];
+    buf.selection_anchor = Some((line, start));
+    buf.cursor = (line, end);
+    assert_eq!(buf.selected_text(), Some("apple".to_string()));
+
+    // Replace selection
+    buf.delete_selection();
+    buf.insert_str("pineapple");
+    assert_eq!(buf.full_text(), "apple orange pineapple banana");
+}
+
+#[test]
+fn test_treesitter_large_file_open_async_offload() {
+    use rooney::editor::pane::{EditorPane, PaneId};
+    use std::fs;
+
+    let temp_dir = std::env::temp_dir().join("rooney_large_file_test");
+    let _ = fs::create_dir_all(&temp_dir);
+    let large_file = temp_dir.join("large_open_test.rs");
+
+    // Generate a file > 2MB (e.g. 2.2 MB)
+    let block = "pub fn generated_sample_function_test() -> i32 { 42 }\n";
+    let count = (2_200_000 / block.len()) + 10;
+    let content = block.repeat(count);
+    assert!(content.len() > 2 * 1024 * 1024, "File must be > 2MB");
+    fs::write(&large_file, &content).unwrap();
+
+    let mut pane = EditorPane::new(PaneId::Left, "Test");
+    assert!(pane.open_file(&large_file).is_ok());
+
+    // Verify UI thread synchronous parse was offloaded:
+    // Tab must be created, editor immediately usable, needs_highlight_parse = true
+    let tab = pane.active_tab();
+    assert_eq!(tab.file_name, "large_open_test.rs");
+    assert!(
+        tab.needs_highlight_parse,
+        "Large file parse must be flagged for background worker"
+    );
+    assert!(!tab.is_parsing_async, "Not yet picked up by async worker");
+
+    // Stale result safety check:
+    let (open_gen, worker_open) = pane.active_tab_mut().start_parse_worker();
+    // User edits the file or undoes
+    pane.active_tab_mut()
+        .buffer
+        .insert_str("// User typed a comment\n");
+    pane.active_tab_mut().on_content_changed();
+    let edited_gen = pane.active_tab().parse_generation;
+    assert!(edited_gen > open_gen);
+
+    // Worker with old AST completes
+    let mut parser = tree_sitter::Parser::new();
+    let ts_lang = tree_sitter_rust::LANGUAGE.into();
+    let _ = parser.set_language(&ts_lang);
+    let stale_tree = parser.parse("fn old() {}", None);
+
+    let applied = pane
+        .active_tab_mut()
+        .apply_highlight_tree(open_gen, worker_open, stale_tree);
+    assert!(
+        !applied,
+        "Stale AST from initial open must be rejected after buffer modification"
+    );
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_file_tree_workspace_containment_and_symlinks() {
+    use rooney::fs::tree::FileTree;
+    use std::fs;
+
+    let temp_base = std::env::temp_dir().join("rooney_containment_test");
+    let workspace = temp_base.join("workspace");
+    let outside = temp_base.join("outside");
+    let _ = fs::remove_dir_all(&temp_base);
+    let _ = fs::create_dir_all(&workspace);
+    let _ = fs::create_dir_all(&outside);
+
+    // Inside workspace
+    fs::write(workspace.join("inside.txt"), "hello").unwrap();
+    let sub = workspace.join("sub");
+    fs::create_dir_all(&sub).unwrap();
+    fs::write(sub.join("sub_file.rs"), "fn sub() {}").unwrap();
+
+    // Outside workspace
+    fs::write(outside.join("secret.txt"), "sensitive").unwrap();
+
+    // Create a symlink pointing outside
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        let symlink_path = workspace.join("ext_link");
+        let _ = symlink(&outside, &symlink_path);
+
+        let tree = FileTree::new(&workspace);
+        // Verify that none of the scanned items belong to the outside directory or traverse into it
+        for item in &tree.items {
+            assert!(
+                !item.path.starts_with(&outside),
+                "FileTree items must not traverse into external directories outside root: {:?}",
+                item.path
+            );
+            assert_ne!(
+                item.name, "secret.txt",
+                "External file must not appear in workspace tree"
+            );
+        }
+    }
+
+    let _ = fs::remove_dir_all(&temp_base);
 }

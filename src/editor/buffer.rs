@@ -3,6 +3,14 @@ use std::collections::VecDeque;
 use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Debug, Clone)]
+pub struct UndoSnapshot {
+    pub rope: Rope,
+    pub cursor: (usize, usize),
+    pub selection_anchor: Option<(usize, usize)>,
+    pub revision: usize,
+}
+
+#[derive(Debug, Clone)]
 pub struct TextBuffer {
     pub rope: Rope,
     pub cursor: (usize, usize), // (line_idx, col_idx)
@@ -10,8 +18,10 @@ pub struct TextBuffer {
     pub is_modified: bool,
     pub last_edit: Option<tree_sitter::InputEdit>,
     pub max_line_len: usize,
-    undo_stack: VecDeque<Rope>,
-    redo_stack: VecDeque<Rope>,
+    pub revision: usize,
+    pub saved_revision: Option<usize>,
+    undo_stack: VecDeque<UndoSnapshot>,
+    redo_stack: VecDeque<UndoSnapshot>,
 }
 
 impl Default for TextBuffer {
@@ -81,6 +91,8 @@ impl TextBuffer {
             is_modified: false,
             last_edit: None,
             max_line_len,
+            revision: 0,
+            saved_revision: Some(0),
             undo_stack: VecDeque::new(),
             redo_stack: VecDeque::new(),
         }
@@ -120,6 +132,11 @@ impl TextBuffer {
         self.rope.to_string()
     }
 
+    pub fn mark_saved(&mut self) {
+        self.saved_revision = Some(self.revision);
+        self.is_modified = false;
+    }
+
     pub fn char_index(&self, line: usize, col: usize) -> usize {
         let line = line.min(self.rope.len_lines().saturating_sub(1));
         let line_char_start = self.rope.line_to_char(line);
@@ -140,28 +157,50 @@ impl TextBuffer {
         if self.undo_stack.len() >= 100 {
             self.undo_stack.pop_front();
         }
-        self.undo_stack.push_back(self.rope.clone());
+        self.undo_stack.push_back(UndoSnapshot {
+            rope: self.rope.clone(),
+            cursor: self.cursor,
+            selection_anchor: self.selection_anchor,
+            revision: self.revision,
+        });
         self.redo_stack.clear();
-        self.is_modified = true;
+        self.revision = self.revision.wrapping_add(1);
+        self.is_modified = Some(self.revision) != self.saved_revision;
     }
 
     pub fn undo(&mut self) {
         if let Some(prev) = self.undo_stack.pop_back() {
-            self.redo_stack.push_back(self.rope.clone());
-            self.rope = prev;
+            self.redo_stack.push_back(UndoSnapshot {
+                rope: self.rope.clone(),
+                cursor: self.cursor,
+                selection_anchor: self.selection_anchor,
+                revision: self.revision,
+            });
+            self.rope = prev.rope;
+            self.cursor = prev.cursor;
+            self.selection_anchor = prev.selection_anchor;
+            self.revision = prev.revision;
             self.last_edit = None;
             self.clamp_cursor();
-            self.selection_anchor = None;
+            self.is_modified = Some(self.revision) != self.saved_revision;
         }
     }
 
     pub fn redo(&mut self) {
         if let Some(next) = self.redo_stack.pop_back() {
-            self.undo_stack.push_back(self.rope.clone());
-            self.rope = next;
+            self.undo_stack.push_back(UndoSnapshot {
+                rope: self.rope.clone(),
+                cursor: self.cursor,
+                selection_anchor: self.selection_anchor,
+                revision: self.revision,
+            });
+            self.rope = next.rope;
+            self.cursor = next.cursor;
+            self.selection_anchor = next.selection_anchor;
+            self.revision = next.revision;
             self.last_edit = None;
             self.clamp_cursor();
-            self.selection_anchor = None;
+            self.is_modified = Some(self.revision) != self.saved_revision;
         }
     }
 

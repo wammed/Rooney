@@ -11,6 +11,21 @@ pub enum ActiveHeaderMenu {
     View,
     Ai,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SettingsTab {
+    #[default]
+    Aesthetics,
+    About,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FimRequestToken {
+    pub pane_id: PaneId,
+    pub tab_id: usize,
+    pub request_id: usize,
+    pub buffer_revision: usize,
+    pub cursor: (usize, usize),
+}
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
@@ -33,7 +48,7 @@ pub enum Message {
     DecreaseFontSize,
     ToggleAi,
     TriggerAiFim,
-    AiFimResult(PaneId, Result<String, OllamaError>),
+    AiFimResult(FimRequestToken, Result<String, OllamaError>),
     AiModelsFetched(Result<Vec<String>, OllamaError>),
     SelectAiModel(usize),
     OpenFilePrompt,
@@ -69,6 +84,8 @@ pub enum Message {
     ChangeTitleBarOpacity(f32),
     ChangeDimming(f32),
     CloseSettings,
+    SelectSettingsTab(SettingsTab),
+    ToggleLicenseDetail(usize),
     DragWindow,
     MaximizeWindow,
     MinimizeWindow,
@@ -111,9 +128,17 @@ pub enum Message {
     AiChatInputChanged(String),
     SendAiChatMessage,
     StopAiChat,
-    AiChatChunk(String),
-    AiChatDone,
-    AiChatError(String),
+    AiChatChunk {
+        request_id: usize,
+        chunk: String,
+    },
+    AiChatDone {
+        request_id: usize,
+    },
+    AiChatError {
+        request_id: usize,
+        error: String,
+    },
     AiChatResult(Result<String, String>),
     ClearAiChat,
     AttachSelectionToAiChat,
@@ -126,6 +151,7 @@ pub enum Message {
         pane_id: PaneId,
         tab_id: usize,
         generation: usize,
+        worker_generation: usize,
         tree: Option<tree_sitter::Tree>,
     },
 
@@ -134,6 +160,7 @@ pub enum Message {
         pane_id: PaneId,
         tab_id: usize,
         generation: usize,
+        worker_generation: usize,
         matches: Vec<(usize, usize, usize)>,
     },
 

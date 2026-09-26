@@ -274,6 +274,11 @@ impl App {
                     return self.handle_update(Message::Paste);
                 }
 
+                // Shortcut: Ctrl + , (Preferences / Settings)
+                if modifiers.control() && matches!(&key, Key::Character(c) if c == ",") {
+                    return self.handle_update(Message::ToggleSettings);
+                }
+
                 // Tab key (Indentation / unindentation)
                 if !modifiers.control() && matches!(&key, Key::Named(keyboard::key::Named::Tab)) {
                     let pane = self.current_pane_mut();
@@ -295,6 +300,9 @@ impl App {
 
                 // Escape key
                 if matches!(&key, Key::Named(keyboard::key::Named::Escape)) {
+                    if self.show_settings {
+                        return self.handle_update(Message::CloseSettings);
+                    }
                     if self.current_pane().is_search_open {
                         return self.handle_update(Message::CloseSearch);
                     }

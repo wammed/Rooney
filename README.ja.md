@@ -171,7 +171,9 @@ Rooney は **100% 完全オフライン・ローカルファースト** で動�
 
 ## 📄 ライセンス
 
-本プロジェクトは [MIT License](LICENSE) のもとで公開されています。
+Rooney 本体のソースコードは [MIT License](LICENSE) のもとで公開されています。
+
+Rooney が利用するサードパーティ製依存関係には、各上流のライセンス（`MPL-2.0`、`Apache-2.0`、`MIT`、`GPL-3.0-only` 等）が適用されます。ライセンス体系、ソースコード配布方針、Git 依存関係のコミット固定情報、およびバイナリ再配布時の留意事項に関する詳細は、**[LICENSES.ja.md](LICENSES.ja.md)**（[英語版: LICENSES.md](LICENSES.md)）および [THIRD_PARTY_LICENSES/README.md](THIRD_PARTY_LICENSES/README.md) を参照してください。
 
 <p align="center">
   Crafted via <strong>AI Vibe Coding</strong> 🚀 · Built with ❤️ for Pop!_OS COSMIC & Linux Developers

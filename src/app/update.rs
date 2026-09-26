@@ -90,10 +90,7 @@ impl App {
                     {
                         if let Some(query) = pane.search_query.clone() {
                             if !query.is_empty() {
-                                pane.search_generation = pane.search_generation.wrapping_add(1);
-                                let generation = pane.search_generation;
-                                pane.is_searching_async = true;
-                                pane.needs_search_update = false;
+                                let (generation, worker_gen) = pane.start_search_worker();
                                 let rope_clone = pane.buffer.rope.clone();
                                 let tab_id = pane.active_tab_id();
                                 async_tasks.push(Task::perform(
@@ -103,18 +100,27 @@ impl App {
                                                 &rope_clone,
                                                 &query,
                                             );
-                                            (pane_id, tab_id, generation, matches)
+                                            (pane_id, tab_id, generation, worker_gen, matches)
                                         })
                                         .await
                                         .unwrap_or_else(
-                                            |_| (pane_id, tab_id, generation, Vec::new()),
+                                            |_| {
+                                                (
+                                                    pane_id,
+                                                    tab_id,
+                                                    generation,
+                                                    worker_gen,
+                                                    Vec::new(),
+                                                )
+                                            },
                                         )
                                     },
-                                    |(pane_id, tab_id, generation, matches)| {
+                                    |(pane_id, tab_id, generation, worker_gen, matches)| {
                                         cosmic::Action::App(Message::SearchCompleted {
                                             pane_id,
                                             tab_id,
                                             generation,
+                                            worker_generation: worker_gen,
                                             matches,
                                         })
                                     },
@@ -140,14 +146,13 @@ impl App {
                         && pane.last_edit_time.elapsed() >= Duration::from_millis(100)
                         && !pane.is_parsing_async
                     {
-                        pane.is_parsing_async = true;
+                        let (parse_gen, worker_gen) = pane.start_parse_worker();
                         let rope_clone = pane.buffer.rope.clone();
                         let lang = pane.highlighter.lang;
                         let is_md_preview = pane.is_markdown_preview
                             && lang == crate::syntax::SupportedLanguage::Markdown;
                         let md_spec = pane.markdown_spec;
                         let md_gen = pane.markdown_generation;
-                        let parse_gen = pane.parse_generation;
                         let tab_id = pane.active_tab_id();
 
                         async_tasks.push(Task::perform(
@@ -159,16 +164,17 @@ impl App {
                                     }
                                     let text = rope_clone.to_string();
                                     let tree = parser.parse(&text, None);
-                                    (pane_id, tab_id, parse_gen, tree)
+                                    (pane_id, tab_id, parse_gen, worker_gen, tree)
                                 })
                                 .await
-                                .unwrap_or_else(|_| (pane_id, tab_id, parse_gen, None))
+                                .unwrap_or_else(|_| (pane_id, tab_id, parse_gen, worker_gen, None))
                             },
-                            |(pane_id, tab_id, parse_gen, tree)| {
+                            |(pane_id, tab_id, parse_gen, worker_gen, tree)| {
                                 cosmic::Action::App(Message::HighlightParseCompleted {
                                     pane_id,
                                     tab_id,
                                     generation: parse_gen,
+                                    worker_generation: worker_gen,
                                     tree,
                                 })
                             },
@@ -415,7 +421,7 @@ impl App {
                     FileTreeMessage::OpenFile(path) => {
                         self.file_tree.select(path.clone());
                         self.open_file_in_active_pane(&path);
-                        Task::none()
+                        self.spawn_highlight_parse_if_needed(self.active_pane)
                     }
                     FileTreeMessage::Refresh => {
                         self.file_tree.refresh();
@@ -665,7 +671,7 @@ impl App {
             }
 
             Message::TriggerAiFim => {
-                if !self.ollama.is_enabled || self.ai_request_pending {
+                if !self.ollama.is_enabled {
                     return Task::none();
                 }
 
@@ -677,11 +683,25 @@ impl App {
                 }
 
                 let active_pane = self.active_pane;
-                let (prefix, suffix) = self.current_pane().buffer.get_fim_prefix_suffix(1500);
+                let active_tab_id = self.current_pane().active_tab_id();
+                let buffer_revision = self.current_pane().buffer.revision;
+                let cursor = self.current_pane().buffer.cursor;
 
+                let (prefix, suffix) = self.current_pane().buffer.get_fim_prefix_suffix(1500);
                 if prefix.trim().is_empty() {
                     return Task::none();
                 }
+
+                self.fim_generation = self.fim_generation.wrapping_add(1);
+                let request_id = self.fim_generation;
+
+                let token = crate::app::message::FimRequestToken {
+                    pane_id: active_pane,
+                    tab_id: active_tab_id,
+                    request_id,
+                    buffer_revision,
+                    cursor,
+                };
 
                 self.ai_request_pending = true;
                 self.ai_status = AiStatus::Generating;
@@ -690,27 +710,53 @@ impl App {
                 Task::perform(
                     async move {
                         let res = client.generate_fim(&prefix, &suffix).await;
-                        (active_pane, res)
+                        (token, res)
                     },
-                    |(pane, res)| cosmic::Action::App(Message::AiFimResult(pane, res)),
+                    |(token, res)| cosmic::Action::App(Message::AiFimResult(token, res)),
                 )
             }
 
-            Message::AiFimResult(pane_id, result) => {
-                self.ai_request_pending = false;
+            Message::AiFimResult(token, result) => {
+                if token.request_id == self.fim_generation {
+                    self.ai_request_pending = false;
+                }
+
                 match result {
                     Ok(text) => {
-                        self.ai_status = AiStatus::Ready(self.ollama.active_model.clone());
-                        let target_pane = self.pane_mut(pane_id);
-                        if !text.is_empty() {
-                            target_pane.ghost_text = Some(text);
-                            self.status_msg =
-                                Some("AI: Suggestion ready (Press Tab to accept)".into());
+                        // Stale-result safety checks:
+                        // 1. Generation matches current fim_generation
+                        // 2. Target pane exists
+                        // 3. Tab with token.tab_id still exists
+                        // 4. Tab buffer revision has not changed
+                        // 5. Cursor position has not changed
+                        let is_valid = token.request_id == self.fim_generation
+                            && self
+                                .pane_mut(token.pane_id)
+                                .tab_by_id(token.tab_id)
+                                .map(|tab| {
+                                    tab.buffer.revision == token.buffer_revision
+                                        && tab.buffer.cursor == token.cursor
+                                })
+                                .unwrap_or(false);
+
+                        if is_valid {
+                            self.ai_status = AiStatus::Ready(self.ollama.active_model.clone());
+                            if !text.is_empty() {
+                                if let Some(tab) =
+                                    self.pane_mut(token.pane_id).tab_by_id_mut(token.tab_id)
+                                {
+                                    tab.ghost_text = Some(text);
+                                }
+                                self.status_msg =
+                                    Some("AI: Suggestion ready (Press Tab to accept)".into());
+                            }
                         }
                     }
                     Err(e) => {
-                        self.ai_status = AiStatus::Error(e.to_string());
-                        self.status_msg = Some(format!("AI Error: {e}"));
+                        if token.request_id == self.fim_generation {
+                            self.ai_status = AiStatus::Error(e.to_string());
+                            self.status_msg = Some(format!("AI Error: {e}"));
+                        }
                     }
                 }
                 Task::none()
@@ -760,6 +806,7 @@ impl App {
                     if path.starts_with(&self.file_tree.root) {
                         self.file_tree.select(path);
                     }
+                    return self.spawn_highlight_parse_if_needed(self.active_pane);
                 }
                 Task::none()
             }
@@ -876,6 +923,15 @@ impl App {
                     return Task::none();
                 }
 
+                if let Ok(canonical_parent) = self.new_file_target_dir.canonicalize() {
+                    if !canonical_parent.starts_with(&self.file_tree.root) {
+                        self.status_msg =
+                            Some("Safety guard: Target directory is outside workspace root".into());
+                        self.show_new_file_modal = false;
+                        return Task::none();
+                    }
+                }
+
                 let target_path = self.new_file_target_dir.join(raw_name);
                 if let Some(parent) = target_path.parent() {
                     let _ = std::fs::create_dir_all(parent);
@@ -949,6 +1005,21 @@ impl App {
                 Task::none()
             }
 
+            Message::SelectSettingsTab(tab) => {
+                self.show_settings = true;
+                self.settings_tab = tab;
+                Task::none()
+            }
+
+            Message::ToggleLicenseDetail(idx) => {
+                if self.expanded_license_idx == Some(idx) {
+                    self.expanded_license_idx = None;
+                } else {
+                    self.expanded_license_idx = Some(idx);
+                }
+                Task::none()
+            }
+
             Message::ToggleSearch => {
                 let pane = self.current_pane_mut();
                 pane.is_search_open = !pane.is_search_open;
@@ -967,6 +1038,7 @@ impl App {
                 let (generation, is_large) = pane.start_search(&q);
 
                 if is_large && !q.is_empty() {
+                    let worker_gen = pane.active_search_worker_generation.unwrap_or(0);
                     let rope_clone = pane.buffer.rope.clone();
                     let tab_id = pane.active_tab_id();
                     let query = q;
@@ -975,16 +1047,19 @@ impl App {
                             tokio::task::spawn_blocking(move || {
                                 let matches =
                                     crate::editor::pane::run_search_on_rope(&rope_clone, &query);
-                                (pane_id, tab_id, generation, matches)
+                                (pane_id, tab_id, generation, worker_gen, matches)
                             })
                             .await
-                            .unwrap_or_else(|_| (pane_id, tab_id, generation, Vec::new()))
+                            .unwrap_or_else(|_| {
+                                (pane_id, tab_id, generation, worker_gen, Vec::new())
+                            })
                         },
-                        |(pane_id, tab_id, generation, matches)| {
+                        |(pane_id, tab_id, generation, worker_gen, matches)| {
                             cosmic::Action::App(Message::SearchCompleted {
                                 pane_id,
                                 tab_id,
                                 generation,
+                                worker_generation: worker_gen,
                                 matches,
                             })
                         },
@@ -998,11 +1073,12 @@ impl App {
                 pane_id,
                 tab_id,
                 generation,
+                worker_generation,
                 matches,
             } => {
                 let pane = self.pane_mut(pane_id);
                 if let Some(tab) = pane.tab_by_id_mut(tab_id) {
-                    tab.apply_search_results(generation, matches);
+                    tab.apply_search_results(generation, worker_generation, matches);
                 }
                 Task::none()
             }
@@ -1099,6 +1175,15 @@ impl App {
                     return Task::none();
                 }
 
+                if let Ok(canonical_parent) = self.new_folder_target_dir.canonicalize() {
+                    if !canonical_parent.starts_with(&self.file_tree.root) {
+                        self.status_msg =
+                            Some("Safety guard: Target folder is outside workspace root".into());
+                        self.show_new_folder_modal = false;
+                        return Task::none();
+                    }
+                }
+
                 let target_path = self.new_folder_target_dir.join(raw_name);
                 if let Err(e) = std::fs::create_dir_all(&target_path) {
                     self.status_msg = Some(format!("Failed to create folder: {e}"));
@@ -1145,6 +1230,16 @@ impl App {
 
                 if let Some(old_path) = self.rename_target_path.take() {
                     if let Some(parent) = old_path.parent() {
+                        if let Ok(canonical_parent) = parent.canonicalize() {
+                            if !canonical_parent.starts_with(&self.file_tree.root) {
+                                self.status_msg = Some(
+                                    "Safety guard: Rename target is outside workspace root".into(),
+                                );
+                                self.show_rename_modal = false;
+                                return Task::none();
+                            }
+                        }
+
                         let new_path = parent.join(&new_name);
                         if new_path != old_path {
                             if let Err(e) = std::fs::rename(&old_path, &new_path) {
@@ -1221,6 +1316,28 @@ impl App {
                         .map(|m| m.file_type().is_symlink())
                         .unwrap_or(false);
 
+                    // Workspace containment guard: do not delete files outside the workspace root
+                    if is_symlink {
+                        if let Ok(canonical_parent) =
+                            path.parent().unwrap_or(Path::new("")).canonicalize()
+                        {
+                            if !canonical_parent.starts_with(&self.file_tree.root) {
+                                self.status_msg = Some(
+                                    "Safety guard: Symlink parent is outside workspace root".into(),
+                                );
+                                self.show_delete_modal = false;
+                                return Task::none();
+                            }
+                        }
+                    } else if let Ok(canonical_path) = path.canonicalize() {
+                        if !canonical_path.starts_with(&self.file_tree.root) {
+                            self.status_msg =
+                                Some("Safety guard: Target path is outside workspace root".into());
+                            self.show_delete_modal = false;
+                            return Task::none();
+                        }
+                    }
+
                     let result = if is_symlink {
                         std::fs::remove_file(&path)
                     } else if path.is_dir() {
@@ -1296,6 +1413,9 @@ impl App {
                 self.ai_chat_input.clear();
                 self.ai_chat_pending = true;
 
+                self.ai_chat_generation = self.ai_chat_generation.wrapping_add(1);
+                let request_id = self.ai_chat_generation;
+
                 let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
                 self.ai_chat_cancel = Some(cancel_flag.clone());
 
@@ -1309,13 +1429,18 @@ impl App {
                 });
 
                 use futures_util::StreamExt;
-                let action_stream = rx.map(|event| match event {
+                let action_stream = rx.map(move |event| match event {
                     crate::ai::ChatStreamEvent::Chunk(chunk) => {
-                        cosmic::Action::App(Message::AiChatChunk(chunk))
+                        cosmic::Action::App(Message::AiChatChunk { request_id, chunk })
                     }
-                    crate::ai::ChatStreamEvent::Done => cosmic::Action::App(Message::AiChatDone),
+                    crate::ai::ChatStreamEvent::Done => {
+                        cosmic::Action::App(Message::AiChatDone { request_id })
+                    }
                     crate::ai::ChatStreamEvent::Error(err) => {
-                        cosmic::Action::App(Message::AiChatError(err))
+                        cosmic::Action::App(Message::AiChatError {
+                            request_id,
+                            error: err,
+                        })
                     }
                 });
 
@@ -1326,12 +1451,16 @@ impl App {
                 if let Some(flag) = self.ai_chat_cancel.take() {
                     flag.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
+                self.ai_chat_generation = self.ai_chat_generation.wrapping_add(1);
                 self.ai_chat_pending = false;
                 self.status_msg = Some("AI generation stopped".into());
                 Task::none()
             }
 
-            Message::AiChatChunk(chunk) => {
+            Message::AiChatChunk { request_id, chunk } => {
+                if request_id != self.ai_chat_generation {
+                    return Task::none();
+                }
                 if let Some(last) = self.ai_chat_messages.last_mut() {
                     if last.role == crate::ai::ChatRole::Assistant {
                         last.content.push_str(&chunk);
@@ -1340,14 +1469,23 @@ impl App {
                 Task::none()
             }
 
-            Message::AiChatDone => {
+            Message::AiChatDone { request_id } => {
+                if request_id != self.ai_chat_generation {
+                    return Task::none();
+                }
                 self.ai_chat_pending = false;
                 self.ai_chat_cancel = None;
                 self.status_msg = Some("AI response complete".into());
                 Task::none()
             }
 
-            Message::AiChatError(err) => {
+            Message::AiChatError {
+                request_id,
+                error: err,
+            } => {
+                if request_id != self.ai_chat_generation {
+                    return Task::none();
+                }
                 self.ai_chat_pending = false;
                 self.ai_chat_cancel = None;
                 if let Some(last) = self.ai_chat_messages.last_mut() {
@@ -1414,8 +1552,26 @@ impl App {
             }
 
             Message::AttachFileToAiChat => {
+                let pane = self.current_pane();
+                if let Some(ref path) = pane.file_path {
+                    if is_sensitive_file(path) {
+                        self.status_msg = Some(
+                            "Privacy guard: Sensitive files (.env, keys, credentials) cannot be attached to AI".into(),
+                        );
+                        return Task::none();
+                    }
+                }
+
+                const MAX_AI_ATTACH_BYTES: usize = 256 * 1024;
+                if pane.buffer.len_bytes() > MAX_AI_ATTACH_BYTES {
+                    self.status_msg = Some(format!(
+                        "Attachment limit: File exceeds maximum attachment size of 256 KB ({:.1} MB)",
+                        pane.buffer.len_bytes() as f64 / (1024.0 * 1024.0)
+                    ));
+                    return Task::none();
+                }
+
                 let (file_name, snippet) = {
-                    let pane = self.current_pane();
                     let name = pane.file_name.clone();
                     let full_text = pane.buffer.full_text();
                     let ext = pane
@@ -1453,11 +1609,12 @@ impl App {
                 pane_id,
                 tab_id,
                 generation,
+                worker_generation,
                 tree,
             } => {
                 let pane = self.pane_mut(pane_id);
                 if let Some(tab) = pane.tab_by_id_mut(tab_id) {
-                    tab.apply_highlight_tree(generation, tree);
+                    tab.apply_highlight_tree(generation, worker_generation, tree);
                 }
                 Task::none()
             }
@@ -1474,6 +1631,46 @@ impl App {
                 }
                 Task::none()
             }
+        }
+    }
+
+    pub(crate) fn spawn_highlight_parse_if_needed(
+        &mut self,
+        pane_id: crate::editor::PaneId,
+    ) -> Task<Message> {
+        let pane = self.pane_mut(pane_id);
+        if pane.needs_highlight_parse && !pane.is_parsing_async {
+            let (parse_gen, worker_gen) = pane.start_parse_worker();
+            let rope_clone = pane.buffer.rope.clone();
+            let lang = pane.highlighter.lang;
+            let tab_id = pane.active_tab_id();
+
+            Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || {
+                        let mut parser = tree_sitter::Parser::new();
+                        if let Some(ts_lang) = lang.tree_sitter_language() {
+                            let _ = parser.set_language(&ts_lang);
+                        }
+                        let text = rope_clone.to_string();
+                        let tree = parser.parse(&text, None);
+                        (pane_id, tab_id, parse_gen, worker_gen, tree)
+                    })
+                    .await
+                    .unwrap_or_else(|_| (pane_id, tab_id, parse_gen, worker_gen, None))
+                },
+                |(pane_id, tab_id, parse_gen, worker_gen, tree)| {
+                    cosmic::Action::App(Message::HighlightParseCompleted {
+                        pane_id,
+                        tab_id,
+                        generation: parse_gen,
+                        worker_generation: worker_gen,
+                        tree,
+                    })
+                },
+            )
+        } else {
+            Task::none()
         }
     }
 }

@@ -171,7 +171,9 @@ The following architectural optimizations and feature enhancements are planned f
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
+Rooney's own source code is licensed under the [MIT License](LICENSE).
+
+Third-party dependencies utilized by Rooney are subject to their respective upstream licenses, including `MPL-2.0`, `Apache-2.0`, `MIT`, and `GPL-3.0-only`. For comprehensive details on licensing policies, the source-only distribution model, pinned Git dependency revisions, and downstream redistribution guidance, please see **[LICENSES.md](LICENSES.md)** ([日本語版: LICENSES.ja.md](LICENSES.ja.md)) and [THIRD_PARTY_LICENSES/README.md](THIRD_PARTY_LICENSES/README.md).
 
 <p align="center">
   Crafted via <strong>AI Vibe Coding</strong> 🚀 · Built with ❤️ for Pop!_OS COSMIC & Linux Developers
