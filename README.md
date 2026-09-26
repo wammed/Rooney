@@ -30,12 +30,17 @@
 
 ### 1. Prerequisites
 
-- [Rust (Cargo)](https://rustup.rs/) (1.80+)
+- [Rust (Cargo)](https://rustup.rs/) (1.80+, latest Stable recommended / Tested: 1.98.1)
 - Linux with Wayland / Pop!_OS COSMIC Desktop
-- System build dependencies (Debian / Pop!_OS / Ubuntu):
-  ```bash
-  sudo apt install build-essential libxkbcommon-dev libfontconfig1-dev
-  ```
+- System build dependencies:
+  - **Debian / Pop!_OS / Ubuntu**:
+    ```bash
+    sudo apt install build-essential libxkbcommon-dev libfontconfig1-dev wayland-protocols
+    ```
+  - **Arch Linux / CachyOS**:
+    ```bash
+    sudo pacman -S base-devel libxkbcommon fontconfig wayland
+    ```
 - [Ollama](https://ollama.com/) (for offline AI capabilities)
 
 ### 2. Set Up Ollama (Offline Local AI)

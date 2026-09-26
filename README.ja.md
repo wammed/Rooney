@@ -30,12 +30,17 @@
 
 ### 1. 必要環境
 
-- [Rust (Cargo)](https://rustup.rs/) (1.80 以上)
+- [Rust (Cargo)](https://rustup.rs/) (1.80 以上、最新 Stable 推奨 / 実機検証: 1.98.1)
 - Linux Wayland 環境 / Pop!_OS COSMIC Desktop
-- システムビルド依存パッケージ (Debian / Pop!_OS / Ubuntu):
-  ```bash
-  sudo apt install build-essential libxkbcommon-dev libfontconfig1-dev
-  ```
+- システムビルド依存パッケージ:
+  - **Debian / Pop!_OS / Ubuntu**:
+    ```bash
+    sudo apt install build-essential libxkbcommon-dev libfontconfig1-dev wayland-protocols
+    ```
+  - **Arch Linux / CachyOS**:
+    ```bash
+    sudo pacman -S base-devel libxkbcommon fontconfig wayland
+    ```
 - [Ollama](https://ollama.com/) (ローカル AI 機能利用時)
 
 ### 2. Ollama のセットアップ (ローカル AI)
