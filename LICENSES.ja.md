@@ -107,7 +107,7 @@ cargo install cargo-about
 cargo about generate about.hbs --offline > THIRD_PARTY_LICENSES.html
 ```
 
-- 詳細な調査記録やメタデータ未記載クレートの監査結果については、[`THIRD_PARTY_LICENSES/README.md`](THIRD_PARTY_LICENSES/README.md) を参照してください。
+- 詳細な調査記録やメタデータ未記載クレートの監査結果については、[`THIRD_PARTY_LICENSES/README.ja.md`](THIRD_PARTY_LICENSES/README.ja.md)（[英語版: README.md](THIRD_PARTY_LICENSES/README.md)）を参照してください。
 
 ---
 
