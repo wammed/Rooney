@@ -6,6 +6,7 @@ pub struct WrappedLineInfo {
     pub subrow_count: usize,
     pub extra_rows: usize, // subrow_count - 1
     pub cum_extra_before: usize,
+    pub subrows: Vec<(usize, usize)>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -75,6 +76,16 @@ impl LineWrapModel {
         }
     }
 
+    pub fn line_subrows(&self, line_idx: usize) -> Option<&[(usize, usize)]> {
+        match self
+            .wrapped_lines
+            .binary_search_by_key(&line_idx, |w| w.line_idx)
+        {
+            Ok(idx) => Some(&self.wrapped_lines[idx].subrows),
+            Err(_) => None,
+        }
+    }
+
     pub fn build(
         buffer: &TextBuffer,
         avail_width: f32,
@@ -112,6 +123,7 @@ impl LineWrapModel {
                         subrow_count,
                         extra_rows: extra,
                         cum_extra_before: total_extra,
+                        subrows,
                     });
                     total_extra += extra;
                 }

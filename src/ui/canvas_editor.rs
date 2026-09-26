@@ -1,7 +1,7 @@
 use crate::app::Message;
 use crate::editor::pane::EditorPane;
 use crate::theme::EditorTheme;
-use crate::ui::wrap::{compute_line_subrows, LineWrapModel};
+use crate::ui::wrap::LineWrapModel;
 use cosmic::iced::advanced::graphics::geometry::{
     Frame, Path, Renderer as GeometryRenderer, Stroke, Text,
 };
@@ -315,12 +315,14 @@ impl<'a> EditorCanvas<'a> {
                 continue;
             }
 
-            let subrows = if wrap_model.subrow_count(line_idx) == 1 {
-                vec![(0, line_text.chars().count())]
+            let dummy_subrows;
+            let subrows = if let Some(wrapped) = wrap_model.line_subrows(line_idx) {
+                wrapped
             } else {
-                compute_line_subrows(&line_text, avail_width, |c| self.glyph_advance(c))
+                dummy_subrows = [(0, line_text.chars().count())];
+                &dummy_subrows[..]
             };
-            for (subrow_idx, (start, end)) in subrows.into_iter().enumerate() {
+            for (subrow_idx, &(start, end)) in subrows.iter().enumerate() {
                 let vrow = line_vrow_start + subrow_idx;
                 visual_rows.push(VisualRow {
                     line_idx,
@@ -348,14 +350,20 @@ impl<'a> EditorCanvas<'a> {
         let wrap_model = self.build_wrap_model(avail_width);
         let line_vrow_start = wrap_model.line_to_visual_row(cursor.0);
 
-        let subrows = compute_line_subrows(&line_text, avail_width, |c| self.glyph_advance(c));
+        let dummy_subrows;
+        let subrows = if let Some(wrapped) = wrap_model.line_subrows(cursor.0) {
+            wrapped
+        } else {
+            dummy_subrows = [(0, line_text.chars().count())];
+            &dummy_subrows[..]
+        };
         let mut target_subrow_idx = 0;
         let mut target_subrow_start = 0;
 
-        for (subrow_idx, (start, end)) in subrows.iter().enumerate() {
-            if cursor.1 >= *start && (cursor.1 <= *end || subrow_idx == subrows.len() - 1) {
+        for (subrow_idx, &(start, end)) in subrows.iter().enumerate() {
+            if cursor.1 >= start && (cursor.1 <= end || subrow_idx == subrows.len() - 1) {
                 target_subrow_idx = subrow_idx;
-                target_subrow_start = *start;
+                target_subrow_start = start;
                 break;
             }
         }
@@ -400,21 +408,44 @@ impl<'a> EditorCanvas<'a> {
 
         let (clicked_line, subrow_idx) = wrap_model.visual_row_to_line(clicked_vrow);
         let line_text = self.pane.buffer.line_text(clicked_line).unwrap_or_default();
-        let chars: Vec<char> = line_text.chars().collect();
-        if chars.is_empty() {
+        if line_text.is_empty() {
             return (clicked_line, 0);
         }
 
-        let subrows = compute_line_subrows(&line_text, avail_width, |c| self.glyph_advance(c));
-        let subrow_idx = subrow_idx.min(subrows.len().saturating_sub(1));
-        let (sub_start, sub_end) = subrows[subrow_idx];
+        let (sub_start, sub_end) = if let Some(subrows) = wrap_model.line_subrows(clicked_line) {
+            let idx = subrow_idx.min(subrows.len().saturating_sub(1));
+            subrows[idx]
+        } else {
+            (0, line_text.chars().count())
+        };
+
+        if sub_start >= sub_end {
+            return (clicked_line, sub_start);
+        }
 
         let rel_x = (pos.x - gutter - 10.0 + self.pane.scroll_x.get()).max(0.0);
-        let boundaries = self.pane.buffer.line_grapheme_boundaries(clicked_line);
-        let sub_boundaries: Vec<usize> = boundaries
-            .into_iter()
-            .filter(|&b| b >= sub_start && b <= sub_end)
+
+        // Extract only the characters belonging to this subrow, avoiding scanning
+        // and allocating across the entire line (which could be thousands of characters).
+        let sub_chars: Vec<char> = line_text
+            .chars()
+            .skip(sub_start)
+            .take(sub_end - sub_start)
             .collect();
+
+        if sub_chars.is_empty() {
+            return (clicked_line, sub_start);
+        }
+
+        use unicode_segmentation::UnicodeSegmentation;
+        let sub_str: String = sub_chars.iter().collect();
+        let mut sub_boundaries = Vec::with_capacity(sub_chars.len() + 1);
+        sub_boundaries.push(sub_start);
+        let mut cur_char_idx = sub_start;
+        for g in sub_str.graphemes(true) {
+            cur_char_idx += g.chars().count();
+            sub_boundaries.push(cur_char_idx);
+        }
 
         let mut acc_width = 0.0;
         let mut chosen_col = sub_start;
@@ -423,7 +454,9 @@ impl<'a> EditorCanvas<'a> {
             for window in sub_boundaries.windows(2) {
                 let (c_start, c_end) = (window[0], window[1]);
                 let mut cluster_w = 0.0;
-                for &ch in &chars[c_start..c_end] {
+                let rel_start = c_start - sub_start;
+                let rel_end = c_end - sub_start;
+                for &ch in &sub_chars[rel_start..rel_end] {
                     cluster_w += self.glyph_advance(ch);
                 }
                 if acc_width + cluster_w / 2.0 >= rel_x {
