@@ -86,7 +86,6 @@ The dependency tree includes crates whose package manifests explicitly declare `
 
 - **Visual Assets**:
   - `images/Rooney-matte-icon.svg`
-  - `images/Rooney-icon.svg`
   - `images/Rooney-banner.svg`
   These visual assets were created specifically for Rooney and are provided under the same **MIT License** as the project source.
 - **Fonts**:

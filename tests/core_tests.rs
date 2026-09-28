@@ -1178,11 +1178,15 @@ fn test_atomic_save_and_file_size_limits() {
 fn test_rooney_icon_integration() {
     let icon_bytes = include_bytes!("../images/Rooney-matte-icon.svg");
     assert!(!icon_bytes.is_empty());
-    assert_eq!(icon_bytes.len(), 25259);
+    assert_eq!(icon_bytes.len(), 26713);
+    assert_eq!(icon_bytes, rooney::app::ROONEY_ICON_BYTES);
 
     let icon_str = std::str::from_utf8(icon_bytes).expect("Valid UTF-8 SVG");
     assert!(icon_str.contains("<svg"));
     assert!(icon_str.contains("</svg>"));
+
+    // Ensure icon installation synchronization is executed
+    rooney::app::ensure_system_icons();
 
     // Verify desktop file config
     if let Some(home) = std::env::var_os("HOME") {

@@ -3,7 +3,7 @@
 This document records the provenance and intellectual property (IP) compliance process for the "Rooney" application icon.
 
 ## 1. Overview & Provenance
-- **Asset:** Application Icon and Branding Assets for "Rooney" (High-Performance Split-View Editor for COSMIC / Wayland).
+- **Asset:** Application Icon (`images/Rooney-matte-icon.svg`) and Branding Assets for "Rooney" (High-Performance Split-View Editor for COSMIC / Wayland).
 - **Generation Method:** AI-assisted synthesis (via Google Gemini) iteratively refined to eliminate trademark compliance issues and ensure absolute structural originality.
 - **Style:** Flat, non-glossy, matte finish on a solid charcoal single-color background, compliant with modern Linux desktop environment (DE) design languages.
 

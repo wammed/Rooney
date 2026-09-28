@@ -107,7 +107,6 @@ Rooney does not bundle third-party fonts or external vector icon packs into the 
 
 - **Original Visual Assets**:
   - `images/Rooney-matte-icon.svg`
-  - `images/Rooney-icon.svg`
   - `images/Rooney-banner.svg`
   These assets were designed exclusively for Rooney and are distributed under the same **MIT License** as the project itself.
 - **Fonts**:

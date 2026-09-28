@@ -89,9 +89,9 @@ pub struct App {
     pub(crate) search_input: String,
 }
 
-const ROONEY_ICON_BYTES: &[u8] = include_bytes!("../../images/Rooney-matte-icon.svg");
+pub const ROONEY_ICON_BYTES: &[u8] = include_bytes!("../../images/Rooney-matte-icon.svg");
 
-fn ensure_system_icons() {
+pub fn ensure_system_icons() {
     let home = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf());
     if let Some(home) = home {
         let icon_dir = home.join(".local/share/icons/hicolor/scalable/apps");

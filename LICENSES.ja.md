@@ -86,7 +86,6 @@ Rooney が依存している外部クレートは、パーミッシブ（寛容�
 
 - **ビジュアルアセット**:
   - `images/Rooney-matte-icon.svg`
-  - `images/Rooney-icon.svg`
   - `images/Rooney-banner.svg`
   これらのアセットは Rooney プロジェクト用に独自に制作されたものであり、Rooney 本体と同じ **MIT License** のもとで提供されます。
 - **フォント**:

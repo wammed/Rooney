@@ -796,6 +796,26 @@
   - `cargo test`: **84/84 全テスト通過（3 benchmark + 78 core + 3 ollama）**。
   - `cargo build --release`: クリーンビルド完了（16.22s）。
 
+### セッション 39: 公式アプリアイコンの最新マット版（images/Rooney-matte-icon.svg）への全面移行、重複埋め込みの排除、デスクトップキャッシュ同期およびライセンス文書群の整合
+- **公式アプリアイコンの最新マット版（`images/Rooney-matte-icon.svg` 26,713 bytes）への全面移行と最適化**:
+  1. **アプリ内（In-App）の統合と重複埋め込み排除**:
+     - `src/app/mod.rs` にて `pub const ROONEY_ICON_BYTES: &[u8] = include_bytes!("../../images/Rooney-matte-icon.svg");` をパブリック定数として公開。
+     - `src/app/ui/header.rs`（タイトルバー先頭アイコン）および `src/app/ui/modal.rs`（About ダイアログアイコン）で個別に `include_bytes!` していた冗長定義を撤廃し、`crate::app::ROONEY_ICON_BYTES` を共通参照するようにリファクタリング。バイナリ埋め込み重複（約53KB）を排除。
+     - `pub fn ensure_system_icons()` を公開し、テストや起動時に確実にシステム同期を実行可能にした。
+  2. **デスクトップ環境（Desktop Integration）の同期**:
+     - `ensure_system_icons()` により、`~/.local/share/icons/hicolor/scalable/apps/` 配下の `rooney.svg`, `Rooney-matte-icon.svg`, `Rooney-icon.svg`, `org.pop_os.CosmicCode.svg` を最新の 26,713 bytes に自動更新。
+     - `gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor` を実行し、デスクトップ環境（COSMIC Dock, アプリランチャー, Alt+Tab スイッチャー）のアイコンキャッシュを更新完了。
+     - `cargo build --release` により最新バイナリをビルドし、`~/.local/bin/rooney` にインストール完了。
+  3. **テストの更新と全件グリーン（93/93 Passed）**:
+     - `tests/core_tests.rs` の `test_rooney_icon_integration` を更新（26,713 bytes の検証、`ensure_system_icons()` 実行および `ROONEY_ICON_BYTES` との同一性検証を追加）。
+     - `cargo test`: 3 benchmark + 87 core + 3 ollama = **全93件テスト通過 (0 failed)**。
+     - `cargo clippy --all-targets -- -D warnings`: **0 errors, 0 warnings**。
+     - `cargo fmt --check`: クリーン。
+  4. **ドキュメント類の整合**:
+     - `LICENSES.md` / `LICENSES.ja.md`: 削除された旧ドラフト `images/Rooney-icon.svg` を除外、`images/Rooney-matte-icon.svg` と `images/Rooney-banner.svg` に整合。
+     - `THIRD_PARTY_LICENSES/README.md` / `THIRD_PARTY_LICENSES/README.ja.md`: 同様に `images/Rooney-icon.svg` の参照を削除し最新アセット構成に更新。
+     - `IP_COMPLIANCE.md`: アセットファイルパスとして `images/Rooney-matte-icon.svg` を明記。
+
 ---
 
 ## 3. ファイル構成と役割
@@ -803,6 +823,13 @@
 ```
 Rooney/
 ├── Cargo.toml               # 依存関係定義 (libcosmic, ropey, tree-sitter多言語, futures-channel, rfd, ollama, url, etc.)
+├── images/
+│   ├── Rooney-matte-icon.svg# 公式マット版SVGアプリアイコン (26,713 bytes)
+│   └── Rooney-banner.svg    # 公式プロジェクトバナー
+├── IP_COMPLIANCE.md         # アイコン意匠・商標IPコンプライアンス監査記録
+├── LICENSES.md / .ja.md     # ライセンス方針およびアセットポリシー (MIT)
+├── THIRD_PARTY_LICENSES/    # サードパーティライセンス監査文書
+
 ├── README.md                # 英語公式ドキュメント (Waddle準拠スリム構成)
 ├── README.ja.md             # 日本語公式ドキュメント (Waddle準拠スリム構成)
 ├── SESSION_HANDOVER.md      # 本ファイル (次回再開用完全ハンドオーバー)
@@ -913,7 +940,8 @@ Rooney/
 - `cargo fmt --check`: **クリーン通過**
 - `cargo check`: **0 errors, 0 warnings (0.84s)**
 - `cargo clippy --all-targets --all-features -- -D warnings`: **0 errors, 0 warnings** (完全クリーン)
-- `cargo test`: **84/84 全テスト通過 (3 benchmark + 78 core + 3 ollama, 0 failed)**
+- `cargo test`: **93/93 全テスト通過 (3 benchmark + 87 core + 3 ollama, 0 failed)**
+  - `test_rooney_icon_integration` ... ok (26,713 bytes マット版 SVG、ROONEY_ICON_BYTES 同一性、ensure_system_icons による ~/.local/share/icons システム同期検証)
   - `test_final_stabilization_depth_based_list_ast` ... ok (List AST Cases A, B, C の深さ・順序・継続行マージ・CodeBlock保持完全検証)
   - `test_table_glyph_measurement_and_style_awareness` ... ok (Table グリフ幅のスタイル別測定・ゼロアロケーション・和欧混在文字幅完全検証)
   - `test_p3_comprehensive_semantic_regression_matrix` ... ok (16項目意味論的回帰マトリクス完全検証)

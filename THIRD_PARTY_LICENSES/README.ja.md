@@ -105,7 +105,6 @@ Rooney では、外部フォントやサードパーティ製アイコンパッ�
 
 - **独自作成アセット**:
   - `images/Rooney-matte-icon.svg`
-  - `images/Rooney-icon.svg`
   - `images/Rooney-banner.svg`
   これらは Rooney プロジェクトのために独自に作成されたオリジナルアセットであり、本体と同じ **MIT License** が適用されます。
 - **フォント**:
