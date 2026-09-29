@@ -816,6 +816,29 @@
      - `THIRD_PARTY_LICENSES/README.md` / `THIRD_PARTY_LICENSES/README.ja.md`: 同様に `images/Rooney-icon.svg` の参照を削除し最新アセット構成に更新。
      - `IP_COMPLIANCE.md`: アセットファイルパスとして `images/Rooney-matte-icon.svg` を明記。
 
+### セッション 40: アイコン意匠・知的財産（IP）監査履歴記録（`ICON_DESIGN_HISTORY`）の導入および全ドキュメント総合整理
+- **背景と目的**:
+  - Rooney を含む 4 アプリケーション（Fluffy, Waddle, Rooney, Toodle）のアイコン意匠設計、AI 支援による類似性監査（Gemini）、および改訂プロセスの全容を記録した `ICON_DESIGN_HISTORY.md`（英語）および `ICON_DESIGN_HISTORY.ja.md`（日本語）の配備に伴い、リポジトリ内の全ドキュメント（`IP_COMPLIANCE`, `LICENSES`, `README`, `docs/PORTAL`, `docs/FEATURES`）の相互参照リンク、ナビゲーションヘッダー、ドキュメント構成を整理・統一。
+- **主要な実施・整理項目**:
+  1. **`ICON_DESIGN_HISTORY.md` & `ICON_DESIGN_HISTORY.ja.md` の配備とナビゲーション整備**:
+     - 最上部ヘッダーに `docs/PORTAL`（英語/日本語）へのリンクおよび日英切り替えリンクを設置。
+  2. **`IP_COMPLIANCE.md` & `IP_COMPLIANCE.ja.md` の相互参照拡充**:
+     - 最上部ヘッダーにドキュメンテーションポータルおよび日英切り替えリンクを追加。
+     - 第6節「Record Keeping / 記録の保持」に、4アプリ横断の詳細記録である `ICON_DESIGN_HISTORY.md` / `ICON_DESIGN_HISTORY.ja.md` への相互参照リンクを追加。
+  3. **`LICENSES.md` & `LICENSES.ja.md` の整合性確保**:
+     - 最上部ヘッダーにドキュメンテーションポータルへのリンクを追加。
+     - 第5節「Assets & Bundled Content Policy / アセットおよび同梱ファイル方針」のビジュアルアセット欄に、`IP_COMPLIANCE` および `ICON_DESIGN_HISTORY` への参照リンクを追加。
+  4. **`README.md` & `README.ja.md` のポータル・ライセンス導線拡充**:
+     - `## 📚 Documentation Portal / ## 📚 ドキュメントポータル` セクションのテーブルに法務・ライセンス・知財記録 3 文書（`LICENSES`, `IP_COMPLIANCE`, `ICON_DESIGN_HISTORY`）を追加。
+     - `## 📄 License / ## 📄 ライセンス` セクションに、ライセンス・知的財産デューデリジェンス記録書・アイコン設計履歴への導線リストを追加。
+  5. **ドキュメントポータル (`docs/PORTAL.md` & `docs/PORTAL.ja.md`) の更新**:
+     - 総合ドキュメント一覧表（Master Documentation Index）に `IP_COMPLIANCE`, `ICON_DESIGN_HISTORY` を追加。
+     - 目的別ガイドに「For Legal, Compliance & IP Provenance / 法務・ライセンス・知的財産 (IP) プロヴェナンス」カテゴリを追加。
+  6. **機能仕様書 (`docs/FEATURES.md` & `docs/FEATURES.ja.md`) の整合性向上**:
+     - セクション 12「Licensing & Visual Asset Provenance / ライセンス & 意匠プロヴェナンス」を新設し、目次および本文に `IP_COMPLIANCE` / `ICON_DESIGN_HISTORY` への正式言及を追記。
+  7. **全ドキュメントの日英対称性と相対リンク検証**:
+     - 全ドキュメントの日英対称性、内部相対リンクの整合性を確認。
+
 ---
 
 ## 3. ファイル構成と役割
@@ -826,10 +849,18 @@ Rooney/
 ├── images/
 │   ├── Rooney-matte-icon.svg# 公式マット版SVGアプリアイコン (26,713 bytes)
 │   └── Rooney-banner.svg    # 公式プロジェクトバナー
-├── IP_COMPLIANCE.md         # アイコン意匠・商標IPコンプライアンス監査記録
+├── IP_COMPLIANCE.md / .ja.md # アイコン意匠・商標IPコンプライアンス監査記録
+├── ICON_DESIGN_HISTORY.md / .ja.md # 4アプリ横断AI生成対話ログ・類似性監査履歴
 ├── LICENSES.md / .ja.md     # ライセンス方針およびアセットポリシー (MIT)
 ├── THIRD_PARTY_LICENSES/    # サードパーティライセンス監査文書
-
+│   ├── README.md / .ja.md   # クレート別ライセンス調査ノート
+│   └── GPL-3.0-only.txt     # 上流GPL-3.0ライセンス原文
+├── docs/                    # 各種詳細ドキュメント
+│   ├── PORTAL.md / .ja.md   # ドキュメントポータル
+│   ├── SHORTCUTS.md / .ja.md# キーボードショートカット・操作ガイド
+│   ├── FEATURES.md / .ja.md # 詳細機能仕様書
+│   ├── ARCHITECTURE.md / .ja.md # システムアーキテクチャ設計書
+│   └── SECURITY.md / .ja.md # セキュリティモデル・堅牢性仕様
 ├── README.md                # 英語公式ドキュメント (Waddle準拠スリム構成)
 ├── README.ja.md             # 日本語公式ドキュメント (Waddle準拠スリム構成)
 ├── SESSION_HANDOVER.md      # 本ファイル (次回再開用完全ハンドオーバー)

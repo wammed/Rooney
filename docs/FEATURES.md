@@ -16,6 +16,7 @@ Comprehensive technical specifications and capabilities of Rooney.
 9. [File Explorer & XDG Portal Integration](#9-file-explorer--xdg-portal-integration)
 10. [20 Built-in Themes & Independent Opacity Controls](#10-20-built-in-themes--independent-opacity-controls)
 11. [Data Integrity & Security Safeguards](#11-data-integrity--security-safeguards)
+12. [Licensing & Visual Asset Provenance](#12-licensing--visual-asset-provenance)
 
 ---
 
@@ -90,6 +91,15 @@ Comprehensive technical specifications and capabilities of Rooney.
 - **Atomic Writes**: Writes to temporary file (`.{file}.tmp.{pid}`) before replacement to prevent corruption on crash.
 - **Sensitive File Exclusion**: Blocks AI suggestions when editing `.env*` or private key files.
 - **50MB Safety Limit**: Protects against accidental hangs when opening excessive binary files.
+
+---
+
+## 12. Licensing & Visual Asset Provenance
+- **Visual Assets & MIT Licensing**:
+  - Original application graphics (`images/Rooney-matte-icon.svg` and `images/Rooney-banner.svg`) are covered by the project's **MIT License**.
+- **Application Icon & IP Due Diligence**:
+  - The Rooney application icon (a geometric monogram combining the letter **R**, internal **Rope** buffer, and **Split-View** editing) was developed via AI-assisted generation and thoroughly audited against the Rust programming language logo and other developer tools to avoid visual confusion.
+  - Formal provenance and IP due-diligence records are documented in [IP_COMPLIANCE.md](../IP_COMPLIANCE.md) and the comprehensive 4-app chronological audit log [ICON_DESIGN_HISTORY.md](../ICON_DESIGN_HISTORY.md).
 
 ---
 

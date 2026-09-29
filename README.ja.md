@@ -147,6 +147,9 @@ Rooney のより詳しいドキュメントは、以下の専門ドキュメン�
 | **[💡 詳細機能仕様書 (FEATURES)](docs/FEATURES.ja.md)** | 全機能の仕様、GFM レンダリング、テーマ・透明度設定の詳細 |
 | **[📐 アーキテクチャ設計書 (ARCHITECTURE)](docs/ARCHITECTURE.ja.md)** | 世代管理非同期設計、仮想レンダリング、Rope、CJK 実グリフ計測 |
 | **[🛡️ セキュリティ & 堅牢性仕様 (SECURITY)](docs/SECURITY.ja.md)** | ゼロクラウド流出、機密ファイル除外、アトミック保存、Zero Remote I/O |
+| **[📄 ライセンス & 依存通知](LICENSES.ja.md)** | ソース配布方針、依存クレート管理（`cargo-deny`）、上流ライセンス |
+| **[🛡️ IP デューデリジェンス記録書](IP_COMPLIANCE.ja.md)** | アイコン意匠プロヴェナンス、類似性検証、IPデューデリジェンス記録 |
+| **[🎨 アイコンデザイン・IPレビュー履歴](ICON_DESIGN_HISTORY.ja.md)** | 4アプリ横断AI生成対話ログ・類似性監査履歴・デザイン変更の全記録 |
 
 ---
 
@@ -187,7 +190,11 @@ Rooney のより詳しいドキュメントは、以下の専門ドキュメン�
 
 Rooney 本体のソースコードは [MIT License](LICENSE) のもとで公開されています。
 
-Rooney が利用するサードパーティ製依存関係には、各上流のライセンス（`MPL-2.0`、`Apache-2.0`、`MIT`、`GPL-3.0-only` 等）が適用されます。ライセンス体系、ソースコード配布方針、Git 依存関係のコミット固定情報、およびバイナリ再配布時の留意事項に関する詳細は、**[LICENSES.ja.md](LICENSES.ja.md)**（[英語版: LICENSES.md](LICENSES.md)）および [THIRD_PARTY_LICENSES/README.ja.md](THIRD_PARTY_LICENSES/README.ja.md) を参照してください。
+詳細なライセンス方針、サードパーティ製依存関係の管理、およびアセットのプロヴェナンス記録については以下を参照してください：
+
+* **[ライセンスおよびサードパーティ通知 (LICENSES.ja.md)](LICENSES.ja.md)**（[英語版: LICENSES.md](LICENSES.md)）: ソースコードのみの配布方針、サードパーティ製クレートのライセンス適合性（`cargo-deny` によるパーミッシブポリシー準拠）、Git 依存関係のコミット固定情報、およびバイナリ再配布時の留意事項。クレート監査の詳細は [THIRD_PARTY_LICENSES/README.ja.md](THIRD_PARTY_LICENSES/README.ja.md) を参照してください。
+* **[アイコンデザイン・IPデューデリジェンス記録 (IP_COMPLIANCE.ja.md)](IP_COMPLIANCE.ja.md)**: Rooney アイコンの由来、類似性検証（Rust 公式ロゴ等との差別化）、および知的財産デューデリジェンス記録。
+* **[アイコンデザイン・IPレビュー履歴 (ICON_DESIGN_HISTORY.ja.md)](ICON_DESIGN_HISTORY.ja.md)**: Fluffy, Waddle, Rooney, Toodle の 4 アプリケーションを網羅したAIアイコン生成対話ログおよび類似性レビュー履歴の統合記録。
 
 <p align="center">
   Crafted via <strong>AI Vibe Coding</strong> 🚀 · Built with ❤️ for Pop!_OS COSMIC & Linux Developers

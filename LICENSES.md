@@ -1,7 +1,7 @@
 # Licensing & Third-Party Notice
 
 <p align="center">
-  <strong>English</strong> | <a href="LICENSES.ja.md">日本語</a>
+  <a href="docs/PORTAL.md">Documentation Portal</a> | <strong>English</strong> | <a href="LICENSES.ja.md">日本語</a>
 </p>
 
 ---
@@ -87,7 +87,7 @@ The dependency tree includes crates whose package manifests explicitly declare `
 - **Visual Assets**:
   - `images/Rooney-matte-icon.svg`
   - `images/Rooney-banner.svg`
-  These visual assets were created specifically for Rooney and are provided under the same **MIT License** as the project source.
+  These visual assets were created specifically for Rooney and are provided under the same **MIT License** as the project source. For formal asset provenance, similarity review findings, and IP due-diligence records, see [IP_COMPLIANCE.md](IP_COMPLIANCE.md) and the comprehensive 4-app audit archive [ICON_DESIGN_HISTORY.md](ICON_DESIGN_HISTORY.md).
 - **Fonts**:
   Rooney does not bundle third-party font files within its repository or binary. System fonts are discovered and rendered dynamically at runtime via Fontconfig and `cosmic-text`.
 

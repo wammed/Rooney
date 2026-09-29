@@ -17,6 +17,8 @@ Use this hub to quickly navigate to the detailed guides, specifications, and arc
 | **[📐 System Architecture (ARCHITECTURE)](ARCHITECTURE.md)** | Generation-tracked async pipelines, virtual viewport, Rope buffer, CJK metrics | Developers interested in internals and performance |
 | **[🛡️ Security Model (SECURITY)](SECURITY.md)** | Zero cloud telemetry, sensitive file exclusion, atomic safe writes, zero remote I/O | Security auditors and privacy-conscious users |
 | **[📄 Licenses & Notices](../LICENSES.md)** | MIT license, third-party OSS dependencies, redistribution notes | Legal & compliance review |
+| **[🛡️ IP Compliance Due Diligence (IP COMPLIANCE)](../IP_COMPLIANCE.md)** | Icon provenance, visual similarity findings, and IP due-diligence record | All users & legal review |
+| **[🎨 Icon Design & IP Review History (ICON DESIGN HISTORY)](../ICON_DESIGN_HISTORY.md)** | Cross-application AI generation logs, similarity audit history, and design iterations | All users & legal review |
 
 ---
 
@@ -37,6 +39,11 @@ Use this hub to quickly navigate to the detailed guides, specifications, and arc
 
 ### 5. Reviewing Security & Privacy Guarantees
 - Review [SECURITY.md](SECURITY.md) for detailed descriptions of Rooney's zero-cloud privacy architecture, automated sensitive file exclusion patterns (`.env*`, private keys), atomic write guarantees, and directory path traversal guards.
+
+### 6. For Legal, Compliance & IP Provenance
+- Consult [Licensing & Third-Party Notice](../LICENSES.md) for source-only distribution policies, dependency compliance (`cargo-deny`), and upstream license obligations.
+- Review [IP Compliance Due Diligence](../IP_COMPLIANCE.md) for Rooney's application icon provenance, visual similarity findings, and due diligence status.
+- Read [Icon Design & IP Review History](../ICON_DESIGN_HISTORY.md) for the cross-application chronological audit log covering Fluffy, Waddle, Rooney, and Toodle.
 
 ---
 

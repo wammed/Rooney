@@ -1,5 +1,9 @@
 # Icon Design & IP Compliance Due Diligence Record
 
+<p align="center">
+  <a href="docs/PORTAL.md">Documentation Portal</a> | <strong>English</strong> | <a href="IP_COMPLIANCE.ja.md">日本語</a>
+</p>
+
 This document records the provenance, design-review history, and IP due-diligence process for the **Rooney** application icon.
 
 > **Scope:** This is a project provenance and due-diligence record. It is not a legal opinion, trademark clearance, or guarantee that no third-party rights are implicated.
@@ -59,7 +63,7 @@ In particular, the use of Rust as a development language does not by itself dete
 
 ## 6. Record Keeping
 
-The detailed Gemini conversation is retained separately as the underlying development/provenance record.
+The detailed Gemini conversation is retained separately as the underlying development/provenance record. For the comprehensive cross-application historical archive covering initial generation, similarity reviews, and design transitions across Fluffy, Waddle, Rooney, and Toodle, see [ICON_DESIGN_HISTORY.md](ICON_DESIGN_HISTORY.md).
 
 This document is the concise repository-facing summary.
 

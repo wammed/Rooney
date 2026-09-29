@@ -147,6 +147,9 @@ Comprehensive documentation for Rooney is organized into focused reference guide
 | **[💡 Feature Specifications (FEATURES)](docs/FEATURES.md)** | Exhaustive feature capabilities, GFM Markdown specs, and themes |
 | **[📐 System Architecture (ARCHITECTURE)](docs/ARCHITECTURE.md)** | Generation-tracked async pipelines, viewport virtualization, and Rope buffer |
 | **[🛡️ Security & Robustness (SECURITY)](docs/SECURITY.md)** | Zero cloud telemetry, sensitive file exclusion, atomic writes, Zero Remote I/O |
+| **[📄 Licensing & Third-Party Notice](LICENSES.md)** | Source distribution model, crate compliance (`cargo-deny`), upstream licenses |
+| **[🛡️ IP Compliance Due Diligence](IP_COMPLIANCE.md)** | Icon provenance, similarity audit findings, and IP due-diligence record |
+| **[🎨 Icon Design & IP Review History](ICON_DESIGN_HISTORY.md)** | Cross-application AI generation logs and design iterations across 4 apps |
 
 ---
 
@@ -187,7 +190,11 @@ Comprehensive documentation for Rooney is organized into focused reference guide
 
 Rooney's source code is licensed under the [MIT License](LICENSE).
 
-Third-party dependencies utilized by Rooney are governed by their respective upstream licenses (`MPL-2.0`, `Apache-2.0`, `MIT`, `GPL-3.0-only`, etc.). For full licensing details, source code distribution policies, locked Git dependency commitments, and binary redistribution requirements, please refer to **[LICENSES.md](LICENSES.md)** ([Japanese: LICENSES.ja.md](LICENSES.ja.md)) and [THIRD_PARTY_LICENSES/README.md](THIRD_PARTY_LICENSES/README.md).
+For detailed licensing policies, third-party dependency compliance, and asset provenance records, please see:
+
+* **[Licensing & Third-Party Notice (LICENSES.md)](LICENSES.md)** ([Japanese: LICENSES.ja.md](LICENSES.ja.md)): Source-code-only distribution policy, third-party dependency compliance (`cargo-deny` permissive policy), locked Git dependency commitments, and binary redistribution requirements. Detailed crate audit notes are in [THIRD_PARTY_LICENSES/README.md](THIRD_PARTY_LICENSES/README.md).
+* **[Icon Design & IP Compliance Due Diligence Record (IP_COMPLIANCE.md)](IP_COMPLIANCE.md)**: Rooney icon provenance, visual similarity findings (Rust logo differentiation), and IP due-diligence record.
+* **[Icon Design & IP Review History (ICON_DESIGN_HISTORY.md)](ICON_DESIGN_HISTORY.md)**: Integrated chronological archive of AI icon generation and similarity reviews across Fluffy, Waddle, Rooney, and Toodle.
 
 <p align="center">
   Crafted via <strong>AI Vibe Coding</strong> 🚀 · Built with ❤️ for Pop!_OS COSMIC & Linux Developers

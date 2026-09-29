@@ -17,6 +17,8 @@ Rooney は、COSMIC Desktop / Linux Wayland 環境向けにフルスクラッチ
 | **[📐 アーキテクチャ設計 (ARCHITECTURE)](ARCHITECTURE.ja.md)** | 世代管理非同期設計、仮想描画、Rope バッファ、CJK 実グリフ連携 | 内部構造やパフォーマンス設計を知りたい方 |
 | **[🛡️ セキュリティモデル (SECURITY)](SECURITY.ja.md)** | ゼロクラウド流出、機密ファイル除外、アトミック保存、Zero Remote I/O | セキュリティやデータ整合性を確認したい方 |
 | **[📄 ライセンス & 依存通知](../LICENSES.ja.md)** | MIT ライセンス、サードパーティ OSS ライセンス、再配布留意事項 | 法的要件やライセンスを確認したい方 |
+| **[🛡️ IP デューデリジェンス記録書 (IP COMPLIANCE)](../IP_COMPLIANCE.ja.md)** | アイコン意匠プロヴェナンス、類似性検証、IPデューデリジェンス記録 | 全ユーザー / 法務 |
+| **[🎨 アイコンデザイン・IPレビュー履歴 (ICON DESIGN HISTORY)](../ICON_DESIGN_HISTORY.ja.md)** | 4アプリ横断AI生成対話ログ、類似性監査履歴、デザイン変更の全記録 | 全ユーザー / 法務 |
 
 ---
 
@@ -37,6 +39,11 @@ Rooney は、COSMIC Desktop / Linux Wayland 環境向けにフルスクラッチ
 
 ### 5. セキュリティや機密保護の方針を確認したい
 - [SECURITY.ja.md](SECURITY.ja.md) では、外部クラウドへの一切の通信を行わないローカルファースト原則、`.env` や秘密鍵の自動 AI 除外ガード、アトミックファイル保存、パストラバーサル防止を解説しています。
+
+### 6. 法務・ライセンス・知的財産 (IP) プロヴェナンスを確認したい
+- [ライセンスおよびサードパーティ通知](../LICENSES.ja.md) でソースコード配布モデル、依存クレート管理（`cargo-deny`）、上流ライセンス義務を確認。
+- [IP デューデリジェンス記録書](../IP_COMPLIANCE.ja.md) で Rooney アイコンの由来、類似性検証（Rust 公式ロゴ等との差別化）、およびデューデリジェンス状況を確認。
+- [アイコンデザイン・IPレビュー履歴](../ICON_DESIGN_HISTORY.ja.md) で 4 アプリケーション（Fluffy, Waddle, Rooney, Toodle）を横断したAI対話ログ・類似性レビュー履歴の全容を確認。
 
 ---
 

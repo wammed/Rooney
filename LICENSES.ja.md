@@ -1,7 +1,7 @@
 # ライセンスおよびサードパーティ通知 (Licensing & Third-Party Notice)
 
 <p align="center">
-  <a href="LICENSES.md">English</a> | <strong>日本語</strong>
+  <a href="docs/PORTAL.ja.md">ドキュメンテーションポータル</a> | <a href="LICENSES.md">English</a> | <strong>日本語</strong>
 </p>
 
 ---
@@ -87,7 +87,7 @@ Rooney が依存している外部クレートは、パーミッシブ（寛容�
 - **ビジュアルアセット**:
   - `images/Rooney-matte-icon.svg`
   - `images/Rooney-banner.svg`
-  これらのアセットは Rooney プロジェクト用に独自に制作されたものであり、Rooney 本体と同じ **MIT License** のもとで提供されます。
+  これらのアセットは Rooney プロジェクト用に独自に制作されたものであり、Rooney 本体と同じ **MIT License** のもとで提供されます。アプリアイコンおよびビジュアルアイデンティティの正式なプロヴェナンス（由来）および知財デューデリジェンス記録については、[IP_COMPLIANCE.ja.md](IP_COMPLIANCE.ja.md) および 4 アプリ総合監査アーカイブ [ICON_DESIGN_HISTORY.ja.md](ICON_DESIGN_HISTORY.ja.md) を参照してください。
 - **フォント**:
   Rooney ではサードパーティ製フォントファイルをリポジトリ内やバイナリ内に直接同梱していません。ホスト OS のフォント環境（Fontconfig 等）を通じてシステムフォントを利用します。
 
