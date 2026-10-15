@@ -1028,30 +1028,10 @@ impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
                 }),
             });
 
-            // Capture critical editor keys to prevent iced's built-in focus hopping or container scrolling
+            // Capture Tab key when editor is focused to prevent iced's built-in focus hopping
             if let Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) = event {
-                match key {
-                    // Prevent iced's built-in focus navigation on Tab / Shift+Tab while editing
-                    Key::Named(keyboard::key::Named::Tab) => {
-                        shell.capture_event();
-                    }
-                    // Prevent accidental widget navigation or parent scrolling on editor navigation & editing keys
-                    Key::Named(
-                        keyboard::key::Named::ArrowUp
-                        | keyboard::key::Named::ArrowDown
-                        | keyboard::key::Named::ArrowLeft
-                        | keyboard::key::Named::ArrowRight
-                        | keyboard::key::Named::PageUp
-                        | keyboard::key::Named::PageDown
-                        | keyboard::key::Named::Home
-                        | keyboard::key::Named::End
-                        | keyboard::key::Named::Backspace
-                        | keyboard::key::Named::Delete
-                        | keyboard::key::Named::Enter,
-                    ) => {
-                        shell.capture_event();
-                    }
-                    _ => {}
+                if matches!(key, Key::Named(keyboard::key::Named::Tab)) {
+                    shell.capture_event();
                 }
             }
         }

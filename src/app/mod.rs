@@ -362,7 +362,7 @@ A lightweight, fast, in-process code and markdown editor.
 
     fn subscription(&self) -> iced::Subscription<Self::Message> {
         let timer = iced::time::every(Duration::from_millis(100)).map(|_| Message::Tick);
-        let events = iced::event::listen().map(Message::Event);
+        let events = iced::event::listen_with(|event, _status, _window| Some(Message::Event(event)));
         iced::Subscription::batch(vec![timer, events])
     }
 
