@@ -10,6 +10,7 @@ use cosmic::iced::advanced::renderer;
 use cosmic::iced::advanced::widget::tree::{self, Tree};
 use cosmic::iced::advanced::{Clipboard, InputMethod, Renderer, Shell, Widget};
 use cosmic::iced::event::Event;
+use cosmic::iced::keyboard::{self, Key};
 use cosmic::iced::mouse;
 use cosmic::iced::widget::canvas::Geometry;
 use cosmic::iced::{Color, Element, Font, Length, Pixels, Point, Rectangle, Size, Vector};
@@ -1026,6 +1027,33 @@ impl<'a> Widget<Message, cosmic::Theme, cosmic::Renderer> for EditorCanvas<'a> {
                     }
                 }),
             });
+
+            // Capture critical editor keys to prevent iced's built-in focus hopping or container scrolling
+            if let Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) = event {
+                match key {
+                    // Prevent iced's built-in focus navigation on Tab / Shift+Tab while editing
+                    Key::Named(keyboard::key::Named::Tab) => {
+                        shell.capture_event();
+                    }
+                    // Prevent accidental widget navigation or parent scrolling on editor navigation & editing keys
+                    Key::Named(
+                        keyboard::key::Named::ArrowUp
+                        | keyboard::key::Named::ArrowDown
+                        | keyboard::key::Named::ArrowLeft
+                        | keyboard::key::Named::ArrowRight
+                        | keyboard::key::Named::PageUp
+                        | keyboard::key::Named::PageDown
+                        | keyboard::key::Named::Home
+                        | keyboard::key::Named::End
+                        | keyboard::key::Named::Backspace
+                        | keyboard::key::Named::Delete
+                        | keyboard::key::Named::Enter,
+                    ) => {
+                        shell.capture_event();
+                    }
+                    _ => {}
+                }
+            }
         }
 
         match event {

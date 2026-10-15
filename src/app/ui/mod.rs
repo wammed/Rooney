@@ -46,10 +46,11 @@ impl App {
                     .into()
             }
         } else {
+            let is_left_focused = self.active_pane == PaneId::Left && self.is_editor_focused();
             let editor = EditorCanvas::new(
                 &self.left_pane,
                 theme,
-                self.active_pane == PaneId::Left,
+                is_left_focused,
                 font_name,
                 font_size,
             );
@@ -99,10 +100,11 @@ impl App {
                         .into()
                 }
             } else {
+                let is_right_focused = self.active_pane == PaneId::Right && self.is_editor_focused();
                 let editor = EditorCanvas::new(
                     &self.right_pane,
                     theme,
-                    self.active_pane == PaneId::Right,
+                    is_right_focused,
                     font_name,
                     font_size,
                 );

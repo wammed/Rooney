@@ -7,9 +7,23 @@ use cosmic::iced::{self};
 use std::time::{Duration, Instant};
 
 impl App {
+    pub(crate) fn is_editor_focused(&self) -> bool {
+        !self.show_settings
+            && !self.show_new_file_modal
+            && !self.show_new_folder_modal
+            && !self.show_rename_modal
+            && !self.show_delete_modal
+            && self.active_header_menu.is_none()
+            && self.context_menu.is_none()
+            && self.file_tree_context_menu.is_none()
+    }
+
     pub(crate) fn handle_key_event(&mut self, event: iced::Event) -> Task<Message> {
         match event {
             iced::Event::InputMethod(ime_event) => {
+                if !self.is_editor_focused() {
+                    return Task::none();
+                }
                 match ime_event {
                     cosmic::iced::advanced::input_method::Event::Opened => {
                         let pane = self.current_pane_mut();
@@ -90,6 +104,17 @@ impl App {
                         } else if self.show_delete_modal {
                             return self.handle_update(Message::CancelDelete);
                         }
+                    }
+                    return Task::none();
+                }
+
+                // Settings modal handling: Escape or Ctrl+, closes, other keys ignored by editor
+                if self.show_settings {
+                    if matches!(&key, Key::Named(keyboard::key::Named::Escape)) {
+                        return self.handle_update(Message::CloseSettings);
+                    }
+                    if modifiers.control() && matches!(&key, Key::Character(c) if c == ",") {
+                        return self.handle_update(Message::ToggleSettings);
                     }
                     return Task::none();
                 }
@@ -189,6 +214,9 @@ impl App {
                     || (modifiers.alt() && matches!(&key, Key::Named(keyboard::key::Named::Enter)))
                     || (modifiers.alt() && matches!(&key, Key::Character(c) if c == " "))
                 {
+                    if !self.is_editor_focused() {
+                        return Task::none();
+                    }
                     return self.handle_update(Message::TriggerAiFim);
                 }
 
@@ -196,6 +224,9 @@ impl App {
                 if modifiers.control()
                     && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("z"))
                 {
+                    if !self.is_editor_focused() {
+                        return Task::none();
+                    }
                     if modifiers.shift() {
                         return self.handle_update(Message::Redo);
                     } else {
@@ -207,6 +238,9 @@ impl App {
                 if modifiers.control()
                     && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("y"))
                 {
+                    if !self.is_editor_focused() {
+                        return Task::none();
+                    }
                     return self.handle_update(Message::Redo);
                 }
 
@@ -223,6 +257,9 @@ impl App {
                     && !modifiers.shift()
                     && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("a"))
                 {
+                    if !self.is_editor_focused() {
+                        return Task::none();
+                    }
                     return self.handle_update(Message::SelectAll);
                 }
 
@@ -230,6 +267,9 @@ impl App {
                 if modifiers.control()
                     && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("c"))
                 {
+                    if !self.is_editor_focused() {
+                        return Task::none();
+                    }
                     return self.handle_update(Message::Copy);
                 }
 
@@ -237,6 +277,9 @@ impl App {
                 if modifiers.control()
                     && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("x"))
                 {
+                    if !self.is_editor_focused() {
+                        return Task::none();
+                    }
                     return self.handle_update(Message::Cut);
                 }
 
@@ -249,6 +292,9 @@ impl App {
 
                 // Shortcut: Ctrl + / (Toggle Comment)
                 if modifiers.control() && matches!(&key, Key::Character(c) if c == "/") {
+                    if !self.is_editor_focused() {
+                        return Task::none();
+                    }
                     return self.handle_update(Message::ToggleComment);
                 }
 
@@ -257,6 +303,9 @@ impl App {
                     && modifiers.shift()
                     && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("k"))
                 {
+                    if !self.is_editor_focused() {
+                        return Task::none();
+                    }
                     return self.handle_update(Message::DeleteLine);
                 }
 
@@ -264,6 +313,9 @@ impl App {
                 if modifiers.control()
                     && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("d"))
                 {
+                    if !self.is_editor_focused() {
+                        return Task::none();
+                    }
                     return self.handle_update(Message::DuplicateLine);
                 }
 
@@ -271,6 +323,9 @@ impl App {
                 if modifiers.control()
                     && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("v"))
                 {
+                    if !self.is_editor_focused() {
+                        return Task::none();
+                    }
                     return self.handle_update(Message::Paste);
                 }
 
@@ -281,6 +336,9 @@ impl App {
 
                 // Tab key (Indentation / unindentation)
                 if !modifiers.control() && matches!(&key, Key::Named(keyboard::key::Named::Tab)) {
+                    if !self.is_editor_focused() {
+                        return Task::none();
+                    }
                     let pane = self.current_pane_mut();
                     if pane.preedit.is_some() {
                         return Task::none();
@@ -332,6 +390,31 @@ impl App {
                     return Task::none();
                 }
 
+                let is_enter = matches!(&key, Key::Named(keyboard::key::Named::Enter))
+                    || matches!(
+                        &physical_key,
+                        cosmic::iced::keyboard::key::Physical::Code(
+                            cosmic::iced::keyboard::key::Code::NumpadEnter
+                        )
+                    )
+                    || matches!(&key, Key::Character(c) if c == "\r" || c == "\n")
+                    || text.as_deref() == Some("\r")
+                    || text.as_deref() == Some("\n")
+                    || text.as_deref() == Some("\r\n");
+
+                // Guard: If editor is not focused (e.g. searching, modals, menus, settings),
+                // do not mutate editor buffer with typing, deletion, or editor navigation.
+                if !self.is_editor_focused() {
+                    if self.current_pane().is_search_open && is_enter {
+                        if modifiers.shift() {
+                            return self.handle_update(Message::PrevSearchMatch);
+                        } else {
+                            return self.handle_update(Message::NextSearchMatch);
+                        }
+                    }
+                    return Task::none();
+                }
+
                 // Backspace
                 if matches!(&key, Key::Named(keyboard::key::Named::Backspace)) {
                     let pane = self.current_pane_mut();
@@ -370,27 +453,7 @@ impl App {
                 }
 
                 // Enter (including Numpad Enter)
-                let is_enter = matches!(&key, Key::Named(keyboard::key::Named::Enter))
-                    || matches!(
-                        &physical_key,
-                        cosmic::iced::keyboard::key::Physical::Code(
-                            cosmic::iced::keyboard::key::Code::NumpadEnter
-                        )
-                    )
-                    || matches!(&key, Key::Character(c) if c == "\r" || c == "\n")
-                    || text.as_deref() == Some("\r")
-                    || text.as_deref() == Some("\n")
-                    || text.as_deref() == Some("\r\n");
-
                 if is_enter {
-                    if self.current_pane().is_search_open {
-                        if modifiers.shift() {
-                            return self.handle_update(Message::PrevSearchMatch);
-                        } else {
-                            return self.handle_update(Message::NextSearchMatch);
-                        }
-                    }
-
                     if self.last_ime_commit.elapsed() < Duration::from_millis(100) {
                         return Task::none();
                     }

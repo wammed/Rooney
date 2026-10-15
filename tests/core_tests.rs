@@ -5846,3 +5846,26 @@ fn test_file_tree_workspace_containment_and_symlinks() {
 
     let _ = fs::remove_dir_all(&temp_base);
 }
+
+#[test]
+fn test_buffer_indent_and_unindent() {
+    let mut buf = TextBuffer::new("line one\nline two\nline three");
+    buf.cursor = (0, 0);
+    // Indent single line
+    buf.indent_selection();
+    assert_eq!(buf.rope.to_string(), "    line one\nline two\nline three");
+
+    // Multi-line selection indent
+    buf.cursor = (1, 0);
+    buf.selection_anchor = Some((2, 5));
+    buf.indent_selection();
+    assert_eq!(buf.rope.to_string(), "    line one\n    line two\n    line three");
+
+    // Multi-line selection unindent
+    buf.unindent_selection();
+    assert_eq!(buf.rope.to_string(), "    line one\nline two\nline three");
+
+    // Undo restore
+    buf.undo();
+    assert_eq!(buf.rope.to_string(), "    line one\n    line two\n    line three");
+}
