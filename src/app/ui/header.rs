@@ -169,7 +169,8 @@ impl App {
                         },
                         "Ctrl+B",
                         Message::FileTreeMsg(FileTreeMessage::ToggleVisibility),
-                    ));
+                    ))
+                    .push(make_item("󰈆", "Quit", "Ctrl+Q", Message::CloseWindow));
             }
             ActiveHeaderMenu::Edit => {
                 menu_items = menu_items

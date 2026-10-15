@@ -48,6 +48,9 @@ fn wrap_modal<'a>(
 
 impl App {
     pub(crate) fn render_active_modal<'a>(&'a self) -> Option<Element<'a, Message>> {
+        if let Some(modal) = self.render_save_confirmation_modal() {
+            return Some(modal);
+        }
         if let Some(modal) = self.render_new_file_modal() {
             return Some(modal);
         }
@@ -298,6 +301,96 @@ impl App {
             );
 
         Some(wrap_modal(modal_col, theme, 460.0))
+    }
+
+    pub(crate) fn render_save_confirmation_modal<'a>(&'a self) -> Option<Element<'a, Message>> {
+        if !self.show_save_confirmation_modal {
+            return None;
+        }
+
+        let theme = &self.theme;
+        let unsaved_files = self.unsaved_tab_names();
+        let count = unsaved_files.len();
+
+        let header_row = row::with_capacity(2)
+            .spacing(8)
+            .align_y(Alignment::Center)
+            .push(
+                text::title3("󰆓 Save Changes?")
+                    .class(cosmic::theme::Text::Color(theme.config.accent)),
+            );
+
+        let body_text = if count == 1 {
+            format!(
+                "Do you want to save changes to '{}' before closing?",
+                unsaved_files.first().map(|s| s.as_str()).unwrap_or("file")
+            )
+        } else {
+            format!(
+                "There are {} files with unsaved changes. Do you want to save them before closing?",
+                count
+            )
+        };
+
+        let mut modal_col = column::with_capacity(6)
+            .spacing(14)
+            .padding(24)
+            .push(header_row)
+            .push(
+                text(body_text)
+                    .size(13.0)
+                    .class(cosmic::theme::Text::Color(theme.config.fg)),
+            );
+
+        if count > 1 {
+            let mut file_list = column::with_capacity(count.min(5)).spacing(4);
+            for name in unsaved_files.iter().take(5) {
+                file_list = file_list.push(
+                    text(format!("  • {name}"))
+                        .size(12.0)
+                        .class(cosmic::theme::Text::Color(theme.config.comment)),
+                );
+            }
+            if count > 5 {
+                file_list = file_list.push(
+                    text(format!("  ...and {} more", count - 5))
+                        .size(11.0)
+                        .class(cosmic::theme::Text::Color(theme.config.comment)),
+                );
+            }
+            modal_col = modal_col.push(file_list);
+        }
+
+        modal_col = modal_col.push(
+            text("If you don't save, your changes will be discarded.")
+                .size(11.0)
+                .class(cosmic::theme::Text::Color(theme.config.comment)),
+        );
+
+        let buttons_row = row::with_capacity(4)
+            .spacing(12)
+            .align_y(Alignment::Center)
+            .push(cosmic::iced::widget::space::horizontal())
+            .push(
+                button::text("Cancel")
+                    .on_press(Message::CancelClose)
+                    .padding([6, 16]),
+            )
+            .push(
+                button::text("Discard")
+                    .on_press(Message::DiscardAndClose)
+                    .class(cosmic::theme::Button::Destructive)
+                    .padding([6, 16]),
+            )
+            .push(
+                button::suggested("Save")
+                    .on_press(Message::SaveAndClose)
+                    .padding([6, 16]),
+            );
+
+        modal_col = modal_col.push(buttons_row);
+
+        Some(wrap_modal(modal_col, theme, 500.0))
     }
 
     pub(crate) fn render_settings_modal<'a>(&'a self) -> Option<Element<'a, Message>> {

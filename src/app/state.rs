@@ -159,4 +159,28 @@ impl App {
         pane.buffer.toggle_comment(comment_prefix);
         pane.on_content_changed();
     }
+
+    pub fn has_unsaved_changes(&self) -> bool {
+        self.left_pane.tabs.iter().any(|t| t.buffer.is_modified)
+            || self.right_pane.tabs.iter().any(|t| t.buffer.is_modified)
+    }
+
+    pub fn unsaved_tab_names(&self) -> Vec<String> {
+        let mut names = Vec::new();
+        for tab in &self.left_pane.tabs {
+            if tab.buffer.is_modified && !names.contains(&tab.file_name) {
+                names.push(tab.file_name.clone());
+            }
+        }
+        for tab in &self.right_pane.tabs {
+            if tab.buffer.is_modified && !names.contains(&tab.file_name) {
+                names.push(tab.file_name.clone());
+            }
+        }
+        names
+    }
+
+    pub fn is_save_confirmation_open(&self) -> bool {
+        self.show_save_confirmation_modal
+    }
 }

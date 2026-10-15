@@ -66,6 +66,26 @@ impl App {
             }) => {
                 self.last_key_press = Instant::now();
 
+                if self.show_save_confirmation_modal {
+                    if matches!(&key, Key::Named(keyboard::key::Named::Escape)) {
+                        return self.handle_update(Message::CancelClose);
+                    }
+                    let is_enter = matches!(&key, Key::Named(keyboard::key::Named::Enter))
+                        || matches!(
+                            &physical_key,
+                            cosmic::iced::keyboard::key::Physical::Code(
+                                cosmic::iced::keyboard::key::Code::NumpadEnter
+                            )
+                        )
+                        || matches!(&key, Key::Character(c) if c == "\r" || c == "\n")
+                        || text.as_deref() == Some("\r")
+                        || text.as_deref() == Some("\n");
+                    if is_enter {
+                        return self.handle_update(Message::SaveAndClose);
+                    }
+                    return Task::none();
+                }
+
                 // Modal key handling: Enter (including Numpad Enter) confirms, Escape cancels
                 if self.show_new_file_modal
                     || self.show_new_folder_modal
@@ -183,6 +203,13 @@ impl App {
                     } else {
                         return self.handle_update(Message::SaveFile);
                     }
+                }
+
+                // Shortcut: Ctrl + Q (Quit Rooney)
+                if modifiers.control()
+                    && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("q"))
+                {
+                    return self.handle_update(Message::CloseWindow);
                 }
 
                 // Shortcut: Ctrl + B (Toggle Sidebar File Tree)
@@ -626,6 +653,9 @@ impl App {
             iced::Event::Window(iced::window::Event::Opened { size, .. }) => {
                 self.window_size = (size.width, size.height);
                 Task::none()
+            }
+            iced::Event::Window(iced::window::Event::CloseRequested) => {
+                self.handle_update(Message::CloseWindow)
             }
             _ => Task::none(),
         }

@@ -90,6 +90,9 @@ pub enum Message {
     MaximizeWindow,
     MinimizeWindow,
     CloseWindow,
+    CancelClose,
+    DiscardAndClose,
+    SaveAndClose,
 
     // Search & Replace
     ToggleSearch,

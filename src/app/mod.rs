@@ -78,6 +78,10 @@ pub struct App {
     pub(crate) show_delete_modal: bool,
     pub(crate) delete_target_path: Option<PathBuf>,
 
+    // Unsaved changes / Quit confirmation modal state
+    pub(crate) show_save_confirmation_modal: bool,
+    pub(crate) pending_close_on_save: bool,
+
     // AI Chat panel state
     pub(crate) show_ai_chat: bool,
     pub(crate) ai_chat_messages: Vec<crate::ai::ChatMessage>,
@@ -340,6 +344,8 @@ A lightweight, fast, in-process code and markdown editor.
             rename_name_input: String::new(),
             show_delete_modal: false,
             delete_target_path: None,
+            show_save_confirmation_modal: false,
+            pending_close_on_save: false,
             show_ai_chat: false,
             ai_chat_messages: Vec::new(),
             ai_chat_input: String::new(),
@@ -362,7 +368,8 @@ A lightweight, fast, in-process code and markdown editor.
 
     fn subscription(&self) -> iced::Subscription<Self::Message> {
         let timer = iced::time::every(Duration::from_millis(100)).map(|_| Message::Tick);
-        let events = iced::event::listen_with(|event, _status, _window| Some(Message::Event(event)));
+        let events =
+            iced::event::listen_with(|event, _status, _window| Some(Message::Event(event)));
         iced::Subscription::batch(vec![timer, events])
     }
 

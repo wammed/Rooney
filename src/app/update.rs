@@ -881,6 +881,12 @@ impl App {
                             self.file_tree.select(path);
                         }
                     }
+                    if self.pending_close_on_save {
+                        return self.save_all_and_close();
+                    }
+                } else if self.pending_close_on_save {
+                    self.pending_close_on_save = false;
+                    self.status_msg = Some("Quit cancelled".to_string());
                 }
                 Task::none()
             }
@@ -997,7 +1003,32 @@ impl App {
             Message::MaximizeWindow => self.maximize(),
             Message::MinimizeWindow => self.minimize(),
             Message::CloseWindow => {
+                self.active_header_menu = None;
+                if self.has_unsaved_changes() {
+                    self.show_save_confirmation_modal = true;
+                    Task::none()
+                } else {
+                    self.save_config();
+                    cosmic::iced::Task::done(cosmic::app::Action::Close).map(cosmic::Action::Cosmic)
+                }
+            }
+
+            Message::CancelClose => {
+                self.show_save_confirmation_modal = false;
+                self.pending_close_on_save = false;
+                Task::none()
+            }
+
+            Message::DiscardAndClose => {
+                self.show_save_confirmation_modal = false;
+                self.pending_close_on_save = false;
+                self.save_config();
                 cosmic::iced::Task::done(cosmic::app::Action::Close).map(cosmic::Action::Cosmic)
+            }
+
+            Message::SaveAndClose => {
+                self.show_save_confirmation_modal = false;
+                self.save_all_and_close()
             }
 
             Message::CloseSettings => {
@@ -1671,6 +1702,71 @@ impl App {
             )
         } else {
             Task::none()
+        }
+    }
+
+    pub(crate) fn save_all_and_close(&mut self) -> Task<Message> {
+        // Save modified tabs that already have a file_path
+        for tab in &mut self.left_pane.tabs {
+            if tab.buffer.is_modified && tab.file_path.is_some() {
+                if let Err(e) = tab.save_file() {
+                    self.status_msg = Some(format!("Save failed: {e}"));
+                }
+            }
+        }
+        for tab in &mut self.right_pane.tabs {
+            if tab.buffer.is_modified && tab.file_path.is_some() {
+                if let Err(e) = tab.save_file() {
+                    self.status_msg = Some(format!("Save failed: {e}"));
+                }
+            }
+        }
+        self.file_tree.refresh();
+
+        // Check if any untitled modified tab remains without a file_path
+        let untitled = self
+            .left_pane
+            .tabs
+            .iter()
+            .enumerate()
+            .find(|(_, t)| t.buffer.is_modified && t.file_path.is_none())
+            .map(|(idx, _)| (crate::editor::PaneId::Left, idx))
+            .or_else(|| {
+                self.right_pane
+                    .tabs
+                    .iter()
+                    .enumerate()
+                    .find(|(_, t)| t.buffer.is_modified && t.file_path.is_none())
+                    .map(|(idx, _)| (crate::editor::PaneId::Right, idx))
+            });
+
+        if let Some((pane_id, tab_idx)) = untitled {
+            self.active_pane = pane_id;
+            self.pane_mut(pane_id).select_tab(tab_idx);
+            self.pending_close_on_save = true;
+
+            let default_name = self.current_pane().file_name.clone();
+            let starting_dir = self.file_tree.root.clone();
+            Task::perform(
+                async move {
+                    rfd::AsyncFileDialog::new()
+                        .set_title("Save File As")
+                        .set_directory(&starting_dir)
+                        .set_file_name(&default_name)
+                        .save_file()
+                        .await
+                        .map(|f| f.path().to_path_buf())
+                },
+                move |path| cosmic::Action::App(Message::FileSavedAs(pane_id, path)),
+            )
+        } else if self.has_unsaved_changes() {
+            // Some file failed to save (e.g. disk full or read-only), abort close to prevent data loss
+            self.pending_close_on_save = false;
+            Task::none()
+        } else {
+            self.pending_close_on_save = false;
+            self.save_config();
+            cosmic::iced::Task::done(cosmic::app::Action::Close).map(cosmic::Action::Cosmic)
         }
     }
 }

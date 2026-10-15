@@ -1083,6 +1083,101 @@ fn test_active_header_menu_and_actions() {
 }
 
 #[test]
+fn test_quit_menu_and_unsaved_changes_confirmation() {
+    use cosmic::Application;
+    use rooney::app::message::{ActiveHeaderMenu, Message};
+    use rooney::app::{App, AppFlags};
+    use std::fs;
+
+    // 1. Verify Message variants exist and match expectations
+    let _ = Message::CloseWindow;
+    let _ = Message::CancelClose;
+    let _ = Message::DiscardAndClose;
+    let _ = Message::SaveAndClose;
+
+    // 2. Initialize App
+    let core = cosmic::app::Core::default();
+    let flags = AppFlags::default();
+    let (mut app, _) = App::init(core, flags);
+
+    // Initial state: no unsaved changes
+    assert!(!app.has_unsaved_changes());
+    assert!(app.unsaved_tab_names().is_empty());
+    assert!(!app.is_save_confirmation_open());
+
+    // Header menu file toggle should succeed and view() should render cleanly
+    let _ = app.update(Message::ToggleHeaderMenu(ActiveHeaderMenu::File));
+    let _ = app.view();
+
+    // When clean, CloseWindow closes directly without showing modal
+    let _ = app.update(Message::CloseWindow);
+    assert!(!app.is_save_confirmation_open());
+
+    // 3. Make a change in current buffer (now unsaved)
+    app.current_pane_mut()
+        .active_tab_mut()
+        .buffer
+        .insert_str("Unsaved text modification");
+    app.current_pane_mut().active_tab_mut().on_content_changed();
+
+    assert!(app.has_unsaved_changes());
+    let unsaved = app.unsaved_tab_names();
+    assert_eq!(unsaved.len(), 1);
+    assert_eq!(unsaved[0], app.current_pane().active_tab().file_name);
+
+    // CloseWindow should now prompt with the save confirmation modal
+    let _ = app.update(Message::CloseWindow);
+    assert!(app.is_save_confirmation_open());
+
+    // Modal UI rendering in view() should succeed
+    let _ = app.view();
+
+    // 4. CancelClose should dismiss the modal
+    let _ = app.update(Message::CancelClose);
+    assert!(!app.is_save_confirmation_open());
+    assert!(app.has_unsaved_changes());
+
+    // 5. Re-open modal and test DiscardAndClose
+    let _ = app.update(Message::CloseWindow);
+    assert!(app.is_save_confirmation_open());
+    let _ = app.update(Message::DiscardAndClose);
+    assert!(!app.is_save_confirmation_open());
+
+    // 6. Test SaveAndClose with an existing file on disk
+    let temp_dir = std::env::temp_dir().join(format!("rooney_quit_test_{}", std::process::id()));
+    let _ = fs::create_dir_all(&temp_dir);
+    let test_file = temp_dir.join("test_save_quit.rs");
+    fs::write(&test_file, "initial content").unwrap();
+
+    let open_res = app.current_pane_mut().open_file(&test_file);
+    assert!(open_res.is_ok());
+
+    // Modify the opened file
+    app.current_pane_mut()
+        .active_tab_mut()
+        .buffer
+        .insert_str("\n// modified comment");
+    app.current_pane_mut().active_tab_mut().on_content_changed();
+
+    assert!(app.has_unsaved_changes());
+    let unsaved = app.unsaved_tab_names();
+    assert!(unsaved.contains(&"test_save_quit.rs".to_string()));
+
+    // CloseWindow triggers modal
+    let _ = app.update(Message::CloseWindow);
+    assert!(app.is_save_confirmation_open());
+
+    // SaveAndClose saves the file and closes
+    let _ = app.update(Message::SaveAndClose);
+    assert!(!app.is_save_confirmation_open());
+
+    let saved_content = fs::read_to_string(&test_file).unwrap();
+    assert!(saved_content.contains("// modified comment"));
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
 fn test_filename_sanitization_and_path_traversal_guards() {
     use rooney::app::update::is_valid_file_or_folder_name;
 
