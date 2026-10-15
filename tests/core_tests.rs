@@ -5859,7 +5859,10 @@ fn test_buffer_indent_and_unindent() {
     buf.cursor = (1, 0);
     buf.selection_anchor = Some((2, 5));
     buf.indent_selection();
-    assert_eq!(buf.rope.to_string(), "    line one\n    line two\n    line three");
+    assert_eq!(
+        buf.rope.to_string(),
+        "    line one\n    line two\n    line three"
+    );
 
     // Multi-line selection unindent
     buf.unindent_selection();
@@ -5867,5 +5870,8 @@ fn test_buffer_indent_and_unindent() {
 
     // Undo restore
     buf.undo();
-    assert_eq!(buf.rope.to_string(), "    line one\n    line two\n    line three");
+    assert_eq!(
+        buf.rope.to_string(),
+        "    line one\n    line two\n    line three"
+    );
 }
