@@ -5973,9 +5973,9 @@ fn test_buffer_indent_and_unindent() {
 
 #[test]
 fn test_search_focus_prevents_editor_buffer_mutation() {
-    use cosmic::Application;
     use cosmic::iced::keyboard::{self, Key, Modifiers};
     use cosmic::iced::Event;
+    use cosmic::Application;
     use rooney::app::message::Message;
     use rooney::app::{App, AppFlags};
     use rooney::editor::PaneId;
@@ -6081,7 +6081,10 @@ fn test_search_focus_prevents_editor_buffer_mutation() {
 
     // 8. User clicks back to search input
     let _ = app.update(Message::FocusSearch);
-    assert!(!app.is_editor_focused(), "Focusing search removes editor focus");
+    assert!(
+        !app.is_editor_focused(),
+        "Focusing search removes editor focus"
+    );
 
     // 9. Closing search restores editor focus
     let _ = app.update(Message::CloseSearch);
