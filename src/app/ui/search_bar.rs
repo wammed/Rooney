@@ -37,6 +37,8 @@ impl App {
             )
             .push(
                 text_input("Find...", &self.search_input)
+                    .id(cosmic::widget::Id::new("search_input"))
+                    .on_focus(Message::FocusSearch)
                     .on_input(Message::SearchQueryChanged)
                     .width(Length::Fixed(220.0))
                     .padding([4, 8]),

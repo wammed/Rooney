@@ -7,7 +7,7 @@ use cosmic::iced::{self};
 use std::time::{Duration, Instant};
 
 impl App {
-    pub(crate) fn is_editor_focused(&self) -> bool {
+    pub fn is_editor_focused(&self) -> bool {
         !self.show_settings
             && !self.show_new_file_modal
             && !self.show_new_folder_modal
@@ -16,6 +16,7 @@ impl App {
             && self.active_header_menu.is_none()
             && self.context_menu.is_none()
             && self.file_tree_context_menu.is_none()
+            && !(self.current_pane().is_search_open && self.is_search_focused)
     }
 
     pub(crate) fn handle_key_event(&mut self, event: iced::Event) -> Task<Message> {

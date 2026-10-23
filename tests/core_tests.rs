@@ -5970,3 +5970,121 @@ fn test_buffer_indent_and_unindent() {
         "    line one\n    line two\n    line three"
     );
 }
+
+#[test]
+fn test_search_focus_prevents_editor_buffer_mutation() {
+    use cosmic::Application;
+    use cosmic::iced::keyboard::{self, Key, Modifiers};
+    use cosmic::iced::Event;
+    use rooney::app::message::Message;
+    use rooney::app::{App, AppFlags};
+    use rooney::editor::PaneId;
+
+    let core = cosmic::app::Core::default();
+    let flags = AppFlags::default();
+    let (mut app, _) = App::init(core, flags);
+
+    // Initial state: editor is focused
+    assert!(app.is_editor_focused());
+
+    // Set initial buffer content
+    let initial_text = "hello search world";
+    app.current_pane_mut().buffer = rooney::editor::TextBuffer::new(initial_text);
+    app.current_pane_mut().buffer.cursor = (0, 5);
+
+    // 1. Open search via ToggleSearch (Ctrl+F)
+    let _ = app.update(Message::ToggleSearch);
+    assert!(app.current_pane().is_search_open);
+    assert!(
+        !app.is_editor_focused(),
+        "Editor must not be focused when search is open and focused"
+    );
+
+    // 2. Typing into search box triggers SearchQueryChanged
+    let _ = app.update(Message::SearchQueryChanged("search".to_string()));
+    assert_eq!(app.search_input, "search");
+    assert!(!app.is_editor_focused());
+    // Buffer must remain completely unchanged
+    assert_eq!(app.current_pane().buffer.rope.to_string(), initial_text);
+
+    // 3. Simulate keypress event (user typing 'a' while in search box)
+    let key_event = Event::Keyboard(keyboard::Event::KeyPressed {
+        key: Key::Character("a".into()),
+        modified_key: Key::Character("a".into()),
+        physical_key: keyboard::key::Physical::Code(keyboard::key::Code::KeyA),
+        location: keyboard::Location::Standard,
+        modifiers: Modifiers::empty(),
+        repeat: false,
+        text: Some("a".into()),
+    });
+    let _ = app.update(Message::Event(key_event));
+    // Verify that the editor buffer was NOT modified!
+    assert_eq!(app.current_pane().buffer.rope.to_string(), initial_text);
+
+    // 3b. Simulate IME commit event while in search box
+    let ime_commit_event = Event::InputMethod(cosmic::iced::advanced::input_method::Event::Commit(
+        "日本語検索".into(),
+    ));
+    let _ = app.update(Message::Event(ime_commit_event));
+    assert_eq!(app.current_pane().buffer.rope.to_string(), initial_text);
+
+    // 4. Simulate Backspace keypress event
+    let backspace_event = Event::Keyboard(keyboard::Event::KeyPressed {
+        key: Key::Named(keyboard::key::Named::Backspace),
+        modified_key: Key::Named(keyboard::key::Named::Backspace),
+        physical_key: keyboard::key::Physical::Code(keyboard::key::Code::Backspace),
+        location: keyboard::Location::Standard,
+        modifiers: Modifiers::empty(),
+        repeat: false,
+        text: None,
+    });
+    let _ = app.update(Message::Event(backspace_event));
+    // Buffer still unchanged!
+    assert_eq!(app.current_pane().buffer.rope.to_string(), initial_text);
+
+    // 5. Enter key navigates search match instead of inserting newline
+    let enter_event = Event::Keyboard(keyboard::Event::KeyPressed {
+        key: Key::Named(keyboard::key::Named::Enter),
+        modified_key: Key::Named(keyboard::key::Named::Enter),
+        physical_key: keyboard::key::Physical::Code(keyboard::key::Code::Enter),
+        location: keyboard::Location::Standard,
+        modifiers: Modifiers::empty(),
+        repeat: false,
+        text: Some("\n".into()),
+    });
+    let _ = app.update(Message::Event(enter_event));
+    assert_eq!(app.current_pane().buffer.rope.to_string(), initial_text);
+
+    // 6. User clicks editor canvas to edit the document
+    let _ = app.update(Message::ClickPane(PaneId::Left, 0, 0));
+    assert!(app.current_pane().is_search_open, "Search bar remains open");
+    assert!(
+        app.is_editor_focused(),
+        "Editor gains focus when user clicks canvas"
+    );
+
+    // 7. Now typing inserts into the buffer because editor is focused
+    let type_char_event = Event::Keyboard(keyboard::Event::KeyPressed {
+        key: Key::Character("x".into()),
+        modified_key: Key::Character("x".into()),
+        physical_key: keyboard::key::Physical::Code(keyboard::key::Code::KeyX),
+        location: keyboard::Location::Standard,
+        modifiers: Modifiers::empty(),
+        repeat: false,
+        text: Some("x".into()),
+    });
+    let _ = app.update(Message::Event(type_char_event));
+    assert_eq!(
+        app.current_pane().buffer.rope.to_string(),
+        "xhello search world"
+    );
+
+    // 8. User clicks back to search input
+    let _ = app.update(Message::FocusSearch);
+    assert!(!app.is_editor_focused(), "Focusing search removes editor focus");
+
+    // 9. Closing search restores editor focus
+    let _ = app.update(Message::CloseSearch);
+    assert!(!app.current_pane().is_search_open);
+    assert!(app.is_editor_focused());
+}

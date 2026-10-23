@@ -90,7 +90,8 @@ pub struct App {
     pub(crate) ai_chat_cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 
     // Search state
-    pub(crate) search_input: String,
+    pub search_input: String,
+    pub is_search_focused: bool,
 }
 
 pub const ROONEY_ICON_BYTES: &[u8] = include_bytes!("../../images/Rooney-matte-icon.svg");
@@ -352,6 +353,7 @@ A lightweight, fast, in-process code and markdown editor.
             ai_chat_pending: false,
             ai_chat_cancel: None,
             search_input: String::new(),
+            is_search_focused: false,
         };
 
         let client_clone = app.ollama.clone();

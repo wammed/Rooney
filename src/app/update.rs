@@ -239,6 +239,7 @@ impl App {
                 self.file_tree_context_menu = None;
                 self.active_header_menu = None;
                 self.show_edit_menu = false;
+                self.is_search_focused = false;
                 let pane = self.pane_mut(pane_id);
                 pane.clear_ghost_text();
                 pane.preedit = None;
@@ -251,6 +252,7 @@ impl App {
 
             Message::DragSelect(pane_id, line, col) => {
                 self.active_pane = pane_id;
+                self.is_search_focused = false;
                 let pane = self.pane_mut(pane_id);
                 if pane.buffer.selection_anchor.is_none() {
                     pane.buffer.selection_anchor = Some(pane.buffer.cursor);
@@ -1052,17 +1054,48 @@ impl App {
             }
 
             Message::ToggleSearch => {
-                let pane = self.current_pane_mut();
-                pane.is_search_open = !pane.is_search_open;
-                if pane.is_search_open {
-                    if let Some(ref q) = pane.search_query.clone() {
+                let pane_id = self.active_pane;
+                let is_search_open = self.pane(pane_id).is_search_open;
+                if is_search_open && self.is_search_focused {
+                    let pane = self.pane_mut(pane_id);
+                    pane.is_search_open = false;
+                    pane.search_query = None;
+                    pane.search_matches.clear();
+                    self.is_search_focused = false;
+                    self.search_input.clear();
+                    Task::none()
+                } else {
+                    self.is_search_focused = true;
+                    let selected = self.pane(pane_id).buffer.selected_text();
+                    if let Some(ref s) = selected {
+                        if !s.contains('\n') && !s.is_empty() {
+                            self.search_input = s.clone();
+                        }
+                    } else if let Some(ref q) = self.pane(pane_id).search_query.clone() {
                         self.search_input = q.clone();
                     }
+                    let pane = self.pane_mut(pane_id);
+                    pane.is_search_open = true;
+                    if let Some(ref s) = selected {
+                        if !s.contains('\n') && !s.is_empty() {
+                            pane.update_search(s);
+                        }
+                    }
+                    let id = cosmic::widget::Id::new("search_input");
+                    Task::batch(vec![
+                        cosmic::widget::text_input::focus(id.clone()),
+                        cosmic::widget::text_input::select_all(id),
+                    ])
                 }
+            }
+
+            Message::FocusSearch => {
+                self.is_search_focused = true;
                 Task::none()
             }
 
             Message::SearchQueryChanged(q) => {
+                self.is_search_focused = true;
                 self.search_input = q.clone();
                 let pane_id = self.active_pane;
                 let pane = self.pane_mut(pane_id);
@@ -1129,11 +1162,12 @@ impl App {
             }
 
             Message::CloseSearch => {
+                self.is_search_focused = false;
+                self.search_input.clear();
                 let pane = self.current_pane_mut();
                 pane.is_search_open = false;
                 pane.search_query = None;
                 pane.search_matches.clear();
-                self.search_input.clear();
                 Task::none()
             }
 

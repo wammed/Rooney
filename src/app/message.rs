@@ -96,6 +96,7 @@ pub enum Message {
 
     // Search & Replace
     ToggleSearch,
+    FocusSearch,
     SearchQueryChanged(String),
     NextSearchMatch,
     PrevSearchMatch,
