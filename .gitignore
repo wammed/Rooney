@@ -20,5 +20,8 @@ target
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Code-Base Review by AI
-/REVIEW*
+# Documents
+REVIEW*
+ROONEY*
+SESSION*
+test.txt
