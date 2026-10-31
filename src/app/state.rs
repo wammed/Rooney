@@ -106,6 +106,7 @@ impl App {
     pub fn execute_copy(&mut self) -> Task<Message> {
         self.context_menu = None;
         self.file_tree_context_menu = None;
+        self.active_header_menu = None;
         self.show_edit_menu = false;
         if let Some(selected) = self.current_pane().buffer.selected_text() {
             let count = selected.chars().count();
@@ -118,6 +119,7 @@ impl App {
     pub fn execute_cut(&mut self) -> Task<Message> {
         self.context_menu = None;
         self.file_tree_context_menu = None;
+        self.active_header_menu = None;
         self.show_edit_menu = false;
         if let Some(selected) = self.current_pane().buffer.selected_text() {
             let pane = self.current_pane_mut();
@@ -133,6 +135,7 @@ impl App {
     pub fn execute_paste(&mut self) -> Task<Message> {
         self.context_menu = None;
         self.file_tree_context_menu = None;
+        self.active_header_menu = None;
         self.show_edit_menu = false;
         cosmic::iced::clipboard::read()
             .map(|opt| cosmic::Action::App(Message::ClipboardPasted(opt)))
@@ -182,5 +185,9 @@ impl App {
 
     pub fn is_save_confirmation_open(&self) -> bool {
         self.show_save_confirmation_modal
+    }
+
+    pub fn active_header_menu(&self) -> Option<crate::app::message::ActiveHeaderMenu> {
+        self.active_header_menu
     }
 }

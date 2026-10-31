@@ -1073,13 +1073,92 @@ fn test_active_header_menu_and_actions() {
     assert_ne!(menu_view, menu_ai);
 
     let msg_toggle = Message::ToggleHeaderMenu(ActiveHeaderMenu::File);
+    let msg_item = Message::SelectHeaderMenuItem(Box::new(Message::OpenFilePrompt));
     let msg_close = Message::CloseHeaderMenu;
 
     match msg_toggle {
         Message::ToggleHeaderMenu(m) => assert_eq!(m, ActiveHeaderMenu::File),
         _ => panic!("Expected ToggleHeaderMenu"),
     }
+    match msg_item {
+        Message::SelectHeaderMenuItem(inner) => assert!(matches!(*inner, Message::OpenFilePrompt)),
+        _ => panic!("Expected SelectHeaderMenuItem"),
+    }
     assert!(matches!(msg_close, Message::CloseHeaderMenu));
+}
+
+#[test]
+fn test_header_dropdown_menu_selection_and_dismissal() {
+    use cosmic::Application;
+    use rooney::app::message::{ActiveHeaderMenu, Message};
+    use rooney::app::{App, AppFlags};
+
+    let core = cosmic::app::Core::default();
+    let flags = AppFlags::default();
+    let (mut app, _) = App::init(core, flags);
+
+    // Initial state: no header menu open
+    assert_eq!(app.active_header_menu(), None);
+
+    // 1. Open File menu
+    let _ = app.update(Message::ToggleHeaderMenu(ActiveHeaderMenu::File));
+    assert_eq!(app.active_header_menu(), Some(ActiveHeaderMenu::File));
+
+    // Selecting an item from the menu (e.g. OpenFilePrompt) must dismiss the dropdown menu
+    let _ = app.update(Message::SelectHeaderMenuItem(Box::new(Message::OpenFilePrompt)));
+    assert_eq!(app.active_header_menu(), None);
+
+    // 2. Open File menu, select PromptNewFile
+    let _ = app.update(Message::ToggleHeaderMenu(ActiveHeaderMenu::File));
+    assert_eq!(app.active_header_menu(), Some(ActiveHeaderMenu::File));
+    let _ = app.update(Message::SelectHeaderMenuItem(Box::new(Message::PromptNewFile)));
+    assert_eq!(app.active_header_menu(), None);
+    // Cancel the modal
+    let _ = app.update(Message::CancelNewFile);
+
+    // 3. Open Edit menu, select Undo
+    let _ = app.update(Message::ToggleHeaderMenu(ActiveHeaderMenu::Edit));
+    assert_eq!(app.active_header_menu(), Some(ActiveHeaderMenu::Edit));
+    let _ = app.update(Message::SelectHeaderMenuItem(Box::new(Message::Undo)));
+    assert_eq!(app.active_header_menu(), None);
+
+    // 4. Open View menu, select ToggleSplit
+    let _ = app.update(Message::ToggleHeaderMenu(ActiveHeaderMenu::View));
+    assert_eq!(app.active_header_menu(), Some(ActiveHeaderMenu::View));
+    let _ = app.update(Message::SelectHeaderMenuItem(Box::new(Message::ToggleSplit)));
+    assert_eq!(app.active_header_menu(), None);
+
+    // 5. Open AI menu, select ToggleAi
+    let _ = app.update(Message::ToggleHeaderMenu(ActiveHeaderMenu::Ai));
+    assert_eq!(app.active_header_menu(), Some(ActiveHeaderMenu::Ai));
+    let _ = app.update(Message::SelectHeaderMenuItem(Box::new(Message::ToggleAi)));
+    assert_eq!(app.active_header_menu(), None);
+
+    // 6. Direct actions also dismiss active header menu
+    let _ = app.update(Message::ToggleHeaderMenu(ActiveHeaderMenu::File));
+    assert_eq!(app.active_header_menu(), Some(ActiveHeaderMenu::File));
+    let _ = app.update(Message::OpenFilePrompt);
+    assert_eq!(app.active_header_menu(), None);
+
+    // 7. Switching between menus directly (e.g. File -> Edit)
+    let _ = app.update(Message::ToggleHeaderMenu(ActiveHeaderMenu::File));
+    assert_eq!(app.active_header_menu(), Some(ActiveHeaderMenu::File));
+    let _ = app.update(Message::ToggleHeaderMenu(ActiveHeaderMenu::Edit));
+    assert_eq!(app.active_header_menu(), Some(ActiveHeaderMenu::Edit));
+    // Toggling Edit again closes it
+    let _ = app.update(Message::ToggleHeaderMenu(ActiveHeaderMenu::Edit));
+    assert_eq!(app.active_header_menu(), None);
+
+    // 8. CloseHeaderMenu closes active menu
+    let _ = app.update(Message::ToggleHeaderMenu(ActiveHeaderMenu::View));
+    assert_eq!(app.active_header_menu(), Some(ActiveHeaderMenu::View));
+    let _ = app.update(Message::CloseHeaderMenu);
+    assert_eq!(app.active_header_menu(), None);
+
+    // 9. View rendering with active header menu works cleanly
+    let _ = app.update(Message::ToggleHeaderMenu(ActiveHeaderMenu::File));
+    assert_eq!(app.active_header_menu(), Some(ActiveHeaderMenu::File));
+    let _ = app.view();
 }
 
 #[test]

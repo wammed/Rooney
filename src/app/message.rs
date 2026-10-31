@@ -75,6 +75,7 @@ pub enum Message {
     CloseContextMenu,
     CloseFileTreeContextMenu,
     ToggleHeaderMenu(ActiveHeaderMenu),
+    SelectHeaderMenuItem(Box<Message>),
     CloseHeaderMenu,
     ToggleEditMenu,
     CloseEditMenu,

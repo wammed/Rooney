@@ -286,6 +286,8 @@ impl App {
 
             Message::SelectAll => {
                 self.context_menu = None;
+                self.file_tree_context_menu = None;
+                self.active_header_menu = None;
                 self.show_edit_menu = false;
                 self.current_pane_mut().buffer.select_all();
                 Task::none()
@@ -293,6 +295,8 @@ impl App {
 
             Message::Undo => {
                 self.context_menu = None;
+                self.file_tree_context_menu = None;
+                self.active_header_menu = None;
                 self.show_edit_menu = false;
                 self.current_pane_mut().buffer.undo();
                 self.current_pane_mut().on_content_changed();
@@ -301,6 +305,8 @@ impl App {
 
             Message::Redo => {
                 self.context_menu = None;
+                self.file_tree_context_menu = None;
+                self.active_header_menu = None;
                 self.show_edit_menu = false;
                 self.current_pane_mut().buffer.redo();
                 self.current_pane_mut().on_content_changed();
@@ -332,6 +338,11 @@ impl App {
                     self.file_tree_context_menu = None;
                 }
                 Task::none()
+            }
+
+            Message::SelectHeaderMenuItem(inner_msg) => {
+                self.active_header_menu = None;
+                self.handle_update(*inner_msg)
             }
 
             Message::CloseHeaderMenu => {
@@ -415,6 +426,7 @@ impl App {
 
             Message::FileTreeMsg(msg) => {
                 self.file_tree_context_menu = None;
+                self.active_header_menu = None;
                 match msg {
                     FileTreeMessage::ToggleDir(path) => {
                         self.file_tree.toggle_dir(&path);
@@ -490,6 +502,7 @@ impl App {
             }
 
             Message::ToggleSplit => {
+                self.active_header_menu = None;
                 self.split_layout = match self.split_layout {
                     SplitLayout::Single => SplitLayout::Split,
                     SplitLayout::Split => SplitLayout::Single,
@@ -512,6 +525,7 @@ impl App {
             }
 
             Message::ToggleMarkdownPreview => {
+                self.active_header_menu = None;
                 let pane_id = self.active_pane;
                 let pane = self.current_pane_mut();
                 pane.is_markdown_preview = !pane.is_markdown_preview;
@@ -657,6 +671,7 @@ impl App {
             }
 
             Message::ToggleAi => {
+                self.active_header_menu = None;
                 self.ollama.is_enabled = !self.ollama.is_enabled;
                 self.ai_status = if self.ollama.is_enabled {
                     AiStatus::Ready(self.ollama.active_model.clone())
@@ -673,6 +688,7 @@ impl App {
             }
 
             Message::TriggerAiFim => {
+                self.active_header_menu = None;
                 if !self.ollama.is_enabled {
                     return Task::none();
                 }
@@ -791,16 +807,19 @@ impl App {
                 Task::none()
             }
 
-            Message::OpenFilePrompt => Task::perform(
-                async {
-                    rfd::AsyncFileDialog::new()
-                        .set_title("Open File")
-                        .pick_file()
-                        .await
-                        .map(|f| f.path().to_path_buf())
-                },
-                |path| cosmic::Action::App(Message::FileOpened(path)),
-            ),
+            Message::OpenFilePrompt => {
+                self.active_header_menu = None;
+                Task::perform(
+                    async {
+                        rfd::AsyncFileDialog::new()
+                            .set_title("Open File")
+                            .pick_file()
+                            .await
+                            .map(|f| f.path().to_path_buf())
+                    },
+                    |path| cosmic::Action::App(Message::FileOpened(path)),
+                )
+            }
 
             Message::FileOpened(path) => {
                 if let Some(path) = path {
@@ -813,16 +832,19 @@ impl App {
                 Task::none()
             }
 
-            Message::OpenFolderPrompt => Task::perform(
-                async {
-                    rfd::AsyncFileDialog::new()
-                        .set_title("Open Folder")
-                        .pick_folder()
-                        .await
-                        .map(|f| f.path().to_path_buf())
-                },
-                |path| cosmic::Action::App(Message::FolderOpened(path)),
-            ),
+            Message::OpenFolderPrompt => {
+                self.active_header_menu = None;
+                Task::perform(
+                    async {
+                        rfd::AsyncFileDialog::new()
+                            .set_title("Open Folder")
+                            .pick_folder()
+                            .await
+                            .map(|f| f.path().to_path_buf())
+                    },
+                    |path| cosmic::Action::App(Message::FolderOpened(path)),
+                )
+            }
 
             Message::FolderOpened(path) => {
                 if let Some(dir) = path {
@@ -839,6 +861,7 @@ impl App {
             }
 
             Message::SaveFile => {
+                self.active_header_menu = None;
                 let pane = self.current_pane();
                 if pane.file_path.is_none() {
                     return self.handle_update(Message::SaveFileAsPrompt);
@@ -854,6 +877,7 @@ impl App {
             }
 
             Message::SaveFileAsPrompt => {
+                self.active_header_menu = None;
                 let active_pane = self.active_pane;
                 let default_name = self.current_pane().file_name.clone();
                 let starting_dir = self.file_tree.root.clone();
@@ -894,6 +918,7 @@ impl App {
             }
 
             Message::PromptNewFile => {
+                self.active_header_menu = None;
                 self.show_new_file_modal = true;
                 self.new_file_name_input = String::new();
                 self.new_file_target_dir = self.file_tree.root.clone();
@@ -973,6 +998,7 @@ impl App {
             }
 
             Message::ToggleSettings => {
+                self.active_header_menu = None;
                 self.show_settings = !self.show_settings;
                 Task::none()
             }
@@ -1001,9 +1027,18 @@ impl App {
                 Task::none()
             }
 
-            Message::DragWindow => self.drag(),
-            Message::MaximizeWindow => self.maximize(),
-            Message::MinimizeWindow => self.minimize(),
+            Message::DragWindow => {
+                self.active_header_menu = None;
+                self.drag()
+            }
+            Message::MaximizeWindow => {
+                self.active_header_menu = None;
+                self.maximize()
+            }
+            Message::MinimizeWindow => {
+                self.active_header_menu = None;
+                self.minimize()
+            }
             Message::CloseWindow => {
                 self.active_header_menu = None;
                 if self.has_unsaved_changes() {
@@ -1054,6 +1089,7 @@ impl App {
             }
 
             Message::ToggleSearch => {
+                self.active_header_menu = None;
                 let pane_id = self.active_pane;
                 let is_search_open = self.pane(pane_id).is_search_open;
                 if is_search_open && self.is_search_focused {
@@ -1449,6 +1485,7 @@ impl App {
 
             // AI Chat & Code Generation Panel
             Message::ToggleAiChat => {
+                self.active_header_menu = None;
                 self.show_ai_chat = !self.show_ai_chat;
                 self.save_config();
                 Task::none()

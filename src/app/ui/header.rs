@@ -126,7 +126,7 @@ impl App {
                     );
 
                 button::custom(content)
-                    .on_press(msg)
+                    .on_press(Message::SelectHeaderMenuItem(Box::new(msg)))
                     .class(cosmic::theme::Button::Transparent)
                     .width(Length::Fill)
             };
@@ -271,9 +271,15 @@ impl App {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        let backdrop = button::custom(Space::new().width(Length::Fill).height(Length::Fill))
-            .on_press(Message::CloseHeaderMenu)
-            .class(cosmic::theme::Button::Transparent);
+        let backdrop = column::with_capacity(2)
+            .push(Space::new().height(Length::Fixed(menu_y)))
+            .push(
+                button::custom(Space::new().width(Length::Fill).height(Length::Fill))
+                    .on_press(Message::CloseHeaderMenu)
+                    .class(cosmic::theme::Button::Transparent),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill);
 
         Some((backdrop.into(), positioned.into()))
     }
