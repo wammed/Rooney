@@ -1105,13 +1105,17 @@ fn test_header_dropdown_menu_selection_and_dismissal() {
     assert_eq!(app.active_header_menu(), Some(ActiveHeaderMenu::File));
 
     // Selecting an item from the menu (e.g. OpenFilePrompt) must dismiss the dropdown menu
-    let _ = app.update(Message::SelectHeaderMenuItem(Box::new(Message::OpenFilePrompt)));
+    let _ = app.update(Message::SelectHeaderMenuItem(Box::new(
+        Message::OpenFilePrompt,
+    )));
     assert_eq!(app.active_header_menu(), None);
 
     // 2. Open File menu, select PromptNewFile
     let _ = app.update(Message::ToggleHeaderMenu(ActiveHeaderMenu::File));
     assert_eq!(app.active_header_menu(), Some(ActiveHeaderMenu::File));
-    let _ = app.update(Message::SelectHeaderMenuItem(Box::new(Message::PromptNewFile)));
+    let _ = app.update(Message::SelectHeaderMenuItem(Box::new(
+        Message::PromptNewFile,
+    )));
     assert_eq!(app.active_header_menu(), None);
     // Cancel the modal
     let _ = app.update(Message::CancelNewFile);
@@ -1125,7 +1129,9 @@ fn test_header_dropdown_menu_selection_and_dismissal() {
     // 4. Open View menu, select ToggleSplit
     let _ = app.update(Message::ToggleHeaderMenu(ActiveHeaderMenu::View));
     assert_eq!(app.active_header_menu(), Some(ActiveHeaderMenu::View));
-    let _ = app.update(Message::SelectHeaderMenuItem(Box::new(Message::ToggleSplit)));
+    let _ = app.update(Message::SelectHeaderMenuItem(Box::new(
+        Message::ToggleSplit,
+    )));
     assert_eq!(app.active_header_menu(), None);
 
     // 5. Open AI menu, select ToggleAi
