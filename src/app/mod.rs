@@ -94,7 +94,7 @@ pub struct App {
     pub is_search_focused: bool,
 }
 
-pub const ROONEY_ICON_BYTES: &[u8] = include_bytes!("../../images/Rooney-matte-icon.svg");
+pub const ROONEY_ICON_BYTES: &[u8] = include_bytes!("../../images/Rooney-Icon.svg");
 
 pub fn ensure_system_icons() {
     let home = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf());
@@ -105,6 +105,7 @@ pub fn ensure_system_icons() {
         for icon_name in &[
             "rooney.svg",
             "Rooney-icon.svg",
+            "Rooney-Icon.svg",
             "Rooney-matte-icon.svg",
             "org.pop_os.CosmicCode.svg",
         ] {

@@ -4,71 +4,66 @@
   <a href="docs/PORTAL.md">Documentation Portal</a> | <strong>English</strong> | <a href="IP_COMPLIANCE.ja.md">日本語</a>
 </p>
 
-This document records the provenance, design-review history, and IP due-diligence process for the **Rooney** application icon.
+This document records the provenance, design review history, and intellectual property (IP) due diligence process for the **Rooney** application icon.
 
-> **Scope:** This is a project provenance and due-diligence record. It is not a legal opinion, trademark clearance, or guarantee that no third-party rights are implicated.
+> **Scope:** This document is a record of project provenance and due diligence. It does not constitute legal opinion, formal trademark clearance, or a guarantee against third-party claims.
 
 ## 1. Asset & Provenance
 
 - **Application:** Rooney
-- **Purpose:** COSMIC / Wayland-oriented AI-integrated Linux code and Markdown editor.
-- **Generation method:** AI-assisted image generation and iterative refinement using Google Gemini.
-- **Current design language:** Flat, non-glossy, matte styling on a solid charcoal background.
-- **Current visual concept:** A geometric **R** incorporating the application's **Rope** concept and **Split-View / two-pane editing** concept.
+- **Function:** AI-integrated Linux code and translucent split-view Markdown editor for COSMIC / Wayland.
+- **Generation Method:** AI-assisted iterative geometric SVG design and refinement via Google Gemini.
+- **Current Design Language:** Matte industrial aesthetic aligned with COSMIC DE (Pop!_OS) design conventions, featuring a transparent background.
+- **Current Visual Concept:**
+  - **Transparent Background + Dual Slate Plates:** Physical representation of the editor's translucency and side-by-side 2-pane editing (source & preview).
+  - **Central Amber Emissive Slit:** A high-intensity laser/backlight beam leaking through the vertical gap in the Pop!_OS / COSMIC signature color (amber orange).
+  - **Geometric Ultrawide "R":** A custom low-profile monogram with a 2:1 ratio (extended bowl vs. short stubby legs), ultra-thick stem, and bold right leg bridging both plates across the luminous slit.
 
 ## 2. Design Review History
 
-### Initial concept
+### Initial Concepts & Past Concerns
 
-The earlier Rooney icon used a prominent gear combined with a large R and editor/code imagery.
+Early draft iterations of the Rooney icon included a prominent gear motif combined with the letter "R", raising visual similarity concerns with the official Rust programming language logo. Since Rooney is implemented in Rust, the project determined it was critical to eliminate any gear motif to avoid brand confusion or trademark overlap.
 
-The Gemini-assisted review identified a strong visual resemblance between the gear + R arrangement and the Rust programming language's official logo.
+### Revision Process
 
-Because Rooney itself is implemented in Rust, the project considered it particularly important to avoid unnecessary visual association with Rust branding.
+The project abandoned generic container boxes and textures in favor of an industrial, custom-constructed geometry directly reflecting the editor's core behavior:
 
-### Revision
-
-The project replaced the gear-based composition with a geometric monogram based on:
-
-- the letter **R**;
-- the internal **Rope** buffer concept;
-- **Split-View / two-pane editing**.
-
-The revised icon uses a solid charcoal background and matte treatment.
+1. **Transparent Background & Dual Plates:** Outer boundaries were made fully transparent, leaving two floating matte-slate plates (`#1b2028` / `#1e2530`). The right plate incorporates a frosted-glass translucent bleed layer.
+2. **Central Slit Backlight:** A vibrant multi-layered amber neon glow (`#ff7900` to `#ffb300`) illuminates the vertical chasm between the plates, symbolizing translucency.
+3. **Custom "R" Monogram:** Rather than adopting pre-existing typography, a completely custom SVG path was engineered—featuring an ultrawide span (>80px width), a heavy 2:1 vertical ratio with compressed legs, and monolithic weight.
 
 ## 3. Similarity Review
 
-| Reference | Observation | Project action |
+| Subject | Observations | Project Response |
 | :--- | :--- | :--- |
-| Rust programming language branding | Earlier gear + R composition was identified as strongly similar. | Removed the gear motif and redesigned the symbol from application-specific concepts. |
-| RStudio / Posit | Shares the broad R + developer-tool category. | Current design uses a different geometric construction and application-specific Split-View/Rope concept. |
+| **Rust Programming Language Branding** | Shares the letter "R", developer tool category, and warm amber/orange accents. | The gear motif was completely eliminated. The icon relies on a dual-plate split, an emissive vertical slit, and an un-serifed, ultrawide custom geometric monogram, eliminating visual confusion and infringement risks. |
+| **RStudio / Posit** | Shares the "rounded R in a developer editor/IDE" category. | RStudio utilizes a circular blue badge with a thin white R. Rooney employs a transparent background, dual matte-slate plates, an amber neon slit, and an ultra-bold, low-profile custom R, distinguishing it clearly in color, shape, and structure. |
+| **Raycast** | Dark desktop/developer tool featuring red/orange geometric accents. | Raycast uses an angled red polygon prism and does not feature the letter "R" or a split-view plate layout, presenting zero similarity. |
+| **COSMIC / System76 Native App Icons** | Conforms to COSMIC DE color palettes (dark slate + amber) and corner radii. | While respecting the OS palette, Rooney departs from System76's single-color flat line-art icons, providing a distinct third-party silhouette with dimensional slit lighting and heavy monolithic styling. |
 
 ## 4. Current Design Rationale
 
-The final monogram is intended to represent the application itself rather than its implementation language:
+The final monogram directly embodies the application's unique identity rather than its underlying implementation language:
 
-- **R** → Rooney;
-- **Rope** → editor buffer/data structure concept;
-- **Split-View** → a core editor feature.
+- **Dual Split Slate Plates** → Markdown split-view editing (live preview side-by-side)
+- **Slit Backlight & Frosted Bleed** → Translucency and integration with the desktop wallpaper
+- **Amber Orange Glow** → Alignment with the COSMIC / Pop!_OS ecosystem
+- **Ultrawide Low-Profile "R"** → Monogram for "Rooney", evoking architectural stability and editor buffer resilience (Rope structure)
 
-The gear motif associated with the earlier draft was removed.
+## 5. Limitations of AI-Assisted Review
 
-## 5. AI-Assisted Review Limitations
+The design iterations and comparative reviews involved AI assistance via Google Gemini. Colloquial phrases from conversational logs (such as "zero risk" or "complete compliance") reflect informal AI output and are not adopted as formal legal determinations in this document.
 
-The original Gemini conversation contains definitive phrases such as “zero risk,” “complete compliance,” and “approved.” Those phrases are historical AI output and are not adopted here as legal findings.
+This record does not constitute official trademark or design patent registration clearance, but serves as an objective internal provenance record.
 
-The recorded comparison does not constitute comprehensive trademark or copyright clearance.
+## 6. Retention of Records
 
-In particular, the use of Rust as a development language does not by itself determine whether an icon is legally permissible; the relevant question is the actual visual asset and surrounding use.
+Full conversation transcripts with Google Gemini and raw SVG iteration data are archived separately as foundational development records. For comprehensive historical details covering earlier multi-app reviews, see [ICON_DESIGN_HISTORY.ja.md](ICON_DESIGN_HISTORY.ja.md) / [ICON_DESIGN_HISTORY.md](ICON_DESIGN_HISTORY.md).
 
-## 6. Record Keeping
-
-The detailed Gemini conversation is retained separately as the underlying development/provenance record. For the comprehensive cross-application historical archive covering initial generation, similarity reviews, and design transitions across Fluffy, Waddle, Rooney, and Toodle, see [ICON_DESIGN_HISTORY.md](ICON_DESIGN_HISTORY.md).
-
-This document is the concise repository-facing summary.
+This document serves as the concise summary for repository inclusion.
 
 ## 7. Current Status
 
-**Status:** The current icon uses the redesigned geometric R / Rope / Split-View concept and does not intentionally reproduce the earlier gear-based composition.
-
-**Review date:** 2026-09-28
+- **Status:** The current icon utilizes a transparent background, dual matte-slate plates, a central amber emissive slit, and an original ultrawide short-legged "R", deliberately avoiding all previous gear motifs or third-party proprietary designs.
+- **Review Date:** 2026-10-31
