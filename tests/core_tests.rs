@@ -1358,7 +1358,7 @@ fn test_atomic_save_and_file_size_limits() {
 fn test_rooney_icon_integration() {
     let icon_bytes = include_bytes!("../images/Rooney-Icon.svg");
     assert!(!icon_bytes.is_empty());
-    assert_eq!(icon_bytes.len(), 20881);
+    assert_eq!(icon_bytes.len(), 27281);
     assert_eq!(icon_bytes, rooney::app::ROONEY_ICON_BYTES);
 
     let icon_str = std::str::from_utf8(icon_bytes).expect("Valid UTF-8 SVG");
