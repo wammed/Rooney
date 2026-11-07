@@ -92,6 +92,12 @@ pub struct App {
     // Search state
     pub search_input: String,
     pub is_search_focused: bool,
+
+    // Snippet menu state
+    pub(crate) snippet_registry: crate::snippet::SnippetRegistry,
+    pub(crate) show_snippet_menu: bool,
+    pub(crate) snippet_selected_lang: Option<String>,
+    pub(crate) snippet_selected_category: Option<String>,
 }
 
 pub const ROONEY_ICON_BYTES: &[u8] = include_bytes!("../../images/Rooney-Icon.svg");
@@ -355,6 +361,10 @@ A lightweight, fast, in-process code and markdown editor.
             ai_chat_cancel: None,
             search_input: String::new(),
             is_search_focused: false,
+            snippet_registry: crate::snippet::SnippetRegistry::new(),
+            show_snippet_menu: false,
+            snippet_selected_lang: None,
+            snippet_selected_category: None,
         };
 
         let client_clone = app.ollama.clone();

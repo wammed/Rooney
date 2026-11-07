@@ -243,6 +243,21 @@ impl App {
                 let pane = self.pane_mut(pane_id);
                 pane.clear_ghost_text();
                 pane.preedit = None;
+
+                // Task list interactive checkbox toggle on click
+                if pane.is_markdown()
+                    && matches!(
+                        pane.view_mode,
+                        crate::editor::pane::ViewMode::LivePreview
+                            | crate::editor::pane::ViewMode::Reading
+                    )
+                    && col <= 4
+                {
+                    if pane.toggle_task_at_line(line) {
+                        return Task::none();
+                    }
+                }
+
                 pane.buffer.cursor = (line, col);
                 pane.buffer.clamp_cursor();
                 pane.buffer.selection_anchor = None;
@@ -528,6 +543,11 @@ impl App {
                 self.active_header_menu = None;
                 let pane_id = self.active_pane;
                 let pane = self.current_pane_mut();
+                pane.view_mode = match pane.view_mode {
+                    crate::editor::pane::ViewMode::LivePreview => crate::editor::pane::ViewMode::Source,
+                    crate::editor::pane::ViewMode::Source => crate::editor::pane::ViewMode::LivePreview,
+                    crate::editor::pane::ViewMode::Reading => crate::editor::pane::ViewMode::LivePreview,
+                };
                 pane.is_markdown_preview = !pane.is_markdown_preview;
                 pane.markdown_generation = pane.markdown_generation.wrapping_add(1);
                 if !pane.is_markdown_preview {
@@ -573,6 +593,101 @@ impl App {
                 } else {
                     Task::none()
                 }
+            }
+
+            Message::CycleViewMode => {
+                let pane = self.current_pane_mut();
+                pane.view_mode = match pane.view_mode {
+                    crate::editor::pane::ViewMode::LivePreview => crate::editor::pane::ViewMode::Source,
+                    crate::editor::pane::ViewMode::Source => crate::editor::pane::ViewMode::Reading,
+                    crate::editor::pane::ViewMode::Reading => crate::editor::pane::ViewMode::LivePreview,
+                };
+                let mode_str = match pane.view_mode {
+                    crate::editor::pane::ViewMode::LivePreview => "Live Preview",
+                    crate::editor::pane::ViewMode::Source => "Source Mode",
+                    crate::editor::pane::ViewMode::Reading => "Reading Mode",
+                };
+                self.status_msg = Some(format!("View Mode: {}", mode_str));
+                Task::none()
+            }
+
+            Message::SetViewMode(mode) => {
+                let pane = self.current_pane_mut();
+                pane.view_mode = mode;
+                let mode_str = match pane.view_mode {
+                    crate::editor::pane::ViewMode::LivePreview => "Live Preview",
+                    crate::editor::pane::ViewMode::Source => "Source Mode",
+                    crate::editor::pane::ViewMode::Reading => "Reading Mode",
+                };
+                self.status_msg = Some(format!("View Mode: {}", mode_str));
+                Task::none()
+            }
+
+            Message::OpenSnippetMenu => {
+                self.active_header_menu = None;
+                self.show_edit_menu = false;
+                self.show_snippet_menu = true;
+
+                let ext = self
+                    .current_pane()
+                    .file_path
+                    .as_ref()
+                    .and_then(|p| p.extension())
+                    .and_then(|e| e.to_str())
+                    .unwrap_or(if self.current_pane().is_markdown() {
+                        "md"
+                    } else {
+                        ""
+                    });
+
+                if let Some(file) = self.snippet_registry.get_language_for_ext(ext) {
+                    self.snippet_selected_lang = Some(file.language.id.clone());
+                    let first_cat = file.snippets.first().map(|s| s.category.clone());
+                    self.snippet_selected_category = first_cat;
+                } else if let Some(first_lang) =
+                    self.snippet_registry.available_languages().first()
+                {
+                    self.snippet_selected_lang = Some(first_lang.id.clone());
+                    let first_cat = self
+                        .snippet_registry
+                        .get_language(&first_lang.id)
+                        .and_then(|f| f.snippets.first())
+                        .map(|s| s.category.clone());
+                    self.snippet_selected_category = first_cat;
+                } else {
+                    self.snippet_selected_lang = None;
+                    self.snippet_selected_category = None;
+                }
+                Task::none()
+            }
+
+            Message::CloseSnippetMenu => {
+                self.show_snippet_menu = false;
+                Task::none()
+            }
+
+            Message::SelectSnippetLanguage(lang_id) => {
+                self.snippet_selected_lang = Some(lang_id.clone());
+                let first_cat = self
+                    .snippet_registry
+                    .get_language(&lang_id)
+                    .and_then(|f| f.snippets.first())
+                    .map(|s| s.category.clone());
+                self.snippet_selected_category = first_cat;
+                Task::none()
+            }
+
+            Message::SelectSnippetCategory(category) => {
+                self.snippet_selected_category = Some(category);
+                Task::none()
+            }
+
+            Message::InsertSnippetTemplate(template) => {
+                self.show_snippet_menu = false;
+                let pane = self.current_pane_mut();
+                pane.insert_snippet(&template);
+                self.status_msg = Some("Snippet inserted".to_string());
+                Task::none()
             }
 
             Message::SelectMarkdownSpec(index) => {
@@ -804,6 +919,26 @@ impl App {
                     self.status_msg = Some(format!("AI Model: {}", m));
                     self.save_config();
                 }
+                Task::none()
+            }
+
+            Message::ApplyAiProposal => {
+                let pane = self.current_pane_mut();
+                match pane.apply_active_proposal() {
+                    Ok(()) => {
+                        self.status_msg = Some("AI edit proposal applied".to_string());
+                    }
+                    Err(e) => {
+                        self.status_msg = Some(format!("AI proposal rejected: {}", e));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::RejectAiProposal => {
+                let pane = self.current_pane_mut();
+                pane.reject_active_proposal();
+                self.status_msg = Some("AI edit proposal discarded".to_string());
                 Task::none()
             }
 

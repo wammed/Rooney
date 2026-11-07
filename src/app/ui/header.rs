@@ -179,7 +179,8 @@ impl App {
                     .push(make_item("󰆐", "Cut", "Ctrl+X", Message::Cut))
                     .push(make_item("󰆏", "Copy", "Ctrl+C", Message::Copy))
                     .push(make_item("󰆒", "Paste", "Ctrl+V", Message::Paste))
-                    .push(make_item("󰒅", "Select All", "Ctrl+A", Message::SelectAll));
+                    .push(make_item("󰒅", "Select All", "Ctrl+A", Message::SelectAll))
+                    .push(make_item("⚡", "Insert Snippet...", "Ctrl+J", Message::OpenSnippetMenu));
             }
             ActiveHeaderMenu::View => {
                 let is_split = self.split_layout == SplitLayout::Split;

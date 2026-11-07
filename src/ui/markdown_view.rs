@@ -152,9 +152,9 @@ fn render_spans_with_width<'a, Message: 'static + Clone>(
             InlineSpan::ImageFallback { alt, url } => {
                 let display = if alt.trim().is_empty() {
                     let filename = url.rsplit('/').next().unwrap_or("image");
-                    format!("󰋩 [画像: {}]", filename)
+                    format!("󰋩 [Image: {}]", filename)
                 } else {
-                    format!("󰋩 [画像: {}]", alt.trim())
+                    format!("󰋩 [Image: {}]", alt.trim())
                 };
                 out.push(
                     Span::new(display)
@@ -277,7 +277,7 @@ fn measure_span_width(span: &InlineSpan, base_size: f32, font_name: &str) -> f32
             } else {
                 alt.trim()
             };
-            let prefix_w: f32 = "󰋩 [画像: "
+            let prefix_w: f32 = "󰋩 [Image: "
                 .chars()
                 .map(|ch| {
                     crate::ui::canvas_editor::measure_glyph_advance(

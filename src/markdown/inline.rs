@@ -206,9 +206,9 @@ impl InlineCollector {
                         self.spans.push(InlineSpan::ImageFallback { alt, url });
                     } else {
                         let label = if alt.is_empty() {
-                            format!(" [画像: {}] ", url)
+                            format!(" [Image: {}] ", url)
                         } else {
-                            format!(" [画像: {}] ", alt)
+                            format!(" [Image: {}] ", alt)
                         };
                         self.push_text(&label);
                     }

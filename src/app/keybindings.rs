@@ -13,6 +13,7 @@ impl App {
             && !self.show_new_folder_modal
             && !self.show_rename_modal
             && !self.show_delete_modal
+            && !self.show_snippet_menu
             && self.active_header_menu.is_none()
             && self.context_menu.is_none()
             && self.file_tree_context_menu.is_none()
@@ -236,6 +237,13 @@ impl App {
                     return self.handle_update(Message::ToggleMarkdownPreview);
                 }
 
+                // Shortcut: Ctrl + J (Open Hierarchical Snippet Menu)
+                if modifiers.control()
+                    && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("j"))
+                {
+                    return self.handle_update(Message::OpenSnippetMenu);
+                }
+
                 // Shortcut: Ctrl + I or Alt + Enter (Trigger AI FIM manually)
                 if (modifiers.control()
                     && matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("i")))
@@ -362,7 +370,7 @@ impl App {
                     return self.handle_update(Message::ToggleSettings);
                 }
 
-                // Tab key (Indentation / unindentation)
+                // Tab key (Indentation / unindentation / snippet placeholder navigation / AI proposal accept)
                 if !modifiers.control() && matches!(&key, Key::Named(keyboard::key::Named::Tab)) {
                     if !self.is_editor_focused() {
                         return Task::none();
@@ -370,6 +378,18 @@ impl App {
                     let pane = self.current_pane_mut();
                     if pane.preedit.is_some() {
                         return Task::none();
+                    }
+                    if pane.active_proposal.is_some() {
+                        return self.handle_update(Message::ApplyAiProposal);
+                    }
+                    if pane.placeholder_session.is_some() {
+                        if modifiers.shift() {
+                            if pane.tab_prev_placeholder() {
+                                return Task::none();
+                            }
+                        } else if pane.tab_next_placeholder() {
+                            return Task::none();
+                        }
                     }
                     if modifiers.shift() {
                         pane.buffer.unindent_selection();
@@ -386,8 +406,14 @@ impl App {
 
                 // Escape key
                 if matches!(&key, Key::Named(keyboard::key::Named::Escape)) {
+                    if self.show_snippet_menu {
+                        return self.handle_update(Message::CloseSnippetMenu);
+                    }
                     if self.show_settings {
                         return self.handle_update(Message::CloseSettings);
+                    }
+                    if self.current_pane().active_proposal.is_some() {
+                        return self.handle_update(Message::RejectAiProposal);
                     }
                     if self.current_pane().is_search_open {
                         return self.handle_update(Message::CloseSearch);
@@ -413,6 +439,11 @@ impl App {
                         pane.preedit = None;
                         return Task::none();
                     }
+                    if pane.placeholder_session.is_some() {
+                        pane.cancel_placeholder_session();
+                        pane.buffer.selection_anchor = None;
+                        return Task::none();
+                    }
                     pane.clear_ghost_text();
                     pane.buffer.selection_anchor = None;
                     return Task::none();
@@ -429,6 +460,11 @@ impl App {
                     || text.as_deref() == Some("\r")
                     || text.as_deref() == Some("\n")
                     || text.as_deref() == Some("\r\n");
+
+                // Ctrl+Enter for AI proposal accept
+                if modifiers.control() && is_enter && self.current_pane().active_proposal.is_some() {
+                    return self.handle_update(Message::ApplyAiProposal);
+                }
 
                 // Guard: If editor is not focused (e.g. searching, modals, menus, settings),
                 // do not mutate editor buffer with typing, deletion, or editor navigation.

@@ -2,6 +2,13 @@ use ropey::Rope;
 use std::collections::VecDeque;
 use unicode_segmentation::UnicodeSegmentation;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CharEdit {
+    pub start_char: usize,
+    pub old_len_chars: usize,
+    pub new_len_chars: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct UndoSnapshot {
     pub rope: Rope,
@@ -17,11 +24,14 @@ pub struct TextBuffer {
     pub selection_anchor: Option<(usize, usize)>,
     pub is_modified: bool,
     pub last_edit: Option<tree_sitter::InputEdit>,
+    pub last_char_edit: Option<CharEdit>,
     pub max_line_len: usize,
     pub revision: usize,
     pub saved_revision: Option<usize>,
     undo_stack: VecDeque<UndoSnapshot>,
     redo_stack: VecDeque<UndoSnapshot>,
+    transaction_depth: usize,
+    transaction_snapshot: Option<UndoSnapshot>,
 }
 
 impl Default for TextBuffer {
@@ -90,11 +100,14 @@ impl TextBuffer {
             selection_anchor: None,
             is_modified: false,
             last_edit: None,
+            last_char_edit: None,
             max_line_len,
             revision: 0,
             saved_revision: Some(0),
             undo_stack: VecDeque::new(),
             redo_stack: VecDeque::new(),
+            transaction_depth: 0,
+            transaction_snapshot: None,
         }
     }
 
@@ -153,7 +166,70 @@ impl TextBuffer {
         self.redo_stack.len()
     }
 
+    pub fn is_in_transaction(&self) -> bool {
+        self.transaction_depth > 0
+    }
+
+    /// Begins an undo transaction. Multiple edits will be grouped into a single undo step.
+    /// Supports nested calls safely.
+    pub fn begin_transaction(&mut self) {
+        if self.transaction_depth == 0 {
+            self.transaction_snapshot = Some(UndoSnapshot {
+                rope: self.rope.clone(),
+                cursor: self.cursor,
+                selection_anchor: self.selection_anchor,
+                revision: self.revision,
+            });
+        }
+        self.transaction_depth += 1;
+    }
+
+    /// Ends an undo transaction. If content changed during the transaction,
+    /// a single snapshot representing the state before the transaction began is pushed to undo stack.
+    pub fn end_transaction(&mut self) {
+        if self.transaction_depth == 0 {
+            return;
+        }
+        self.transaction_depth -= 1;
+        if self.transaction_depth == 0 {
+            if let Some(snapshot) = self.transaction_snapshot.take() {
+                if snapshot.rope != self.rope {
+                    if self.undo_stack.len() >= 100 {
+                        self.undo_stack.pop_front();
+                    }
+                    self.undo_stack.push_back(snapshot);
+                    self.redo_stack.clear();
+                    self.revision = self.revision.wrapping_add(1);
+                    self.is_modified = Some(self.revision) != self.saved_revision;
+                }
+            }
+        }
+    }
+
+    /// Cancels the current undo transaction, rolling back all edits made during the transaction.
+    pub fn cancel_transaction(&mut self) {
+        if self.transaction_depth > 0 {
+            self.transaction_depth = 0;
+            if let Some(snapshot) = self.transaction_snapshot.take() {
+                self.rope = snapshot.rope;
+                self.cursor = snapshot.cursor;
+                self.selection_anchor = snapshot.selection_anchor;
+                self.revision = snapshot.revision;
+                self.last_edit = None;
+                self.clamp_cursor();
+                self.is_modified = Some(self.revision) != self.saved_revision;
+            }
+        }
+    }
+
     fn push_undo(&mut self) {
+        if self.transaction_depth > 0 {
+            self.redo_stack.clear();
+            self.revision = self.revision.wrapping_add(1);
+            self.is_modified = Some(self.revision) != self.saved_revision;
+            return;
+        }
+
         if self.undo_stack.len() >= 100 {
             self.undo_stack.pop_front();
         }
@@ -305,12 +381,19 @@ impl TextBuffer {
 
         self.push_undo();
         let edit = compute_input_edit(&self.rope, start_idx, end_idx, s);
+        let old_len_chars = end_idx.saturating_sub(start_idx);
+        let new_len_chars = s.chars().count();
 
         if start_idx < end_idx && end_idx <= self.rope.len_chars() {
             self.rope.remove(start_idx..end_idx);
         }
         self.rope.insert(start_idx, s);
         self.last_edit = Some(edit);
+        self.last_char_edit = Some(CharEdit {
+            start_char: start_idx,
+            old_len_chars,
+            new_len_chars,
+        });
 
         let lines_added = s.chars().filter(|&c| c == '\n').count();
         let start_line = self.rope.char_to_line(start_idx);
@@ -346,6 +429,11 @@ impl TextBuffer {
                 let edit = compute_input_edit(&self.rope, start_idx, end_idx, "");
                 self.rope.remove(start_idx..end_idx);
                 self.last_edit = Some(edit);
+                self.last_char_edit = Some(CharEdit {
+                    start_char: start_idx,
+                    old_len_chars: end_idx - start_idx,
+                    new_len_chars: 0,
+                });
                 self.cursor.1 = prev_col;
             }
         } else if self.cursor.0 > 0 {
@@ -355,6 +443,11 @@ impl TextBuffer {
                 let edit = compute_input_edit(&self.rope, char_idx - 1, char_idx, "");
                 self.rope.remove(char_idx - 1..char_idx);
                 self.last_edit = Some(edit);
+                self.last_char_edit = Some(CharEdit {
+                    start_char: char_idx - 1,
+                    old_len_chars: 1,
+                    new_len_chars: 0,
+                });
 
                 self.cursor.0 -= 1;
                 self.cursor.1 = self.line_char_count(self.cursor.0);
@@ -377,6 +470,11 @@ impl TextBuffer {
                 let edit = compute_input_edit(&self.rope, start_idx, end_idx, "");
                 self.rope.remove(start_idx..end_idx);
                 self.last_edit = Some(edit);
+                self.last_char_edit = Some(CharEdit {
+                    start_char: start_idx,
+                    old_len_chars: end_idx - start_idx,
+                    new_len_chars: 0,
+                });
             }
         } else {
             let char_idx = self.char_index(self.cursor.0, self.cursor.1);
@@ -385,6 +483,11 @@ impl TextBuffer {
                 let edit = compute_input_edit(&self.rope, char_idx, char_idx + 1, "");
                 self.rope.remove(char_idx..char_idx + 1);
                 self.last_edit = Some(edit);
+                self.last_char_edit = Some(CharEdit {
+                    start_char: char_idx,
+                    old_len_chars: 1,
+                    new_len_chars: 0,
+                });
             }
         }
     }
@@ -413,6 +516,11 @@ impl TextBuffer {
             let edit = compute_input_edit(&self.rope, start_idx, end_idx, "");
             self.rope.remove(start_idx..end_idx);
             self.last_edit = Some(edit);
+            self.last_char_edit = Some(CharEdit {
+                start_char: start_idx,
+                old_len_chars: end_idx - start_idx,
+                new_len_chars: 0,
+            });
         }
 
         self.cursor = start;

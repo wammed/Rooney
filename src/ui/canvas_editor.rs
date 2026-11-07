@@ -426,6 +426,72 @@ impl<'a> EditorCanvas<'a> {
 
         let rel_x = (pos.x - gutter - 10.0 + self.pane.scroll_x.get()).max(0.0);
 
+        // For Live Preview non-cursor lines, hit-test against visually rendered segments
+        // so that hidden syntax markers (e.g. "**", "~~", "`") do not distort click coordinates.
+        if self.pane.is_markdown()
+            && matches!(
+                self.pane.view_mode,
+                crate::editor::pane::ViewMode::LivePreview | crate::editor::pane::ViewMode::Reading
+            )
+        {
+            let is_cursor_on_line = self.pane.view_mode != crate::editor::pane::ViewMode::Reading
+                && clicked_line == self.pane.buffer.cursor.0;
+
+            if !is_cursor_on_line {
+                let rendered =
+                    crate::markdown::mapping::parse_line_live_preview(&line_text, false);
+
+                let mut acc_width = 0.0;
+                let mut chosen_visual_col = 0;
+                let mut found = false;
+
+                use unicode_segmentation::UnicodeSegmentation;
+
+                for seg in &rendered.segments {
+                    if seg.is_hidden {
+                        if seg.style.task_status.is_some() {
+                            let box_advance = 20.0;
+                            if acc_width + box_advance >= rel_x {
+                                chosen_visual_col = seg.visual_char_range.start;
+                                break;
+                            }
+                            acc_width += box_advance;
+                        }
+                        continue;
+                    }
+
+                    let seg_str = &seg.text;
+                    let mut seg_char_offset = 0;
+
+                    for g in seg_str.graphemes(true) {
+                        let mut cluster_w = 0.0;
+                        for ch in g.chars() {
+                            cluster_w += self.glyph_advance(ch);
+                        }
+
+                        let g_chars = g.chars().count();
+                        // 70% threshold allows natural clicking inside wide CJK/ASCII characters
+                        // to reliably place cursor at the character's start position without jumping forward.
+                        if acc_width + cluster_w * 0.7 >= rel_x - 1e-4 {
+                            chosen_visual_col = seg.visual_char_range.start + seg_char_offset;
+                            found = true;
+                            break;
+                        }
+                        acc_width += cluster_w;
+                        seg_char_offset += g_chars;
+                        chosen_visual_col = seg.visual_char_range.start + seg_char_offset;
+                    }
+
+                    if found {
+                        break;
+                    }
+                }
+
+                let source_col = rendered.source_map.visual_to_source_col(chosen_visual_col);
+                return (clicked_line, source_col);
+            }
+        }
+
         // Extract only the characters belonging to this subrow, avoiding scanning
         // and allocating across the entire line (which could be thousands of characters).
         let sub_chars: Vec<char> = line_text
@@ -468,6 +534,7 @@ impl<'a> EditorCanvas<'a> {
                 chosen_col = c_end;
             }
         }
+
         (clicked_line, chosen_col)
     }
 
@@ -726,51 +793,203 @@ impl<'a> EditorCanvas<'a> {
 
             if let Some(line_text) = buffer.line_text(row.line_idx) {
                 if row.char_start < row.char_end {
-                    let sub_end = row.char_end;
-                    let spans = self
-                        .pane
-                        .highlighter
-                        .highlight_line(&line_text, row.line_idx);
+                    let is_live_preview = self.pane.is_markdown()
+                        && matches!(
+                            self.pane.view_mode,
+                            crate::editor::pane::ViewMode::LivePreview
+                                | crate::editor::pane::ViewMode::Reading
+                        );
 
-                    let mut cur_col = row.char_start;
-                    let mut cur_pixel_x = gutter + 10.0 - cur_scroll_x;
+                    if is_live_preview {
+                        let is_cursor_on_line = self.pane.view_mode
+                            != crate::editor::pane::ViewMode::Reading
+                            && row.line_idx == buffer.cursor.0;
+                        let rendered = crate::markdown::mapping::parse_line_live_preview(
+                            &line_text,
+                            is_cursor_on_line,
+                        );
 
-                    while cur_col < sub_end {
-                        let span = spans
-                            .iter()
-                            .find(|s| s.start_col <= cur_col && cur_col < s.end_col);
-                        let (token_end, token_color) = if let Some(s) = span {
-                            (
-                                s.end_col.min(sub_end),
-                                s.token_type.color(&self.theme.config),
-                            )
-                        } else {
-                            let next_start = spans
-                                .iter()
-                                .map(|s| s.start_col)
-                                .filter(|&start| start > cur_col && start < sub_end)
-                                .min()
-                                .unwrap_or(sub_end);
-                            (next_start, self.theme.config.fg)
-                        };
-
-                        let segment = Self::slice_by_char_indices(&line_text, cur_col, token_end);
-                        let mut seg_w = 0.0;
-                        for ch in segment.chars() {
-                            seg_w += self.glyph_advance(ch);
+                        // Blockquote accent line
+                        if rendered.segments.iter().any(|s| s.style.is_quote) {
+                            frame.stroke(
+                                &Path::line(
+                                    Point::new(gutter + 4.0 - cur_scroll_x, y),
+                                    Point::new(gutter + 4.0 - cur_scroll_x, y + self.line_height),
+                                ),
+                                Stroke::default()
+                                    .with_color(self.theme.config.comment)
+                                    .with_width(3.0),
+                            );
                         }
 
-                        frame.fill_text(Text {
-                            content: segment.to_string(),
-                            position: Point::new(cur_pixel_x, y + 2.0),
-                            color: token_color,
-                            size: text_size,
-                            font,
-                            ..Default::default()
-                        });
+                        let mut cur_pixel_x = gutter + 10.0 - cur_scroll_x;
+                        for seg in &rendered.segments {
+                            if seg.is_hidden {
+                                // On non-cursor lines, task checkbox text is hidden, but render the graphical box
+                                if let Some(is_checked) = seg.style.task_status {
+                                    let box_size = 14.0;
+                                    let box_x = cur_pixel_x;
+                                    let box_y = y + (self.line_height - box_size) / 2.0;
+                                    let box_rect = Rectangle {
+                                        x: box_x,
+                                        y: box_y,
+                                        width: box_size,
+                                        height: box_size,
+                                    };
+                                    frame.stroke(
+                                        &Path::rectangle(box_rect.position(), box_rect.size()),
+                                        Stroke::default()
+                                            .with_color(self.theme.config.accent)
+                                            .with_width(1.5),
+                                    );
+                                    if is_checked {
+                                        frame.fill_rectangle(
+                                            Point::new(box_x + 3.0, box_y + 3.0),
+                                            cosmic::iced::Size::new(box_size - 6.0, box_size - 6.0),
+                                            self.theme.config.accent,
+                                        );
+                                    }
+                                    cur_pixel_x += box_size + 6.0;
+                                }
+                                continue;
+                            }
 
-                        cur_pixel_x += seg_w;
-                        cur_col = token_end;
+                            let mut seg_font = font;
+                            let mut seg_color = self.theme.config.fg;
+
+                            if let Some(level) = seg.style.heading_level {
+                                seg_font = Font {
+                                    weight: cosmic::iced::font::Weight::Bold,
+                                    ..font
+                                };
+                                seg_color = match level {
+                                    1 => self.theme.config.function,
+                                    2 => self.theme.config.keyword,
+                                    _ => self.theme.config.accent,
+                                };
+                            } else if seg.style.bold {
+                                seg_font = Font {
+                                    weight: cosmic::iced::font::Weight::Bold,
+                                    ..font
+                                };
+                            } else if seg.style.italic {
+                                seg_font = Font {
+                                    style: cosmic::iced::font::Style::Italic,
+                                    ..font
+                                };
+                            } else if seg.style.code {
+                                seg_font = Font::MONOSPACE;
+                                seg_color = self.theme.config.function;
+                            } else if seg.style.link {
+                                seg_color = self.theme.config.accent;
+                            } else if seg.is_syntax_marker {
+                                seg_color = self.theme.config.comment;
+                            }
+
+                            let seg_w: f32 = seg.text.chars().map(|c| self.glyph_advance(c)).sum();
+
+                            // Code background highlight
+                            if seg.style.code {
+                                let bg_rect = Rectangle {
+                                    x: cur_pixel_x - 2.0,
+                                    y: y + 2.0,
+                                    width: seg_w + 4.0,
+                                    height: self.line_height - 4.0,
+                                };
+                                frame.fill_rectangle(
+                                    bg_rect.position(),
+                                    bg_rect.size(),
+                                    Color::from_rgba(1.0, 1.0, 1.0, 0.08),
+                                );
+                            }
+
+                            frame.fill_text(Text {
+                                content: seg.text.clone(),
+                                position: Point::new(cur_pixel_x, y + 2.0),
+                                color: seg_color,
+                                size: text_size,
+                                font: seg_font,
+                                ..Default::default()
+                            });
+
+                            // Strikethrough line
+                            if seg.style.strikethrough {
+                                let strike_y = y + self.line_height / 2.0;
+                                frame.stroke(
+                                    &Path::line(
+                                        Point::new(cur_pixel_x, strike_y),
+                                        Point::new(cur_pixel_x + seg_w, strike_y),
+                                    ),
+                                    Stroke::default()
+                                        .with_color(self.theme.config.comment)
+                                        .with_width(1.5),
+                                );
+                            }
+
+                            // Link underline
+                            if seg.style.link {
+                                let underline_y = y + self.line_height - 2.0;
+                                frame.stroke(
+                                    &Path::line(
+                                        Point::new(cur_pixel_x, underline_y),
+                                        Point::new(cur_pixel_x + seg_w, underline_y),
+                                    ),
+                                    Stroke::default()
+                                        .with_color(self.theme.config.accent)
+                                        .with_width(1.0),
+                                );
+                            }
+
+                            cur_pixel_x += seg_w;
+                        }
+                    } else {
+                        let sub_end = row.char_end;
+                        let spans = self
+                            .pane
+                            .highlighter
+                            .highlight_line(&line_text, row.line_idx);
+
+                        let mut cur_col = row.char_start;
+                        let mut cur_pixel_x = gutter + 10.0 - cur_scroll_x;
+
+                        while cur_col < sub_end {
+                            let span = spans
+                                .iter()
+                                .find(|s| s.start_col <= cur_col && cur_col < s.end_col);
+                            let (token_end, token_color) = if let Some(s) = span {
+                                (
+                                    s.end_col.min(sub_end),
+                                    s.token_type.color(&self.theme.config),
+                                )
+                            } else {
+                                let next_start = spans
+                                    .iter()
+                                    .map(|s| s.start_col)
+                                    .filter(|&start| start > cur_col && start < sub_end)
+                                    .min()
+                                    .unwrap_or(sub_end);
+                                (next_start, self.theme.config.fg)
+                            };
+
+                            let segment =
+                                Self::slice_by_char_indices(&line_text, cur_col, token_end);
+                            let mut seg_w = 0.0;
+                            for ch in segment.chars() {
+                                seg_w += self.glyph_advance(ch);
+                            }
+
+                            frame.fill_text(Text {
+                                content: segment.to_string(),
+                                position: Point::new(cur_pixel_x, y + 2.0),
+                                color: token_color,
+                                size: text_size,
+                                font,
+                                ..Default::default()
+                            });
+
+                            cur_pixel_x += seg_w;
+                            cur_col = token_end;
+                        }
                     }
                 }
             }
@@ -858,6 +1077,32 @@ impl<'a> EditorCanvas<'a> {
                                 content: first_line.to_string(),
                                 position: Point::new(ghost_x, cursor_pt.y + 2.0),
                                 color: self.theme.config.ghost_text,
+                                size: text_size,
+                                font,
+                                ..Default::default()
+                            });
+                        }
+                    }
+
+                    // 8b. Draw Local AI EditProposal Preview
+                    if let Some(ref proposal) = self.pane.active_proposal {
+                        if self.pane.preedit.is_none() {
+                            let first_line = proposal.proposed_text.lines().next().unwrap_or(&proposal.proposed_text);
+                            let preview_badge = format!(
+                                " ✦ [{}: \"{}\"] (Tab: Apply, Esc: Discard)",
+                                proposal.prompt_summary,
+                                if first_line.len() > 30 {
+                                    format!("{}...", &first_line[..30])
+                                } else {
+                                    first_line.to_string()
+                                }
+                            );
+                            let prop_x = cursor_pt.x + 3.0 + preedit_offset_x;
+
+                            frame.fill_text(Text {
+                                content: preview_badge,
+                                position: Point::new(prop_x, cursor_pt.y + 2.0),
+                                color: Color::from_rgb(0.2, 0.75, 0.85),
                                 size: text_size,
                                 font,
                                 ..Default::default()

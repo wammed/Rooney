@@ -51,6 +51,9 @@ impl App {
         if let Some(modal) = self.render_save_confirmation_modal() {
             return Some(modal);
         }
+        if let Some(modal) = self.render_snippet_modal() {
+            return Some(modal);
+        }
         if let Some(modal) = self.render_new_file_modal() {
             return Some(modal);
         }
@@ -858,5 +861,139 @@ impl App {
             .push(other_card);
 
         scrollable(list_col).height(Length::Fixed(360.0)).into()
+    }
+
+    pub(crate) fn render_snippet_modal<'a>(&'a self) -> Option<Element<'a, Message>> {
+        if !self.show_snippet_menu {
+            return None;
+        }
+
+        let theme = &self.theme;
+
+        let title_row = row::with_capacity(3)
+            .push(
+                text::title3("⚡ Insert Snippet (Hierarchical)")
+                    .class(cosmic::theme::Text::Color(theme.config.accent)),
+            )
+            .push(cosmic::widget::Space::new().width(Length::Fill))
+            .push(
+                button::text("✕")
+                    .on_press(Message::CloseSnippetMenu)
+                    .class(cosmic::theme::Button::Text),
+            )
+            .align_y(Alignment::Center);
+
+        // 1. Language column
+        let mut lang_col = column::with_capacity(5).spacing(6);
+        for lang in self.snippet_registry.available_languages() {
+            let is_selected = self.snippet_selected_lang.as_deref() == Some(&lang.id);
+            let btn_style = if is_selected {
+                cosmic::theme::Button::Suggested
+            } else {
+                cosmic::theme::Button::Text
+            };
+            lang_col = lang_col.push(
+                button::text(&lang.name)
+                    .on_press(Message::SelectSnippetLanguage(lang.id.clone()))
+                    .class(btn_style)
+                    .width(Length::Fill),
+            );
+        }
+
+        // 2. Category column
+        let mut cat_col = column::with_capacity(10).spacing(6);
+        let selected_file = self
+            .snippet_selected_lang
+            .as_ref()
+            .and_then(|id| self.snippet_registry.get_language(id));
+
+        if let Some(file) = selected_file {
+            let mut categories: Vec<&str> = Vec::new();
+            for snip in &file.snippets {
+                if !categories.contains(&snip.category.as_str()) {
+                    categories.push(snip.category.as_str());
+                }
+            }
+
+            for cat in categories {
+                let is_selected = self.snippet_selected_category.as_deref() == Some(cat);
+                let btn_style = if is_selected {
+                    cosmic::theme::Button::Suggested
+                } else {
+                    cosmic::theme::Button::Text
+                };
+                cat_col = cat_col.push(
+                    button::custom(
+                        text(cat)
+                            .size(12.5)
+                    )
+                    .padding([6, 10])
+                    .on_press(Message::SelectSnippetCategory(cat.to_string()))
+                    .class(btn_style)
+                    .width(Length::Fill),
+                );
+            }
+        }
+
+        // 3. Snippets list column
+        let mut snippet_col = column::with_capacity(20).spacing(8);
+        if let Some(file) = selected_file {
+            if let Some(ref active_cat) = self.snippet_selected_category {
+                for snip in file.snippets.iter().filter(|s| &s.category == active_cat) {
+                    let desc = snip.description.as_deref().unwrap_or("");
+                    let item_box = column::with_capacity(2)
+                        .spacing(2)
+                        .push(text(&snip.label).size(13.5).font(cosmic::iced::Font {
+                            weight: cosmic::iced::font::Weight::Bold,
+                            ..cosmic::iced::Font::DEFAULT
+                        }))
+                        .push(
+                            text(desc)
+                                .size(11.0)
+                                .class(cosmic::theme::Text::Color(theme.config.comment)),
+                        );
+
+                    snippet_col = snippet_col.push(
+                        button::custom(item_box)
+                            .on_press(Message::InsertSnippetTemplate(snip.content.clone()))
+                            .class(cosmic::theme::Button::Text)
+                            .width(Length::Fill),
+                    );
+                }
+            }
+        }
+
+        let footer = text(
+            "Hint: Navigate placeholders with Tab / Shift+Tab. Press Esc to close.",
+        )
+        .size(11.0)
+        .class(cosmic::theme::Text::Color(theme.config.comment));
+
+        let content = column::with_capacity(4)
+            .spacing(14)
+            .padding(16)
+            .push(title_row)
+            .push(
+                row::with_capacity(3)
+                    .spacing(12)
+                    .push(
+                        container(scrollable(lang_col).height(Length::Fixed(360.0)))
+                            .width(Length::Fixed(140.0))
+                            .padding(4),
+                    )
+                    .push(
+                        container(scrollable(cat_col).height(Length::Fixed(360.0)))
+                            .width(Length::Fixed(200.0))
+                            .padding(4),
+                    )
+                    .push(
+                        container(scrollable(snippet_col).height(Length::Fixed(360.0)))
+                            .width(Length::Fill)
+                            .padding(4),
+                    ),
+            )
+            .push(footer);
+
+        Some(wrap_modal(content, theme, 860.0))
     }
 }

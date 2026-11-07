@@ -19,6 +19,14 @@ pub enum SplitLayout {
     Split,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ViewMode {
+    #[default]
+    LivePreview,
+    Source,
+    Reading,
+}
+
 pub type WrapCacheKey = (u32, u32, &'static str);
 pub type CachedWrapModel =
     std::sync::RwLock<Option<(WrapCacheKey, crate::ui::wrap::LineWrapModel)>>;
@@ -35,6 +43,9 @@ pub struct EditorTab {
     pub ghost_text: Option<String>,
     pub preedit: Option<(String, Option<std::ops::Range<usize>>)>,
     pub is_markdown_preview: bool,
+    pub view_mode: ViewMode,
+    pub placeholder_session: Option<crate::snippet::PlaceholderSession>,
+    pub active_proposal: Option<crate::ai::EditProposal>,
     pub markdown_doc: Option<MarkdownDocument>,
     pub markdown_spec: MarkdownSpec,
     pub search_query: Option<String>,
@@ -78,6 +89,9 @@ impl EditorTab {
             ghost_text: None,
             preedit: None,
             is_markdown_preview: false,
+            view_mode: ViewMode::LivePreview,
+            placeholder_session: None,
+            active_proposal: None,
             markdown_doc: None,
             markdown_spec: MarkdownSpec::default(),
             search_query: None,
@@ -100,6 +114,20 @@ impl EditorTab {
             parse_generation: 0,
             cached_wrap_model: std::sync::RwLock::new(None),
         }
+    }
+
+    pub fn is_markdown(&self) -> bool {
+        if let Some(ref path) = self.file_path {
+            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                return ext.eq_ignore_ascii_case("md")
+                    || ext.eq_ignore_ascii_case("markdown")
+                    || ext.eq_ignore_ascii_case("mdown")
+                    || ext.eq_ignore_ascii_case("mkd");
+            }
+        }
+        self.file_name.ends_with(".md")
+            || self.file_name.ends_with(".markdown")
+            || self.highlighter.lang == SupportedLanguage::Markdown
     }
 
     pub fn load_file(&mut self, path: &Path) -> std::io::Result<()> {
@@ -269,11 +297,21 @@ impl EditorTab {
     pub fn on_content_changed(&mut self) {
         self.last_edit_time = Instant::now();
         self.ghost_text = None;
+        self.active_proposal = None;
         self.needs_scroll_to_cursor.set(true);
         self.markdown_generation = self.markdown_generation.wrapping_add(1);
         self.parse_generation = self.parse_generation.wrapping_add(1);
         if let Ok(mut guard) = self.cached_wrap_model.write() {
             *guard = None;
+        }
+        if let Some(char_edit) = self.buffer.last_char_edit.take() {
+            if let Some(ref mut sess) = self.placeholder_session {
+                sess.adjust_offsets(
+                    char_edit.start_char,
+                    char_edit.old_len_chars,
+                    char_edit.new_len_chars,
+                );
+            }
         }
         if let Some(edit) = self.buffer.last_edit.take() {
             self.highlighter.apply_edit(&edit);
@@ -561,6 +599,173 @@ impl EditorTab {
 
     pub fn clear_ghost_text(&mut self) {
         self.ghost_text = None;
+    }
+
+    pub fn insert_snippet(&mut self, template: &str) {
+        let selected_text = if let Some(anchor) = self.buffer.selection_anchor {
+            if anchor != self.buffer.cursor {
+                let (start, end) =
+                    if (self.buffer.cursor.0, self.buffer.cursor.1) < (anchor.0, anchor.1) {
+                        (self.buffer.cursor, anchor)
+                    } else {
+                        (anchor, self.buffer.cursor)
+                    };
+                let start_idx = self.buffer.char_index(start.0, start.1);
+                let end_idx = self.buffer.char_index(end.0, end.1);
+                let slice = self.buffer.rope.slice(start_idx..end_idx).to_string();
+                Some(slice)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let insert_char_idx = if let Some(anchor) = self.buffer.selection_anchor {
+            let start = if (self.buffer.cursor.0, self.buffer.cursor.1) < (anchor.0, anchor.1) {
+                self.buffer.cursor
+            } else {
+                anchor
+            };
+            self.buffer.char_index(start.0, start.1)
+        } else {
+            self.buffer.char_index(self.buffer.cursor.0, self.buffer.cursor.1)
+        };
+
+        let (insert_text, session) = crate::snippet::PlaceholderSession::new(
+            template,
+            insert_char_idx,
+            selected_text.as_deref(),
+        );
+
+        self.buffer.begin_transaction();
+        self.buffer.delete_selection();
+        self.buffer.insert_str(&insert_text);
+        self.buffer.end_transaction();
+
+        self.on_content_changed();
+
+        if let Some(sess) = session {
+            if let Some(range) = sess.current_range() {
+                let (start_line, start_col) =
+                    crate::snippet::char_to_line_col(&self.buffer.rope, range.start);
+                let (end_line, end_col) =
+                    crate::snippet::char_to_line_col(&self.buffer.rope, range.end);
+                self.buffer.selection_anchor = Some((start_line, start_col));
+                self.buffer.cursor = (end_line, end_col);
+            }
+            self.placeholder_session = Some(sess);
+        } else {
+            self.placeholder_session = None;
+        }
+
+        self.needs_scroll_to_cursor.set(true);
+    }
+
+    pub fn tab_next_placeholder(&mut self) -> bool {
+        let Some(sess) = self.placeholder_session.as_mut() else {
+            return false;
+        };
+
+        if let Some(next_range) = sess.next_step() {
+            let (start_line, start_col) =
+                crate::snippet::char_to_line_col(&self.buffer.rope, next_range.start);
+            let (end_line, end_col) =
+                crate::snippet::char_to_line_col(&self.buffer.rope, next_range.end);
+            self.buffer.selection_anchor = Some((start_line, start_col));
+            self.buffer.cursor = (end_line, end_col);
+            self.needs_scroll_to_cursor.set(true);
+            true
+        } else {
+            let final_caret = sess.final_caret_char_idx;
+            let (line, col) = crate::snippet::char_to_line_col(&self.buffer.rope, final_caret);
+            self.buffer.cursor = (line, col);
+            self.buffer.selection_anchor = None;
+            self.placeholder_session = None;
+            self.needs_scroll_to_cursor.set(true);
+            true
+        }
+    }
+
+    pub fn tab_prev_placeholder(&mut self) -> bool {
+        let Some(sess) = self.placeholder_session.as_mut() else {
+            return false;
+        };
+
+        if let Some(prev_range) = sess.prev_step() {
+            let (start_line, start_col) =
+                crate::snippet::char_to_line_col(&self.buffer.rope, prev_range.start);
+            let (end_line, end_col) =
+                crate::snippet::char_to_line_col(&self.buffer.rope, prev_range.end);
+            self.buffer.selection_anchor = Some((start_line, start_col));
+            self.buffer.cursor = (end_line, end_col);
+            self.needs_scroll_to_cursor.set(true);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn cancel_placeholder_session(&mut self) {
+        self.placeholder_session = None;
+    }
+
+    /// Toggles task checkbox state at the given line between `[ ]` and `[x]`.
+    /// The modification is strictly localized to the checkbox character and wrapped in an undo transaction.
+    pub fn toggle_task_at_line(&mut self, line_idx: usize) -> bool {
+        let Some(line_text) = self.buffer.line_text(line_idx) else {
+            return false;
+        };
+
+        let trimmed_start = line_text.len() - line_text.trim_start().len();
+        let trimmed = &line_text[trimmed_start..];
+
+        if trimmed.starts_with("- [ ] ") || trimmed.starts_with("* [ ] ") {
+            let replace_char_pos = line_text[..trimmed_start + 3].chars().count();
+            self.buffer.begin_transaction();
+            self.buffer.cursor = (line_idx, replace_char_pos);
+            self.buffer.selection_anchor = Some((line_idx, replace_char_pos + 1));
+            self.buffer.delete_selection();
+            self.buffer.insert_str("x");
+            self.buffer.cursor = (line_idx, replace_char_pos + 1);
+            self.buffer.selection_anchor = None;
+            self.buffer.end_transaction();
+            self.on_content_changed();
+            return true;
+        } else if trimmed.starts_with("- [x] ")
+            || trimmed.starts_with("* [x] ")
+            || trimmed.starts_with("- [X] ")
+            || trimmed.starts_with("* [X] ")
+        {
+            let replace_char_pos = line_text[..trimmed_start + 3].chars().count();
+            self.buffer.begin_transaction();
+            self.buffer.cursor = (line_idx, replace_char_pos);
+            self.buffer.selection_anchor = Some((line_idx, replace_char_pos + 1));
+            self.buffer.delete_selection();
+            self.buffer.insert_str(" ");
+            self.buffer.cursor = (line_idx, replace_char_pos + 1);
+            self.buffer.selection_anchor = None;
+            self.buffer.end_transaction();
+            self.on_content_changed();
+            return true;
+        }
+
+        false
+    }
+
+    pub fn apply_active_proposal(&mut self) -> Result<(), crate::ai::ProposalValidationError> {
+        let Some(proposal) = self.active_proposal.take() else {
+            return Ok(());
+        };
+        let res = proposal.apply(self.id, &mut self.buffer);
+        if res.is_ok() {
+            self.on_content_changed();
+        }
+        res
+    }
+
+    pub fn reject_active_proposal(&mut self) {
+        self.active_proposal = None;
     }
 }
 

@@ -1,0 +1,111 @@
+[language]
+id = "markdown"
+name = "Markdown"
+extensions = ["md", "markdown"]
+
+[[snippets]]
+category = "Formatting"
+label = "Bold"
+description = "Bold formatting for text"
+content = "**${1:bold text}**$0"
+
+[[snippets]]
+category = "Formatting"
+label = "Italic"
+description = "Italic formatting for text"
+content = "*${1:italic text}*$0"
+
+[[snippets]]
+category = "Formatting"
+label = "Strikethrough"
+description = "GFM strikethrough text"
+content = "~~${1:strikethrough text}~~$0"
+
+[[snippets]]
+category = "Formatting"
+label = "Inline Code"
+description = "Monospace inline code span"
+content = "`${1:code}`$0"
+
+[[snippets]]
+category = "Headings"
+label = "Heading 1 (H1)"
+description = "Section level 1 heading"
+content = "# ${1:Heading 1}\n$0"
+
+[[snippets]]
+category = "Headings"
+label = "Heading 2 (H2)"
+description = "Section level 2 heading"
+content = "## ${1:Heading 2}\n$0"
+
+[[snippets]]
+category = "Headings"
+label = "Heading 3 (H3)"
+description = "Section level 3 heading"
+content = "### ${1:Heading 3}\n$0"
+
+[[snippets]]
+category = "Structure"
+label = "Blockquote"
+description = "Blockquote paragraph"
+content = "> ${1:Quote text}\n>$0"
+
+[[snippets]]
+category = "Structure"
+label = "Task List"
+description = "Task item with checkbox"
+content = "- [ ] ${1:Task item}\n- [ ] $0"
+
+[[snippets]]
+category = "Structure"
+label = "Table 3x3"
+description = "3-column table with headers"
+content = """
+| ${1:Header 1} | ${2:Header 2} | ${3:Header 3} |
+| :--- | :--- | :--- |
+| ${4:Data 1} | ${5:Data 2} | ${6:Data 3} |
+| $0 | | |
+"""
+
+[[snippets]]
+category = "Structure"
+label = "Horizontal Rule"
+description = "Section divider line"
+content = "\n---\n\n$0"
+
+[[snippets]]
+category = "Callout"
+label = "Note Callout"
+description = "Callout note block"
+content = "> [!NOTE] ${1:Note title}\n> ${2:Note content here.}\n$0"
+
+[[snippets]]
+category = "Callout"
+label = "Important Callout"
+description = "Callout important alert block"
+content = "> [!IMPORTANT] ${1:Important title}\n> ${2:Important content here.}\n$0"
+
+[[snippets]]
+category = "Code"
+label = "Code Block"
+description = "Fenced code block with language"
+content = """
+```${1:rust}
+${2:// code}
+```
+
+$0
+"""
+
+[[snippets]]
+category = "Code"
+label = "Math Block"
+description = "LaTeX display math block"
+content = """
+$$
+${1:E = mc^2}
+$$
+
+$0
+"""

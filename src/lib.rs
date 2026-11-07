@@ -5,6 +5,7 @@ pub mod editor;
 pub mod font;
 pub mod fs;
 pub mod markdown;
+pub mod snippet;
 pub mod syntax;
 pub mod theme;
 pub mod ui;
